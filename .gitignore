@@ -1,0 +1,5 @@
+# personal data: real saved variables, probe dumps, file-access traces, install backups
+private/
+# generated from YOUR addons' manifests and saved files by tools/wow-keeper-sync
+0DearLordKeeper/Declared.lua
+0DearLordKeeper/Restore.lua

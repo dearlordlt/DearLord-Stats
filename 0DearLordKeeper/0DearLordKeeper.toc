@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: 0 DearLord Keeper
+## Notes: Works around the Forever beta bug where saved variables are written but never loaded. Reload-proof copy in memory, restart-proof copy generated from the saved files on disk.
+## Author: DearLord
+## Version: 2.0.0
+## SavedVariablesPerCharacter: DearLordKeeperCharDB
+
+Declared.lua
+Restore.lua
+Keeper.lua

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Records which saved-data files the running WoW client touches during a /reload.
+# Read-only observation of the game's file access; nothing is changed.
+set -u
+PID=$(ps -eo pid,comm --no-headers | awk '$2=="WowB.exe"{print $1; exit}')
+[ -n "$PID" ] || { echo "WoW is not running."; exit 1; }
+OUT="${WOW_TRACE_OUT:-$PWD/trace-reload}"
+SECS=${1:-45}
+sudo -v || exit 1
+echo
+echo "Tracing the game for $SECS seconds."
+echo ">>> Switch to WoW now and type /reload, then wait for the world to load. <<<"
+echo "(The game may stutter while this runs. That is expected.)"
+sudo timeout "$SECS" strace -f -qq -s 300 \
+  -e trace=open,openat,stat,lstat,newfstatat,statx,access,faccessat,faccessat2,rename,renameat,renameat2,unlink,unlinkat \
+  -p "$PID" -o "$OUT.raw" 2>/dev/null
+sudo chown "$USER" "$OUT.raw" 2>/dev/null
+grep -aiE 'WTF|SavedVariables' "$OUT.raw" > "$OUT.txt"
+echo "Done: $(wc -l < "$OUT.txt") saved-data file operations captured ($(wc -l < "$OUT.raw") total)."
+rm -f "$OUT.raw"
