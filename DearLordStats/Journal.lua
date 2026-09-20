@@ -107,7 +107,17 @@ end
 
 function ns.SummaryText(all)
     if not ns.db then return "" end
-    if not all then return ns.SummaryFor(ns.charKey, ns.char) end
+    if not all then
+        local text = ns.SummaryFor(ns.charKey, ns.char)
+        local loot = ns.session and ns.session.loot
+        if loot and (loot.items > 0 or loot.coin > 0) then
+            local drops = {}
+            for q = 2, 5 do if loot.byQ[q] then drops[#drops + 1] = loot.byQ[q].n .. " " .. (ns.QUALITY_NAME[q] or ""):lower() end end
+            text = text .. "\nLoot this session: " .. J(" · ", "coin " .. ns.money(loot.coin, false, true), "vendor value " .. ns.money(loot.vendor, false, true),
+                loot.junk > 0 and ("junk " .. ns.money(loot.junk, false, true)) or nil, #drops > 0 and table.concat(drops, ", ") or nil)
+        end
+        return text
+    end
     local keys = {}
     for key, c in pairs(ns.db.chars) do if c.class then keys[#keys + 1] = key end end
     table.sort(keys, function(a, b) return (ns.db.chars[a].lastSeen or 0) > (ns.db.chars[b].lastSeen or 0) end)

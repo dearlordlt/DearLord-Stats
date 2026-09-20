@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.2.2"
+ns.version = "2.3.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -160,6 +160,8 @@ end
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
     showRecap = true, nudges = true,
+    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true,
+    recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
     stats = { point = "TOP", x = 0, y = -12 },
     xp    = { point = "TOP", x = 0, y = -34 },
     panel = { point = "CENTER", x = 0, y = 40 },
@@ -177,6 +179,7 @@ local loginHooks = {}
 function ns.OnLogin(fn, label) table.insert(loginHooks, { fn = fn, label = label or "login" }) end
 
 function ns.newSession()
+    if ns.ArchiveLoot and ns.db.session then ns.ArchiveLoot(ns.db.session) end      -- keep a one-line summary of the old one
     ns.db.session = { start = time(), xp = 0, kills = 0, quests = 0, earned = 0, spent = 0,
         combat = ns.newAggregate(), casts = {}, prof = {}, active = 0 }
     ns.session = ns.db.session
@@ -228,6 +231,27 @@ ns.On("PLAYER_ENTERING_WORLD", function(isInitialLogin)
     c.level, c.lastSeen = ns.N(UnitLevel("player")) or c.level, time()
     for i = 1, #loginHooks do ns.call(loginHooks[i].label, loginHooks[i].fn, isInitialLogin) end
 end, "core:world")
+
+----------------------------------------------------------------------
+-- fonts (the four typefaces every client ships) and the HUD text style
+----------------------------------------------------------------------
+ns.FONTS = {
+    { key = "friz", name = "Friz Quadrata", path = STANDARD_TEXT_FONT },
+    { key = "arial", name = "Arial Narrow", path = "Fonts\\ARIALN.TTF" },
+    { key = "morpheus", name = "Morpheus", path = "Fonts\\MORPHEUS.TTF" },
+    { key = "skurri", name = "Skurri", path = "Fonts\\SKURRI.TTF" },
+}
+ns.OUTLINES = { { key = "", name = "Shadow only" }, { key = "OUTLINE", name = "Outline" }, { key = "THICKOUTLINE", name = "Thick outline" } }
+function ns.FontPath()
+    local want = ns.db and ns.db.font
+    for _, f in ipairs(ns.FONTS) do if f.key == want then return f.path end end
+    return STANDARD_TEXT_FONT
+end
+function ns.SetHudFont(fs)
+    local db = ns.db
+    local size, flags = (db and db.fontSize) or 13, (db and db.outline) or "OUTLINE"
+    if not fs:SetFont(ns.FontPath(), size, flags) then fs:SetFont(STANDARD_TEXT_FONT, size, flags) end   -- unknown font file: fall back
+end
 
 ----------------------------------------------------------------------
 -- HUD windows: transparent, draggable text blocks
@@ -304,11 +328,12 @@ function ns.ApplyHudSettings()
         f:SetAlpha(db.alpha)
         local step = db.fontSize + 2
         for i, fs in ipairs(f.lines) do
-            fs:SetFont(STANDARD_TEXT_FONT, db.fontSize, "OUTLINE")
+            ns.SetHudFont(fs)
             fs:ClearAllPoints()
             if f.justify == "LEFT" then fs:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -4 - (i - 1) * step)
             else fs:SetPoint("TOP", f, "TOP", 0, -4 - (i - 1) * step) end
         end
+        f.bg:SetColorTexture(0, 0, 0, db.bgAlpha or 0.4)
         f.bg:SetShown(db.background)
     end
     if ns.LayoutFeed then ns.LayoutFeed() end
@@ -336,7 +361,8 @@ function ns.LayoutFeed()
         local row = feed.rows[i]
         row:ClearAllPoints()
         row:SetScale(ns.db.scale)
-        row.text:SetFont(STANDARD_TEXT_FONT, ns.db.fontSize, "OUTLINE")
+        ns.SetHudFont(row.text)
+        row:SetAlpha(row:IsShown() and row:GetAlpha() or 0)
         if prev then row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -1)
         else row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2) end
         prev = row
@@ -430,7 +456,7 @@ function ns.Nudge(key, text, tab, force)
     lastNudge, nudged[key] = now, true
     table.insert(ns.recentNudges, { text = text, tab = tab, t = time() })
     if #ns.recentNudges > 12 then table.remove(ns.recentNudges, 1) end
-    ns.Feed(text, { tab = tab, key = key, hold = 25 })
+    ns.Feed(text, { tab = tab, key = key, hold = ns.db.nudgeHold or 25 })
     if ns.PanelDirty then ns.PanelDirty() end
     return true
 end

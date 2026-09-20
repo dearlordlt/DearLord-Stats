@@ -5,12 +5,13 @@
 local ADDON, ns = ...
 local L, W = ns.LABEL, ns.WHITE
 
-local WIDTH, HEIGHT, PAD = 480, 440, 14          -- default size; the panel can be resized by its corner
-local MIN_W, MIN_H, MAX_W, MAX_H = 420, 260, 1100, 1300
+local WIDTH, HEIGHT, PAD = 540, 460, 14          -- default size; the panel can be resized by its corner
+local MIN_W, MIN_H, MAX_W, MAX_H = 500, 260, 1100, 1300
 local function innerWidth() return ((panel and panel:GetWidth()) or WIDTH) - PAD * 2 - 8 end
 local FONT = STANDARD_TEXT_FONT
 local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = "Abilities" },
-    { key = "professions", text = "Professions" }, { key = "journal", text = "Journal" }, { key = "summary", text = "Summary" } }
+    { key = "professions", text = "Professions" }, { key = "loot", text = "Loot" }, { key = "journal", text = "Journal" },
+    { key = "summary", text = "Summary" }, { key = "settings", text = "Settings" } }
 local SCOPES = {
     combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
     abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
@@ -23,6 +24,8 @@ local rows, used = {}, 0
 local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one" }, dirty = true, offset = 0 }
 local cursor = 0
 local renderNow
+local settingsPage
+local function fsize(delta) return ((ns.db and ns.db.panelFontSize) or 12) + (delta or 0) end
 
 local function ago(t)
     local d = time() - (t or 0)
@@ -74,14 +77,17 @@ local function getRow()
         r.rule:SetColorTexture(1, 1, 1, 0.08); r.rule:SetHeight(1)
         r.rule:SetPoint("BOTTOMLEFT"); r.rule:SetPoint("BOTTOMRIGHT")
         r.left = r:CreateFontString(nil, "OVERLAY")
-        r.left:SetFont(FONT, 12, "")                 -- the client refuses SetText on a label without a font
+        r.left:SetFont(FONT, fsize(), "")            -- the client refuses SetText on a label without a font
         r.left:SetJustifyH("LEFT"); r.left:SetJustifyV("TOP")
         r.right = r:CreateFontString(nil, "OVERLAY")
-        r.right:SetFont(FONT, 12, "")
+        r.right:SetFont(FONT, fsize(), "")
         r.right:SetJustifyH("RIGHT")
         r:SetScript("OnEnter", function(self)
-            if self.tip or self.onRight or self.onClick then self.hl:Show() end
-            if self.tip then
+            if self.tip or self.onRight or self.onClick or self.link then self.hl:Show() end
+            if self.link then                                    -- an item: show the game's own tooltip for it
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                if not pcall(GameTooltip.SetHyperlink, GameTooltip, self.link) then GameTooltip:Hide() end
+            elseif self.tip then
                 GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
                 GameTooltip:AddLine(self.tip, 0.9, 0.9, 0.9, true)
                 GameTooltip:Show()
@@ -94,7 +100,7 @@ local function getRow()
         end)
         rows[used] = r
     end
-    r.tip, r.onRight, r.onClick = nil, nil, nil
+    r.tip, r.onRight, r.onClick, r.link = nil, nil, nil, nil
     r.bar:Hide(); r.rule:Hide(); r.hl:Hide()
     r.left:SetText(""); r.right:SetText("")
     r.left:ClearAllPoints(); r.right:ClearAllPoints()
@@ -116,11 +122,11 @@ local function GAP(h) cursor = cursor + (h or 8) end
 local function H(text)
     if cursor > 0 then GAP(12) end
     local r = getRow()
-    r.left:SetFont(FONT, 10, "")
+    r.left:SetFont(FONT, fsize(-2), "")
     r.left:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 4)
     r.left:SetText("|cff8fa3b8" .. text:upper() .. "|r")
     r.rule:Show()
-    place(r, 18)
+    place(r, fsize(-2) + 8)
     GAP(4)
 end
 
@@ -128,13 +134,14 @@ end
 local function KV(left, right, opts)
     opts = opts or {}
     local r = getRow()
-    r.left:SetFont(FONT, 12, ""); r.right:SetFont(FONT, 12, "")
-    r.left:SetPoint("LEFT", r, "LEFT", 4, 0)
+    r.left:SetFont(FONT, fsize(), ""); r.right:SetFont(FONT, fsize(), "")
     r.right:SetPoint("RIGHT", r, "RIGHT", -4, 0)
     r.left:SetText(left or ""); r.right:SetText(right or "")
-    r.tip, r.onRight, r.onClick = opts.tip, opts.onRight, opts.onClick
-    if opts.tip or opts.onRight or opts.onClick then r:EnableMouse(true) end
-    place(r, 18, opts.indent)
+    r.left:SetPoint("LEFT", r, "LEFT", 4, 0)
+    r.left:SetPoint("RIGHT", r.right, "LEFT", -12, 0)      -- a long label is cut off cleanly instead of overlapping
+    r.tip, r.onRight, r.onClick, r.link = opts.tip, opts.onRight, opts.onClick, opts.link
+    if opts.tip or opts.onRight or opts.onClick or opts.link then r:EnableMouse(true) end
+    place(r, fsize() + 6, opts.indent)
     if opts.bar then
         r.bar:SetWidth(math.max(1, (r:GetWidth()) * math.min(1, opts.bar)))
         r.bar:Show()
@@ -145,7 +152,7 @@ end
 local function P(text, indent)
     local r = getRow()
     local width = innerWidth() - 8 - (indent or 0)
-    r.left:SetFont(FONT, 12, "")
+    r.left:SetFont(FONT, fsize(), "")
     r.left:SetWordWrap(true)
     r.left:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -2)
     r.left:SetWidth(width)
@@ -260,14 +267,15 @@ function render.combat(scope)
                       tip = "Click to look at this level on its own." })
             end
         end
-        local order, names = { "lower", "even", "higher" }, { lower = "Lower level (3 or more below you)", even = "About your level", higher = "Higher level (2 or more above you)" }
+        local order, names = { "lower", "even", "higher" }, { lower = "Lower level", even = "About your level", higher = "Higher level" }
+        local tips = { lower = "Mobs three or more levels below you.", even = "Mobs from two levels below you to one above.", higher = "Mobs two or more levels above you." }
         local anyDiff = false
         for _, k in ipairs(order) do if ns.char.byDiff[k] and ns.char.byDiff[k].fights > 0 then anyDiff = true end end
         if anyDiff then
             H("By mob level")
             for _, k in ipairs(order) do
                 local a = ns.char.byDiff[k]
-                if a and a.fights > 0 then KV(L .. names[k] .. "|r", sliceLine(ns.CombatView(a))) end
+                if a and a.fights > 0 then KV(L .. names[k] .. "|r", sliceLine(ns.CombatView(a)), { tip = tips[k] }) end
             end
         end
         local zones = {}
@@ -410,6 +418,70 @@ function render.professions()
     end
 end
 
+function render.loot()
+    local view = ns.LootView()
+    local loot = view and view.loot
+    if not loot or (loot.items == 0 and loot.coin == 0) then
+        P(L .. "Nothing looted yet this session.|r")
+    else
+        H("This session")
+        KV(L .. "Looted coin|r", W .. ns.money(loot.coin) .. "|r")
+        KV(L .. "Vendor value of looted items|r", W .. ns.money(loot.vendor) .. "|r" .. (loot.junk > 0 and ("  " .. L .. "of which junk " .. ns.strip(ns.money(loot.junk)) .. "|r") or ""),
+            { tip = "What a vendor would pay for everything you looted, whether or not you kept it." })
+        KV(L .. "Items looted|r", W .. loot.items .. "|r")
+        KV(L .. "Coin and vendor value per hour|r", view.perHour and (W .. ns.money(view.perHour) .. "|r") or (L .. "-|r"))
+        KV(ns.BLUE .. "Reset the loot session|r", L .. "click|r", { onClick = function() ns.ResetLoot(); renderNow() end,
+            tip = "Files this session under Previous sessions and starts counting again. XP and combat are not touched." })
+
+        H("By quality")
+        for q = 0, 5 do
+            local b = loot.byQ[q]
+            if b then
+                KV(ns.QualityColor(q) .. (ns.QUALITY_NAME[q] or "?") .. "|r", W .. b.n .. "|r " .. L .. (b.n == 1 and "item" or "items") .. "  ·  |r" .. W .. ns.money(b.value) .. "|r")
+            end
+        end
+
+        if #loot.drops > 0 then
+            H("Notable drops")
+            for i = #loot.drops, math.max(1, #loot.drops - 11), -1 do
+                local d = loot.drops[i]
+                KV(ns.QualityColor(d.q) .. d.name .. "|r" .. (d.n > 1 and (L .. "  ×" .. d.n .. "|r") or ""),
+                    (d.value > 0 and (W .. ns.money(d.value) .. "|r  ") or "") .. L .. ago(d.t) .. "|r", { link = d.link })
+            end
+        end
+
+        if #view.stacks > 0 then
+            H("Most valuable to a vendor")
+            for i = 1, math.min(8, #view.stacks) do
+                local e = view.stacks[i]
+                KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", W .. ns.money(e.value) .. "|r", { link = e.link })
+            end
+        end
+    end
+
+    local junk, stacks = ns.JunkInBags()
+    if junk then
+        H("In your bags right now")
+        KV(L .. "Junk a vendor will buy|r", junk > 0 and (W .. ns.money(junk) .. "|r  " .. L .. stacks .. (stacks == 1 and " stack|r" or " stacks|r")) or (L .. "none|r"))
+    end
+
+    local history = ns.db.lootHistory or {}
+    if #history > 0 then
+        H("Previous sessions")
+        for i = #history, math.max(1, #history - 9), -1 do
+            local s = history[i]
+            local parts = {}
+            for q = 2, 5 do if s.byQ and s.byQ[q] then parts[#parts + 1] = ns.QualityColor(q) .. s.byQ[q] .. " " .. (ns.QUALITY_NAME[q] or ""):lower() .. "|r" end end
+            local who = s.char and s.char:match("^(.-)%-") or "?"
+            KV(L .. date("%d %b %H:%M", s.started or s.ended) .. "  ·  " .. ns.shortTime((s.ended or 0) - (s.started or 0)) .. "  ·  " .. who .. "|r",
+                W .. ns.money((s.coin or 0) + (s.vendor or 0)) .. "|r" .. (#parts > 0 and ("  " .. table.concat(parts, L .. ", |r")) or ""),
+                { tip = "Coin plus vendor value. " .. (s.items or 0) .. " items looted" .. (s.best and (", best drop: " .. s.best.name) or "") .. "." })
+        end
+    end
+end
+
+function render.settings() end     -- a page of controls, handled in renderNow
+
 function render.journal()
     local notes = ns.char.journal
     if #notes == 0 then
@@ -477,7 +549,8 @@ local function build()
     if UISpecialFrames then table.insert(UISpecialFrames, "DearLordStatsPanel") end      -- Escape closes it
 
     local bg = panel:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(); bg:SetColorTexture(0.04, 0.05, 0.07, 0.92)
+    bg:SetAllPoints(); bg:SetColorTexture(0.04, 0.05, 0.07, (ns.db and ns.db.panelAlpha) or 0.92)
+    panel.bgTex = bg
     hairline(panel, "TOPLEFT", "TOPRIGHT", true); hairline(panel, "BOTTOMLEFT", "BOTTOMRIGHT", true)
     hairline(panel, "TOPLEFT", "BOTTOMLEFT", false); hairline(panel, "TOPRIGHT", "BOTTOMRIGHT", false)
 
@@ -500,7 +573,7 @@ local function build()
         local b = textButton(panel, 12)
         b:SetLabel(tab.text)
         b:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -38)
-        x = x + b:GetWidth() + 16
+        x = x + b:GetWidth() + 14
         b:SetScript("OnClick", function() ns.OpenPanel(tab.key) end)
         tabButtons[tab.key] = b
     end
@@ -625,9 +698,8 @@ local function build()
     panel.grip = grip
     local sizeTick = 0
     panel:SetScript("OnSizeChanged", function()
-        if not panel.sizing then return end            -- re-flow the text while the corner is being dragged
-        local now = GetTime()
-        if now - sizeTick > 0.04 then sizeTick = now; renderNow() end
+        local now = GetTime()                          -- re-flow the text whenever the size changes, however it changed
+        if now - sizeTick > 0.04 then sizeTick = now; renderNow() else state.dirty = true end
     end)
 end
 
@@ -636,6 +708,8 @@ local FOOT = {
     abilities = "Right-click a spell in the lists below the chart to stop being reminded of it.",
     professions = "Open a profession window or talk to a trainer once and the details fill in.",
     journal = "",
+    loot = "Hover an item for its tooltip. Only real loot counts; quest rewards, purchases and crafts do not.",
+    settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
     summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
 }
 
@@ -673,11 +747,19 @@ renderNow = function()
     panel.who:SetPoint("RIGHT", scopes and scopeButtons[1] or panel.close, "LEFT", -14, 0)
     panel.who:SetText(L .. (ns.charKey and ns.charKey:match("^(.-)%-") or "") .. "  ·  level " .. tostring(ns.curLevel or "?") .. "  ·  " .. (ns.char.class or "") .. "|r")
 
-    local isSummary, isJournal = state.tab == "summary", state.tab == "journal"
+    local isSummary, isJournal, isSettings = state.tab == "summary", state.tab == "journal", state.tab == "settings"
     summaryBox:SetShown(isSummary); selectAll:SetShown(isSummary)
+    summaryBox:SetFont(FONT, fsize(), "")
+    if isSettings and not settingsPage then
+        settingsPage = ns.SettingsPage(child)
+        settingsPage:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
+    end
+    if settingsPage then settingsPage:SetShown(isSettings) end
     noteBox:SetShown(isJournal)
     footer:SetText(FOOT[state.tab] or "")
-    if isSummary then
+    if isSettings then
+        cursor = settingsPage:Layout(innerWidth()) + 8
+    elseif isSummary then
         local text = ns.SummaryText(state.scope.summary == "all")
         summaryBox.original = text
         summaryBox:SetText(text)
@@ -688,6 +770,11 @@ renderNow = function()
     for i = used + 1, #rows do rows[i]:Hide() end
     child:SetHeight(math.max(10, cursor))
     applyScroll()
+    panel.renderedWidth = panel:GetWidth()
+end
+
+function ns.ApplyPanelStyle()
+    if panel and panel.bgTex then panel.bgTex:SetColorTexture(0.04, 0.05, 0.07, ns.db.panelAlpha or 0.92) end
 end
 
 function ns.PanelDirty() state.dirty = true end
@@ -713,5 +800,7 @@ ns.Every(0.5, function(dt)
     if not panel or not panel:IsShown() then return end
     sinceRender = sinceRender + dt
     if state.tab == "summary" and summaryBox:HasFocus() then return end       -- do not disturb a selection
-    if state.dirty or sinceRender >= 2 then sinceRender = 0; renderNow() end
+    if settingsPage and settingsPage.dragging then return end                  -- nor a slider being dragged
+    local stale = panel.renderedWidth and math.abs(panel.renderedWidth - panel:GetWidth()) > 0.5
+    if state.dirty or stale or sinceRender >= 2 then sinceRender = 0; renderNow() end
 end, "panel:refresh")

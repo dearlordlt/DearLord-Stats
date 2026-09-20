@@ -167,10 +167,11 @@ local function refresh()
 
     local earned, spent = session.earned or 0, session.spent or 0
     local goldRate = (earned > 0 and elapsed >= 30) and money(earned / elapsed * 3600) or (LABEL .. "-|r")
+    L[4]:SetShown(db.showGold ~= false)
     L[4]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
 
     -- fifth line: only while a profession is being worked on
-    local profLine = ns.ProfessionHudLine and ns.ProfessionHudLine()
+    local profLine = db.showProf ~= false and ns.ProfessionHudLine and ns.ProfessionHudLine() or nil
     L[5]:SetShown(profLine ~= nil)
     if profLine then L[5]:SetText(profLine) end
 

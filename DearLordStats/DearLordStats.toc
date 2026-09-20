@@ -2,7 +2,7 @@
 ## Title: DearLord Stats
 ## Notes: Quiet HUD for latency, spell lag, FPS, XP and gold, plus a report on combat feel, abilities, professions, notes and summaries.
 ## Author: DearLord
-## Version: 2.2.2
+## Version: 2.3.0
 ## SavedVariables: DearLordStatsDB
 ## OptionalDeps: 0DearLordKeeper
 
@@ -13,6 +13,8 @@ Combat.lua
 Spells.lua
 Professions.lua
 Journal.lua
+Loot.lua
+Settings.lua
 Panel.lua
 Menu.lua
 Migrate.lua

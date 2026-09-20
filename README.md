@@ -40,10 +40,15 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Professions**: skill-ups this session, what you can craft *right now* from your bags for points
   (orange / yellow / green), a rough shopping list to the next milestone, remembered trainer unlocks,
   gathering by zone, nodes your skill was too low for.
+- **Loot**: looted coin, vendor value of everything looted (and how much of it is junk), per hour, drops
+  by quality, notable drops with item tooltips, the most valuable stacks, junk sitting in your bags right
+  now, and one-line summaries of previous sessions. Has its own reset.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
+- **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
+  recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls loot`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

@@ -223,7 +223,7 @@ local function finalize(f, data)
     local d = ns.db.diag
     d.fights, d.fightsFromMeter = (d.fights or 0) + 1, (d.fightsFromMeter or 0) + (data and 1 or 0)
     ns.lastFight = f
-    if ns.db.showRecap then ns.Feed(recap(f), { tab = "combat", key = "recap", hold = 8 }) end
+    if ns.db.showRecap then ns.Feed(recap(f), { tab = "combat", key = "recap", hold = ns.db.recapHold or 8 }) end
     if ns.PanelDirty then ns.PanelDirty() end
 end
 

@@ -101,6 +101,8 @@ end)
 
 local function refresh()
     if not ns.db then return end
+    stats:SetShown(ns.db.showStats ~= false)
+    if ns.db.showStats == false then return end
     local _, _, home, world = GetNetStats()
     home, world = ns.N(home) or 0, ns.N(world) or 0
     local fps = math.floor((ns.N(GetFramerate()) or 0) + 0.5)

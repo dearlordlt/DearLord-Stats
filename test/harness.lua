@@ -122,7 +122,21 @@ C_Spell = {
         return { startTime = hide(0), duration = hide(0), isEnabled = true, modRate = 1 }
     end,
 }
-C_Item = { GetItemCount = function(id) return world.bags[id] or 0 end,
+local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
+    [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 } }
+GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
+function GetCursorPosition() return 380, 200 end
+C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
+    GetContainerItemInfo = function(bag, slot)
+        if slot == 1 then return { itemID = 4867, stackCount = 4, quality = 0, hyperlink = "|cnIQ0:|Hitem:4867::|h[Broken Scorpid Leg]|h|r", hasNoValue = false } end
+        if slot == 2 then return { itemID = 783, stackCount = 2, quality = 1, hyperlink = "|cnIQ1:|Hitem:783::|h[Light Hide]|h|r" } end
+    end }
+C_Item = { GetItemInfo = function(link)
+        local id = tonumber(tostring(link):match("Hitem:(%d+)")); local it = ITEMS[id]
+        if not it then return nil end
+        return it[1], link, it[2], 1, 1, "Misc", "Junk", 20, "", 0, it[3]
+    end,
+    GetItemCount = function(id) return world.bags[id] or 0 end,
     GetItemNameByID = function(id) return ({ [2589] = "Linen Cloth", [2835] = "Rough Stone", [2840] = "Copper Bar", [2836] = "Coarse Stone" })[id] end }
 Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, DamageTaken = 7, Deaths = 9, EnemyDamageTaken = 10 },
     DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
@@ -261,7 +275,10 @@ end
 local function panelText(title)
     io.write("\n-- panel: " .. title .. "\n")
     for _, f in ipairs(frames) do
-        if f.kind == "Frame" and f.shown and f.left and f.left.text ~= "" then
+        local c = rawget(f, "control")
+        if c and f.shown and title:find("Settings") then
+            io.write("   " .. (c.header and c.header:upper() or ("  " .. c.label .. (rawget(f, "value") and ("    | " .. f.value.text) or ""))) .. "\n")
+        elseif f.kind == "Frame" and f.shown and f.left and f.left.text ~= "" then
             local right = (f.right and f.right.text ~= "") and ("    | " .. strip(f.right.text)) or ""
             io.write("   " .. strip(f.left.text) .. right .. "\n")
         end
@@ -351,6 +368,14 @@ world.xp = (world.xp + 450) - world.xpMax; world.xpMax = 1400; fire("PLAYER_XP_U
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 200, taken = 120, duration = 20 }); world.hp = 175
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 210, taken = 130, duration = 22 }); world.hp = 175
 
+-- looting: junk, a stack, a green, a blue, some coin; then a loot reset files it under history
+local function lootMsg(id, q, name, n) fire("CHAT_MSG_LOOT", "You receive loot: |cnIQ" .. q .. ":|Hitem:" .. id .. "::|h[" .. name .. "]|h|r" .. (n and ("x" .. n) or "") .. ".") end
+lootMsg(4867, 0, "Broken Scorpid Leg"); lootMsg(783, 1, "Light Hide", 3); lootMsg(2140, 2, "Carving Knife"); lootMsg(9999, 3, "Blade of the Test")
+fire("CHAT_MSG_LOOT", "You receive item: |cnIQ1:|Hitem:783::|h[Light Hide]|h|r.")           -- a quest reward: must NOT count
+fire("CHAT_MSG_MONEY", "You loot 3 Silver, 20 Copper"); fire("CHAT_MSG_MONEY", "You loot 1 Gold, 5 Copper")
+advance(130)
+local lootBefore = ns.session.loot
+
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
     local f = ns.huds[key]
@@ -367,6 +392,26 @@ for _, f in ipairs(frames) do if rawget(f, "onClick") and f.shown then f.onClick
 panelText("Combat / level after stepping back")
 ns.OpenPanel("abilities"); panelText("Abilities (level view carried over)")
 ns.OpenPanel("professions"); panelText("Professions")
+ns.OpenPanel("loot"); panelText("Loot")
+ns.ResetLoot(); ns.OpenPanel("loot"); panelText("Loot after reset")
+ns.OpenPanel("settings"); advance(1)
+local touched, fontBefore = 0, ns.db.fontSize
+for _, f in ipairs(frames) do
+    local c = rawget(f, "control")
+    if c and not c.header and c.label ~= "Reset every setting to its default" then
+        touched = touched + 1
+        if f.scripts.OnEnter then f.scripts.OnEnter(f); f.scripts.OnLeave(f) end
+        if c.type == "slider" then
+            f.scripts.OnMouseWheel(f, 1)
+            local tr = rawget(f, "track"); tr.scripts.OnMouseDown(tr); tr.scripts.OnUpdate(tr); tr.scripts.OnMouseUp(tr)
+        elseif c.type == "choice" then f.scripts.OnClick(f, "LeftButton"); f.scripts.OnMouseWheel(f, -1)
+        else f.scripts.OnClick(f, "LeftButton") end
+    end
+end
+local settingsChanged = ns.db.font ~= "friz" or ns.db.fontSize ~= fontBefore
+advance(3); panelText("Settings (labels only)")
+for _, f in ipairs(frames) do local c = rawget(f, "control"); if c and c.label == "Reset every setting to its default" then f.scripts.OnClick(f, "LeftButton") end end
+local afterReset = ns.db.font == "friz" and ns.db.fontSize == 13 and ns.db.showXP == true and ns.db.alpha == 1
 ns.OpenPanel("journal"); panelText("Journal")
 ns.OpenPanel("summary"); advance(3)
 -- resize the report: drag the corner wider/taller, then double-click to fit the content
@@ -432,6 +477,13 @@ check("recipes remembered (4 learned)", #ns.char.recipes.Engineering.list == 4)
 check("green recipes count as maybe (3 from 3 Copper Bars)", ns.CraftNow("Engineering").green == 3 and ns.CraftNow("Engineering").orange == 14)
 check("too-low-skill log has Tin Vein", ns.char.lowskill[1] and ns.char.lowskill[1].node == "Tin Vein")
 check("note saved", #ns.char.journal == 1)
+check("loot: 9 items incl. the mined ore, vendor value 47s 24c, junk 12c, quest reward ignored", lootBefore and lootBefore.items == 9 and lootBefore.vendor == 12 + 150 + 350 + 4200 + 10 + 2 and lootBefore.junk == 12)
+check("loot: coin 3s20c + 1g5c = 10325", lootBefore.coin == 10325)
+check("loot: one green and one blue recorded as notable drops", #lootBefore.drops == 2 and lootBefore.byQ[3].n == 1)
+check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
+check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
+check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 18 and settingsChanged)
+check("settings reset restores defaults", afterReset)
 check("report resize remembered (760x620) and rows re-flowed to the new width", resized and resized.w == 760 and resized.h == 620)
 check("double-click fits the height to the content (" .. tostring(fitted and fitted.h) .. ")", fitted and fitted.h ~= 620 and fitted.h >= 260)
 check("Concussive Shot flagged as not on bars", (function() for _, n in ipairs(ns.spells.missing) do if n == "Concussive Shot" then return true end end end)())

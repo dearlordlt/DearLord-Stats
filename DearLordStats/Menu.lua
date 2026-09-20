@@ -20,6 +20,7 @@ local function applyAndRefresh() ns.ApplyHudSettings(); if ns.RefreshXP then ns.
 local ITEMS = {
     { text = "Open report", fn = function() ns.OpenPanel() end },
     { text = "Add a note…", fn = function() ns.OpenPanel("journal") end },
+    { text = "Settings…", fn = function() ns.OpenPanel("settings") end },
     { text = "Reset session", fn = function() ns.ResetSession() end },
     { text = "Print level log", fn = function() ns.PrintLevelLog() end },
     { divider = true },
@@ -29,7 +30,7 @@ local ITEMS = {
     { text = "Dark background", key = "background", after = applyAndRefresh },
     { text = "Lock windows", key = "locked" },
     { divider = true },
-    { text = "Reset positions", fn = resetLayout },
+    { text = "Reset positions", fn = function() ns.ResetLayout() end },
 }
 
 local legacy
@@ -67,7 +68,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | loot | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -88,7 +89,10 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "recap" then db.showRecap = not db.showRecap; ns.say("fight recap " .. (db.showRecap and "on" or "off"))
         elseif cmd == "nudges" then db.nudges = not db.nudges; ns.say("reminders " .. (db.nudges and "on" or "off"))
         elseif cmd == "bg" then db.background = not db.background; applyAndRefresh()
-        elseif cmd == "reset" then resetLayout()
+        elseif cmd == "reset" then ns.ResetLayout()
+        elseif cmd == "settings" or cmd == "config" or cmd == "options" then ns.OpenPanel("settings")
+        elseif cmd == "loot" then ns.OpenPanel("loot")
+        elseif cmd == "resetloot" then ns.ResetLoot()
         elseif cmd == "size" and tonumber(arg) then db.fontSize = math.min(24, math.max(9, math.floor(tonumber(arg)))); applyAndRefresh()
         elseif cmd == "scale" and tonumber(arg) then db.scale = math.min(3, math.max(0.5, tonumber(arg))); applyAndRefresh()
         elseif cmd == "alpha" and tonumber(arg) then db.alpha = math.min(1, math.max(0.2, tonumber(arg))); applyAndRefresh()
