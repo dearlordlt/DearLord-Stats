@@ -7,6 +7,16 @@ local L, W = ns.LABEL, ns.WHITE
 
 local WIDTH, HEIGHT, PAD = 540, 460, 14          -- default size; the panel can be resized by its corner
 local MIN_W, MIN_H, MAX_W, MAX_H = 500, 260, 1100, 1300
+-- the largest the panel may be on this screen: never taller or wider than what is visible
+local function screenMax()
+    local w = UIParent and UIParent.GetWidth and UIParent:GetWidth()
+    local h = UIParent and UIParent.GetHeight and UIParent:GetHeight()
+    return math.min(MAX_W, (w and w > 0) and (w - 20) or MAX_W), math.min(MAX_H, (h and h > 0) and (h - 20) or MAX_H)
+end
+local function clampSize(w, h)
+    local maxW, maxH = screenMax()
+    return math.max(MIN_W, math.min(maxW, w or WIDTH)), math.max(MIN_H, math.min(maxH, h or HEIGHT))
+end
 local function innerWidth() return ((panel and panel:GetWidth()) or WIDTH) - PAD * 2 - 8 end
 local FONT = STANDARD_TEXT_FONT
 local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = "Abilities" },
@@ -590,8 +600,12 @@ local function build()
         ns.db.panel = { point = point, x = x, y = y }
     end)
     panel:SetResizable(true)
-    if panel.SetResizeBounds then panel:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
-    elseif panel.SetMinResize then panel:SetMinResize(MIN_W, MIN_H); panel:SetMaxResize(MAX_W, MAX_H) end
+    function panel:ApplyBounds()
+        local maxW, maxH = screenMax()
+        if self.SetResizeBounds then self:SetResizeBounds(MIN_W, MIN_H, maxW, maxH)
+        elseif self.SetMinResize then self:SetMinResize(MIN_W, MIN_H); self:SetMaxResize(maxW, maxH) end
+    end
+    panel:ApplyBounds()
     panel:Hide()
     if UISpecialFrames then table.insert(UISpecialFrames, "DearLordStatsPanel") end      -- Escape closes it
 
@@ -614,6 +628,25 @@ local function build()
     close:SetActive(false); close.line:Hide()
     close:SetScript("OnClick", function() panel:Hide() end)
     panel.close = close
+
+    -- one obvious way back when the window has grown too big or wandered off: fit / default size
+    local fit = textButton(panel, 13)
+    fit:SetLabel("⤢"); fit:SetSize(20, 20)
+    fit:SetPoint("RIGHT", close, "LEFT", -2, 0)
+    fit:SetActive(false); fit.line:Hide()
+    fit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    fit:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then ns.ResetPanelSize() else ns.FitPanel() end
+    end)
+    fit:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:AddLine("Fit the window to its content", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: default size and position", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("/dls reset does the same for every window", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    fit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    panel.fit = fit
 
     local x = PAD
     for i, tab in ipairs(TABS) do
@@ -729,19 +762,27 @@ local function build()
         saveGeometry()
         renderNow()
     end)
-    grip:SetScript("OnDoubleClick", function()
+    -- fit the height to the content, staying on screen; keeps the top-left corner where it is
+    function ns.FitPanel()
         local chrome = 70 + 34                         -- title, tabs and footer around the scroll area
+        local maxW, maxH = screenMax()
         local top = panel:GetTop() or 0
-        local room = math.max(MIN_H, top - 8)          -- never grow past the bottom of the screen
-        local h = math.max(MIN_H, math.min(MAX_H, room, cursor + chrome + 6))
-        local left = panel:GetLeft() or 0
+        local room = math.max(MIN_H, math.min(maxH, top - 8))   -- never grow past the bottom of the screen
+        local h = math.max(MIN_H, math.min(maxH, room, cursor + chrome + 6))
+        local left = math.max(0, panel:GetLeft() or 0)
         panel:ClearAllPoints()
         panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
-        panel:SetHeight(h)
+        panel:SetSize(math.min(maxW, panel:GetWidth() or WIDTH), h)
         state.offset = 0
         saveGeometry()
         renderNow()
-    end)
+    end
+    function ns.ResetPanelSize()
+        local d = ns.defaults.panel
+        ns.db.panel, ns.db.panelSize = { point = d.point, x = d.x, y = d.y }, nil
+        ns.OpenPanel()
+    end
+    grip:SetScript("OnDoubleClick", function() ns.FitPanel() end)
     panel.grip = grip
     local sizeTick = 0
     panel:SetScript("OnSizeChanged", function()
@@ -831,7 +872,10 @@ function ns.OpenPanel(tab)
     if tab and tab ~= state.tab then state.tab, state.offset = tab, 0 end
     local pos = ns.db.panel or ns.defaults.panel
     local size = ns.db.panelSize
-    panel:SetSize(math.max(MIN_W, math.min(MAX_W, size and size.w or WIDTH)), math.max(MIN_H, math.min(MAX_H, size and size.h or HEIGHT)))
+    panel:ApplyBounds()
+    local w, h = clampSize(size and size.w, size and size.h)
+    if size and (w ~= size.w or h ~= size.h) then ns.db.panelSize = { w = w, h = h } end     -- saved on a bigger screen, or grown past this one
+    panel:SetSize(w, h)
     panel:ClearAllPoints()
     panel:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
     panel:Show()

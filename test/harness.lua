@@ -485,6 +485,13 @@ pf.grip.scripts.OnMouseUp(pf.grip)
 local resized = ns.db.panelSize
 pf.grip.scripts.OnDoubleClick(pf.grip)
 local fitted = ns.db.panelSize
+-- a window taller than the screen comes back clamped, and the title-bar button offers fit / default
+UIParent.w, UIParent.h = 2000, 1000
+ns.db.panelSize = { w = 760, h = 5000 }; ns.OpenPanel("loot")
+local clamped = ns.db.panelSize
+local fitBtn; for _, f in ipairs(frames) do if f.kind == "Button" and f.fs and f.fs.text == "⤢" then fitBtn = f end end
+if fitBtn then fitBtn.scripts.OnEnter(fitBtn); fitBtn.scripts.OnLeave(fitBtn); fitBtn.scripts.OnClick(fitBtn, "LeftButton"); fitBtn.scripts.OnClick(fitBtn, "RightButton") end
+local afterDefault = ns.db.panelSize
 for _, f in ipairs(frames) do      -- exercise every row's hover and right-click, and every button
     if f.scripts.OnEnter and f ~= ns.huds.stats and f ~= ns.huds.xp then pcall(f.scripts.OnEnter, f); if f.scripts.OnLeave then pcall(f.scripts.OnLeave, f) end end
 end
@@ -571,6 +578,8 @@ check("settings page: every control exercised (" .. touched .. ") and values cha
 check("settings reset restores defaults", afterReset)
 check("report resize remembered (760x620) and rows re-flowed to the new width", resized and resized.w == 760 and resized.h == 620)
 check("double-click fits the height to the content (" .. tostring(fitted and fitted.h) .. ")", fitted and fitted.h ~= 620 and fitted.h >= 260)
+check("a saved height taller than the screen is clamped to it (" .. tostring(clamped and clamped.h) .. ")", clamped and clamped.h == 980 and clamped.w == 760)
+check("title-bar fit button exists; right-click restores the default size", fitBtn ~= nil and afterDefault == nil)
 check("Concussive Shot flagged as not on bars", (function() for _, n in ipairs(ns.spells.missing) do if n == "Concussive Shot" then return true end end end)())
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")
