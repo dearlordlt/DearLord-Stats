@@ -277,11 +277,18 @@ local function addLines(tooltip, id)
     local price, age, seen = ns.AuctionPriceByID(id)
     if price then
         any = true
-        tooltip:AddDoubleLine(ns.LABEL .. "AH|r  " .. ns.money(price), ns.LABEL .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r")
         local stack = tooltip.dlsAhStack
-        if stack and stack.id == id and (stack.count or 1) > 1 then
-            tooltip:AddDoubleLine(ns.LABEL .. "×" .. stack.count .. "|r", ns.money(price * stack.count))
+        local count = (stack and stack.id == id and stack.count) or 1
+        local vendor = C_Item and C_Item.GetItemInfo and N((select(11, C_Item.GetItemInfo("item:" .. id))))
+        local ahWins = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor
+        local function row(label, unit, win)
+            local col = win and ns.GREEN or ns.WHITE
+            local text = ns.LABEL .. label .. "|r  " .. col .. ns.strip(ns.money(unit)) .. "|r"
+            if count > 1 then text = text .. ns.LABEL .. "  ·  ×" .. count .. "  |r" .. col .. ns.strip(ns.money(unit * count)) .. "|r" end
+            return text
         end
+        if vendor and vendor > 0 then tooltip:AddDoubleLine(row("Vendor", vendor, not ahWins), " ") end
+        tooltip:AddDoubleLine(row("AH", price, ahWins), ns.LABEL .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r")
     end
     if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
         local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
