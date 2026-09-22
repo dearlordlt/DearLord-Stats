@@ -271,42 +271,69 @@ local function modifierHeld()
     return false
 end
 
+-- the tooltip has no columns of its own, so the rows are padded with spaces measured in the
+-- tooltip's font: label | unit price | ×stack | stack total, each column lined up
+local meter
+local function measure(text)
+    if not meter then
+        local holder = CreateFrame("Frame")
+        meter = holder:CreateFontString(nil, "OVERLAY")
+        if meter.SetFontObject and GameTooltipText then meter:SetFontObject(GameTooltipText)
+        else meter:SetFont(STANDARD_TEXT_FONT, 12, "") end
+        if not meter.GetFont or not meter:GetFont() then meter:SetFont(STANDARD_TEXT_FONT, 12, "") end
+    end
+    meter:SetText(text)
+    return N(meter:GetStringWidth()) or (#text * 6)
+end
+local function padTo(text, width, left)                      -- add spaces until the text is at least `width` wide
+    local space = math.max(1, measure("a a") - measure("aa"))
+    local missing = width - measure(text)
+    if missing <= 0 then return text end
+    local pad = string.rep(" ", math.ceil(missing / space))
+    return left and (pad .. text) or (text .. pad)
+end
+
 local function addLines(tooltip, id)
     if not (ns.db and ns.db.ahTooltip) then return end
-    local any = false
+    local stack = tooltip.dlsAhStack
+    local count = (stack and stack.id == id and stack.count) or 1
+    local rows = {}
     local price, age, seen = ns.AuctionPriceByID(id)
-    if price then
-        any = true
-        local stack = tooltip.dlsAhStack
-        local count = (stack and stack.id == id and stack.count) or 1
-        local vendor = C_Item and C_Item.GetItemInfo and N((select(11, C_Item.GetItemInfo("item:" .. id))))
-        local ahWins = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor
-        local function row(label, unit, win)
-            local col = win and ns.GREEN or ns.WHITE
-            local text = ns.LABEL .. label .. "|r  " .. col .. ns.strip(ns.money(unit)) .. "|r"
-            if count > 1 then text = text .. ns.LABEL .. "  ·  ×" .. count .. "  |r" .. col .. ns.strip(ns.money(unit * count)) .. "|r" end
-            return text
-        end
-        if vendor and vendor > 0 then tooltip:AddDoubleLine(row("Vendor", vendor, not ahWins), " ") end
-        tooltip:AddDoubleLine(row("AH", price, ahWins), ns.LABEL .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r")
+    local vendor = C_Item and C_Item.GetItemInfo and N((select(11, C_Item.GetItemInfo("item:" .. id))))
+    if price and vendor and vendor > 0 then
+        rows[#rows + 1] = { label = "Vendor", unit = vendor, win = ns.AuctionNet(price) <= vendor }
     end
+    if price then rows[#rows + 1] = { label = "AH", unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age } end
     if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
         local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
-        if np then
-            any = true
-            tooltip:AddDoubleLine(ns.LABEL .. "Neutral AH|r  " .. ns.money(np), ns.LABEL .. nseen .. " seen  ·  " .. ns.AuctionAgeText(nage) .. "|r")
-        end
+        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage } end
     end
     if modifierHeld() then
         local ok = ns.AuctionOtherKey()
         local op, oage, oseen = ns.AuctionPriceByID(id, ok)
-        if op then
-            any = true
-            tooltip:AddDoubleLine(ns.LABEL .. (ok:match("%-(%a+)$") or "Other") .. " AH|r  " .. ns.money(op), ns.LABEL .. oseen .. " seen  ·  " .. ns.AuctionAgeText(oage) .. "|r")
+        if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage } end
+    end
+    tooltip.dlsAhShown = #rows > 0 and id or nil
+    if #rows == 0 then return end
+    local labelW, unitW, totalW = 0, 0, 0
+    for _, r in ipairs(rows) do
+        r.unitText, r.totalText = ns.strip(ns.money(r.unit)), count > 1 and ns.strip(ns.money(r.unit * count)) or nil
+        labelW, unitW = math.max(labelW, measure(r.label)), math.max(unitW, measure(r.unitText))
+        if r.totalText then totalW = math.max(totalW, measure(r.totalText)) end
+    end
+    for _, r in ipairs(rows) do
+        local col = r.win and ns.GREEN or ns.WHITE
+        local left = ns.LABEL .. padTo(r.label, labelW) .. "|r   " .. col .. padTo(r.unitText, unitW, true) .. "|r"
+        if r.totalText then left = left .. ns.LABEL .. "   ·   ×" .. count .. "   |r" .. col .. padTo(r.totalText, totalW, true) .. "|r" end
+        tooltip:AddDoubleLine(left, " ")
+    end
+    for _, r in ipairs(rows) do                                -- how fresh each auction price is, on its own dim line
+        if r.seen then
+            local who = r.label == "AH" and "" or (r.label:gsub(" AH$", "") .. ":  ")
+            tooltip:AddLine(ns.LABEL .. who .. r.seen .. " seen  ·  " .. ns.AuctionAgeText(r.age) .. "|r")
         end
     end
-    tooltip.dlsAhShown = any and id or nil
-    if any then tooltip:Show() end
+    tooltip:Show()
 end
 
 -- pressing the modifier while hovering: redraw the tooltip so the comparison line appears at once

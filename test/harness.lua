@@ -557,18 +557,19 @@ if MODE ~= "bare" then
         and lootView.stacks[3].sellAt == "vendor")
     local forAH, gain = ns.BagsForAuction()
     check("bags: the Light Hide stack is worth +3s74c on the AH", forAH and #forAH == 1 and gain == 374 and forAH[1].name == "Light Hide")
-    check("tooltip: vendor row then AH row with seen/age (" .. tostring(tipLines[2]) .. ")", #tipLines == 2 and tipLines[1] == "Vendor  50c |  " and tipLines[2] == "AH  2s 50c | 19 seen  ·  2 days ago")
-    check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 2 and scanResult.unknownAndForbidden and tipOff == 0)
-    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 2 and tipStack[1] == "Vendor  50c  ·  ×2  1s 0c |  " and tipStack[2] == "AH  2s 50c  ·  ×2  5s 0c | 19 seen  ·  2 days ago")
+    local function norm(t) return (tostring(t):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
+    check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 3 and norm(tipLines[1]) == "Vendor 50c |" and norm(tipLines[2]) == "AH 2s 50c |" and norm(tipLines[3]) == "19 seen · 2 days ago")
+    check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 3 and scanResult.unknownAndForbidden and tipOff == 0)
+    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "AH 2s 50c · ×2 5s 0c |")
     local r = scanResult.realm
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(":", "")) == 2)
     check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
-    check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 3 and scanResult.tipAlt[3] == "Alliance AH  3s 0c | 7 seen  ·  yesterday")
+    check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 5 and norm(scanResult.tipAlt[3]) == "Alliance AH 3s 0c |" and norm(scanResult.tipAlt[5]) == "Alliance: 7 seen · yesterday")
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
-        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 3 and scanResult.tipNeutral[3] == "Neutral AH  3c | 10 seen  ·  today")
+        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")
 else
     check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
 end
