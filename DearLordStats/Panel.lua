@@ -768,7 +768,7 @@ local function build()
     searchBox.bg:SetColorTexture(1, 1, 1, 0.06)
     searchBox.hint = searchBox:CreateFontString(nil, "OVERLAY")
     searchBox.hint:SetFont(FONT, 12, ""); searchBox.hint:SetPoint("LEFT", 0, 0)
-    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name")
+    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name  ·  lowest, median and highest buyout  ·  click an item for its history")
     searchBox:SetScript("OnTextChanged", function(self)
         self.hint:SetShown(self:GetText() == "")
         state.priceQuery, state.priceItem, state.offset = self:GetText(), nil, 0
@@ -866,7 +866,7 @@ local FOOT = {
     professions = "Open a profession window or talk to a trainer once and the details fill in.",
     journal = "",
     loot = "Hover an item for its tooltip. Only real loot counts; quest rewards, purchases and crafts do not.",
-    prices = "Lowest buyout · median · highest, from your scans of this faction's auction house. Click an item for its history.",
+    prices = "",                                   -- the search box sits where the footer would be
     settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
     summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
 }
