@@ -65,3 +65,14 @@ What does persist:
   16 KB per value worked; they are not written to `Config.wtf`)
 - macros (server side), which is what the community addon WickKeeper uses
 - addon code files, which is why generating a Lua file from the saved files works for restarts
+
+## The auction house is per faction, and Auctionator does not know
+
+An auction posted on the Horde AH is not found on the Alliance AH (checked in the beta on Sep 22,
+2026; stock and prices differ too). Auctionator (build 339) detects Forever as its own game type and
+uses its modern-AH code, which keeps one price database per realm, keyed
+`GetNormalizedRealmName()` with no faction. A scan on either side overwrites the other side's
+prices. The Keeper's `Fixes.lua` wraps `Auctionator.Variables.GetConnectedRealmRoot` at
+Auctionator's `ADDON_LOADED` (the Keeper registered for the event first, so its handler runs before
+Auctionator's own initialisation) and appends the faction, the way Auctionator does on Classic.
+Prices scanned before the fix go to the first faction that logs in afterwards.

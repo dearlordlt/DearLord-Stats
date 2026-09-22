@@ -32,8 +32,10 @@ local function boot(tag, opts)
     UnitName = function() return "Tess Ter" end
     assert(loadstring(DECLARED))()
     if not opts.noDisk then assert(loadstring(RESTORE))() end
+    assert(loadfile(dir .. "/Fixes.lua"))("0DearLordKeeper")
     assert(loadfile(dir .. "/Keeper.lua"))("0DearLordKeeper")
     frames[1].scripts.OnEvent(frames[1], "ADDON_LOADED", "0DearLordKeeper")
+    if opts.otherAddons then opts.otherAddons(frames[1]) end
     if opts.clientFixed then StatsDB = { marker = "loaded-by-client" } end       -- the real loader runs later and wins
     local ok = opts.check()
     if opts.play then opts.play() end
@@ -51,4 +53,23 @@ boot("/reload: the in-memory copy carries what changed during play", {
 boot("/reload with no disk copy at all (memory layer alone)", { noDisk = true,
     check = function() return StatsDB and StatsDB.fights == 42 and ChatCharDB.channel == "lfg" end })
 boot("fixed client: its own loading wins", { clientFixed = true, check = function() return StatsDB.marker == "loaded-by-client" end })
+-- Auctionator fix: the price database key gets the faction, and data from before the fix goes to the first faction seen
+local faction = "Horde"
+boot("Auctionator: one price database per faction", {
+    otherAddons = function(f)
+        Auctionator = { Variables = { GetConnectedRealmRoot = function() return "Realm" end }, Constants = { IsForever = true } }
+        AUCTIONATOR_PRICE_DATABASE = { __dbversion = 8, Realm = { ["3872"] = { m = 7500 } } }
+        UnitFactionGroup = function() return faction end
+        f.scripts.OnEvent(f, "ADDON_LOADED", "Auctionator")
+    end,
+    check = function()
+        local db = AUCTIONATOR_PRICE_DATABASE
+        local horde = Auctionator.Variables.GetConnectedRealmRoot()
+        local claimed = horde == "Realm Horde" and db["Realm Horde"]["3872"].m == 7500 and db.Realm == nil
+        faction = "Alliance"
+        local alliance = Auctionator.Variables.GetConnectedRealmRoot()
+        local separate = alliance == "Realm Alliance" and db["Realm Alliance"] == nil and db["Realm Horde"]["3872"].m == 7500
+        faction = "Horde"
+        return claimed and separate and Auctionator.Variables.GetConnectedRealmRoot() == "Realm Horde"
+    end })
 io.write("OK\n")

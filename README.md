@@ -95,6 +95,11 @@ when a saved file shrank to a fraction of its size since the newest snapshot, an
 `wow-keeper-sync --restore <snapshot> <Addon>` puts the shrunken variables back while keeping the
 newer ones (`--snapshots` lists what there is).
 
+`0DearLordKeeper/Fixes.lua` also carries tiny fixes for other addons on this client, applied right
+after that addon loads. Currently: Auctionator keeps one price database per realm on Forever, but the
+Horde and Alliance auction houses are separate, so the fix gives each faction its own database.
+`/keeper` lists which fixes were applied.
+
 On Windows the in-memory layer works as is (settings survive `/reload`); the restart layer needs the
 sync script run by hand or a port of the watcher.
 

@@ -10,7 +10,7 @@
 -- on this client), so other addons find their variables already in place. Once Blizzard fixes the
 -- client, its own loading happens afterwards and simply wins.
 local ADDON = ...
-local VERSION = "2.0.0"
+local VERSION = "2.1.0"
 local CHUNK, MAX_TOTAL, MAX_VAR = 15000, 900000, 400000
 local PREFIX = "dearlordKeeperChunk"
 local INDEX = "dearlordKeeperIndex"
@@ -19,7 +19,7 @@ local C = C_CVar or {}
 local Register, Get, Set = C.RegisterCVar or RegisterCVar, C.GetCVar or GetCVar, C.SetCVar or SetCVar
 local issecret = type(issecretvalue) == "function" and issecretvalue or function() return false end
 local declared = DearLordKeeper_Declared or { account = {}, perchar = {} }
-local status = { version = VERSION, fromDisk = {}, fromMemory = {}, skipped = {}, errors = {} }
+local status = { version = VERSION, fromDisk = {}, fromMemory = {}, skipped = {}, errors = {}, fixes = {}, fixesSkipped = {} }
 
 local function say(msg) print("|cff9ecbffDearLord Keeper:|r " .. msg) end
 local function charKey() return ((UnitName and UnitName("player")) or "?"):gsub(" ", "-") end
@@ -144,15 +144,29 @@ local function snapshot()
     DearLordKeeperCharDB = { status = status }        -- the client writes this file, so it can be inspected from disk
 end
 
+-- fixes for other addons (Fixes.lua): applied when that addon's files have loaded
+local function applyFixes(addon)
+    for _, fix in ipairs(DearLordKeeper_Fixes or {}) do
+        if fix.addon == addon and not fix.done then
+            fix.done = true
+            local ok, why = pcall(fix.apply, say)
+            if not ok then status.errors[#status.errors + 1] = "fix " .. fix.name .. ": " .. tostring(why)
+            elseif why then status.fixesSkipped[#status.fixesSkipped + 1] = fix.name .. " (" .. tostring(why) .. ")"
+            else status.fixes[#status.fixes + 1] = fix.name end
+        end
+    end
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGOUT")
 f:SetScript("OnEvent", function(_, event, name)
     if event == "ADDON_LOADED" then
-        if name ~= ADDON then return end
-        f:UnregisterEvent("ADDON_LOADED")
-        local ok, err = pcall(restore)
-        if not ok then status.errors[#status.errors + 1] = "restore: " .. tostring(err) end
+        if name == ADDON then
+            local ok, err = pcall(restore)
+            if not ok then status.errors[#status.errors + 1] = "restore: " .. tostring(err) end
+        end
+        applyFixes(name)
     else
         local ok, err = pcall(snapshot)
         if not ok then DearLordKeeperCharDB = { status = status, error = tostring(err) } end
@@ -166,6 +180,8 @@ SlashCmdList["DEARLORDKEEPER"] = function()
     for _ in pairs(declared.perchar or {}) do nDeclared = nDeclared + 1 end
     say(string.format("v%s, watching %d saved variables of your addons", VERSION, nDeclared))
     say(string.format("handed back at this login: %d from memory (reload copy), %d addons from the disk copy", #status.fromMemory, #status.fromDisk))
+    if #status.fixes > 0 then say("fixes applied: " .. table.concat(status.fixes, "; ")) end
+    if #status.fixesSkipped > 0 then say("fixes not applied: " .. table.concat(status.fixesSkipped, "; ")) end
     if #status.errors > 0 then say("problems: " .. table.concat(status.errors, ", ")) end
     if #status.skipped > 0 then say("too large for the reload copy (still covered after a game restart): " .. table.concat(status.skipped, ", ")) end
 end
