@@ -102,7 +102,7 @@ function GetMoney() return world.money end
 function UnitIsAFK() return world.afk end
 function UnitAffectingCombat() return world.combat end
 function InCombatLockdown() return world.combat end
-function UnitExists(u) return u == "pet" and world.pet ~= nil end
+function UnitExists(u) return (u == "pet" and world.pet ~= nil) or (u == "npc" and world.npc == true) end
 function UnitHealth(u) if u == "player" then return hide(world.hp) end return secret() end
 function UnitHealthMax() return world.hpMax end
 function UnitPower() return hide(world.mana) end
@@ -135,10 +135,14 @@ GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
 -- the addon's own auction price database, as the Keeper hands it back: a scan from two days ago
 local AH_DAY = math.floor((wall - 1577836800) / 86400)
 DearLordAuctionDB = { version = 1, realms = { ["ClassicBetaPvE2-Horde"] = { scanned = wall - 2 * 86400, day = AH_DAY - 2, count = 3, auctions = 9,
-    items = { [783] = { p = 250, n = 19, d = AH_DAY - 2, h = (AH_DAY - 2) .. ":250" }, [2140] = { p = 200, n = 1, d = AH_DAY - 2 }, [2770] = { p = 30, n = 40, d = AH_DAY - 2 } } } } }
+    items = { [783] = { p = 250, n = 19, d = AH_DAY - 2, h = (AH_DAY - 2) .. ":250" }, [2140] = { p = 200, n = 1, d = AH_DAY - 2 }, [2770] = { p = 30, n = 40, d = AH_DAY - 2 } } },
+    ["ClassicBetaPvE2-Alliance"] = { scanned = wall - 86400, day = AH_DAY - 1, count = 1, items = { [783] = { p = 300, n = 7, d = AH_DAY - 1 } } } } }
 function GetNormalizedRealmName() return "ClassicBetaPvE2" end
 function GetRealmName() return "Classic Beta PvE 2" end
-function UnitFactionGroup() return "Horde", "Horde" end
+function UnitFactionGroup(u) if u == "npc" then return world.npcFaction end return "Horde", "Horde" end
+function IsAltKeyDown() return world.alt end
+function IsShiftKeyDown() return false end
+function IsControlKeyDown() return false end
 function hooksecurefunc(obj, name, fn) local orig = obj[name]; obj[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end end
 -- the modern auction house: a replicated list of every auction (itemID, count, buyout), 0-based
 local REPLICATE = { { 783, 2, 500 }, { 783, 1, 400 }, { 2140, 1, 200 }, { 2770, 20, 600 }, { 2770, 5, 0 }, { 2835, 10, 30 } }
@@ -413,6 +417,8 @@ if MODE ~= "bare" then
     GameTooltip.forbidden = true; hook(GameTooltip, { id = 783, dataInstanceID = 13 }); local tipForbidden = #GameTooltip.lines; GameTooltip.forbidden = false
     ns.db.ahTooltip = false; hook(GameTooltip, { id = 783, dataInstanceID = 14 }); tipOff = #GameTooltip.lines; ns.db.ahTooltip = true
     GameTooltip:SetBagItem(0, 2); hook(GameTooltip, { id = 783, dataInstanceID = 15 }); tipStack = { unpack(GameTooltip.lines) }
+    world.alt = true; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 16 }); scanResult.tipAlt = { unpack(GameTooltip.lines) }; world.alt = false
+    fire("MODIFIER_STATE_CHANGED", "LALT", 1)
     scanResult.unknownAndForbidden = tipUnknown == 0 and tipForbidden == 0
     fire("AUCTION_HOUSE_SHOW"); advance(3)                       -- the server answers a moment later
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
@@ -424,6 +430,12 @@ if MODE ~= "bare" then
     printed = {}; SlashCmdList["DEARLORDSTATS"]("scan"); scanResult.throttleMsg = printed[1] or ""
     SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2); scanResult.requestsAfterForce = C_AuctionHouse.requests
     fire("AUCTION_HOUSE_CLOSED")
+    -- a goblin auction house: neutral, shared by both factions, scanned into its own key
+    world.npc, world.npcFaction = true, nil
+    fire("AUCTION_HOUSE_SHOW"); SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    scanResult.neutral = DearLordAuctionDB.realms["ClassicBetaPvE2-Neutral"]
+    GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
+    fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
 end
 
 -- every tab and scope of the report, plus menu, tooltips, clicks
@@ -547,12 +559,15 @@ if MODE ~= "bare" then
     check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
+    check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[2]) .. ")", #scanResult.tipAlt == 2 and scanResult.tipAlt[2] == "Alliance AH  3s 0c | 7 seen  ·  yesterday")
+    check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
+        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 2 and scanResult.tipNeutral[2] == "Neutral AH  3c | 10 seen  ·  today")
 else
     check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
 end
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
-check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 20 and settingsChanged)
+check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 22 and settingsChanged)
 check("settings reset restores defaults", afterReset)
 check("report resize remembered (760x620) and rows re-flowed to the new width", resized and resized.w == 760 and resized.h == 620)
 check("double-click fits the height to the content (" .. tostring(fitted and fitted.h) .. ")", fitted and fitted.h ~= 620 and fitted.h >= 260)

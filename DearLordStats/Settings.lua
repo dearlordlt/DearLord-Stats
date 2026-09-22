@@ -32,6 +32,8 @@ local CONTROLS = {
     { header = "Auction house" },
     { type = "check", key = "ahTooltip", label = "Auction price in item tooltips" },
     { type = "check", key = "ahAutoScan", label = "Scan prices when the auction house opens" },
+    { type = "check", key = "ahTooltipNeutral", label = "Also the goblin (neutral) auction house price, when scanned" },
+    { type = "choice", key = "ahCompare", label = "Other faction's price while holding", options = function() return ns.AH_MODIFIERS end },
 
     { header = "This report" },
     { type = "slider", key = "panelAlpha", label = "Background opacity", min = 0.5, max = 1, step = 0.02, percent = true },

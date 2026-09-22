@@ -497,7 +497,7 @@ function render.loot()
     if st and st.api then
         H("Auction prices")
         for _, r in ipairs(st.realms) do
-            KV(L .. r.faction .. (r.mine and "" or "  ·  other faction") .. "|r",
+            KV(L .. r.faction .. (r.open and "  ·  open" or (r.mine and "" or (r.faction == "Neutral" and "  ·  goblins, both factions" or "  ·  other faction"))) .. "|r",
                 r.count > 0 and (W .. r.count .. " items|r  " .. L .. "scanned " .. ago(r.scanned) .. "|r") or (L .. "not scanned yet|r"))
         end
         if #st.realms == 0 or (st.faction and not (function() for _, r in ipairs(st.realms) do if r.mine then return true end end end)()) then

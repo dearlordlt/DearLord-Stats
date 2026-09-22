@@ -16,8 +16,12 @@ local DAY0 = 1577836800                                      -- 2020-01-01: day 
 local CHUNK, HISTORY_MAX, HISTORY_DAYS, KEEP_DAYS, THROTTLE = 500, 8, 28, 60, 900
 
 local ahOpen = false
+local ahKey                                                  -- database key of the auction house that is open
 local scan = { state = "idle" }
 local key                                                    -- "Realm-Faction" of this character
+
+ns.AH_MODIFIERS = { { key = "alt", name = "Alt" }, { key = "shift", name = "Shift" }, { key = "ctrl", name = "Ctrl" },
+    { key = "always", name = "Always" }, { key = "never", name = "Never" } }
 
 local function db() return DearLordAuctionDB end
 local function diag()
@@ -39,11 +43,33 @@ function ns.AuctionKey()
     return key
 end
 
-local function realmData(create)
-    local d, k = db(), ns.AuctionKey()
+function ns.AuctionRealmName() local k = ns.AuctionKey(); return k and k:match("^(.-)%-") end
+function ns.AuctionOtherKey()                                -- the other faction's auction house on this realm
+    local k = ns.AuctionKey()
+    if not k then return nil end
+    local realm, faction = k:match("^(.-)%-(%a+)$")
+    return realm and (realm .. "-" .. (faction == "Horde" and "Alliance" or "Horde"))
+end
+function ns.AuctionNeutralKey() local r = ns.AuctionRealmName(); return r and (r .. "-Neutral") end
+
+local function realmData(create, k)
+    local d = db(); k = k or ns.AuctionKey()
     if not (d and k) then return nil end
     if not d.realms[k] and create then d.realms[k] = { items = {}, count = 0 } end
     return d.realms[k]
+end
+
+-- a goblin auctioneer belongs to no faction; the window then talks to the neutral auction house
+local NEUTRAL_ZONES = { ["Booty Bay"] = true, ["Gadgetzan"] = true, ["Everlook"] = true }
+local function openKey()
+    if UnitExists and UnitExists("npc") and UnitFactionGroup then
+        local f = S(UnitFactionGroup("npc"))
+        if f == nil or f == "Neutral" then return ns.AuctionNeutralKey() end
+        return ns.AuctionKey()
+    end
+    local sub = GetSubZoneText and S(GetSubZoneText())
+    if sub and NEUTRAL_ZONES[sub] then return ns.AuctionNeutralKey() end
+    return ns.AuctionKey()
 end
 
 ns.On("ADDON_LOADED", function(name)
@@ -63,8 +89,8 @@ function ns.HasAuctionPrices()
 end
 
 -- price per unit in copper, age in days, units seen at that scan
-function ns.AuctionPriceByID(id)
-    local r = id and realmData()
+function ns.AuctionPriceByID(id, k)
+    local r = id and realmData(false, k)
     local e = r and r.items[id]
     if not e or not e.p or e.p <= 0 then return nil end
     return e.p, math.max(0, ns.AuctionDay() - (e.d or ns.AuctionDay())), e.n or 0
@@ -102,7 +128,7 @@ local function pushHistory(e, today, price)
 end
 
 local function commit()
-    local r = realmData(true)
+    local r = realmData(true, scan.key)
     if not r then abort("no realm or faction known"); return end
     local today, items, n = ns.AuctionDay(), r.items, 0
     for id, a in pairs(scan.agg) do
@@ -173,7 +199,7 @@ end, "ah:replicate")
 local function start()
     local d = db(); if not d then return end
     d.lastRequest = time()                                    -- the throttle is spent whether or not the answer comes
-    scan = { state = "requested", requestedAt = time() }
+    scan = { state = "requested", requestedAt = time(), key = ahKey or ns.AuctionKey() }
     local ok, err = pcall(C_AuctionHouse.ReplicateItems)
     if not ok then diag().error = tostring(err); abort("refused: " .. tostring(err)); return end
     ns.After(30, function() if scan.state == "requested" then abort("no answer from the server in 30 s") end end, "ah:timeout")
@@ -203,26 +229,27 @@ function ns.AuctionStatus()
     local wait = THROTTLE - (time() - ((d and d.lastRequest) or 0))
     local realms = {}
     local mine = ns.AuctionKey()
-    local realmName = mine and mine:match("^(.-)%-")
+    local realmName = ns.AuctionRealmName()
     if d and realmName then
         for k, r in pairs(d.realms) do
             local realm, faction = k:match("^(.-)%-(%a+)$")
-            if realm == realmName then realms[#realms + 1] = { key = k, faction = faction, count = r.count or 0, scanned = r.scanned, mine = k == mine } end
+            if realm == realmName then realms[#realms + 1] = { key = k, faction = faction, count = r.count or 0, scanned = r.scanned, mine = k == mine, open = k == ahKey } end
         end
         table.sort(realms, function(a, b) return a.faction < b.faction end)
     end
-    return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(),
+    return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(), openKey = ahKey,
         nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$") }
 end
 
 ns.On("AUCTION_HOUSE_SHOW", function()
     ahOpen = true
+    ahKey = openKey()
     diag().api = diag().api or { replicate = api() and "yes" or "no", ready = type(C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady) == "function" and "yes" or "no" }
     if ns.db and ns.db.ahAutoScan then ns.After(1, function() ns.AuctionScan() end, "ah:auto") end
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:show")
 ns.On("AUCTION_HOUSE_CLOSED", function()
-    ahOpen = false
+    ahOpen = false; ahKey = nil
     if scan.state == "requested" then abort("auction house closed before the list arrived") end
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:closed")
@@ -235,17 +262,55 @@ end, "ah:error")
 ----------------------------------------------------------------------
 -- tooltip line: "AH  9s 31c            19 seen · 2 days ago", plus the stack total when hovering a stack
 ----------------------------------------------------------------------
+local function modifierHeld()
+    local m = ns.db and ns.db.ahCompare or "alt"
+    if m == "always" then return true elseif m == "never" then return false end
+    if m == "alt" then return IsAltKeyDown and B(IsAltKeyDown()) or false end
+    if m == "shift" then return IsShiftKeyDown and B(IsShiftKeyDown()) or false end
+    if m == "ctrl" then return IsControlKeyDown and B(IsControlKeyDown()) or false end
+    return false
+end
+
 local function addLines(tooltip, id)
     if not (ns.db and ns.db.ahTooltip) then return end
+    local any = false
     local price, age, seen = ns.AuctionPriceByID(id)
-    if not price then return end
-    tooltip:AddDoubleLine(ns.LABEL .. "AH|r  " .. ns.money(price), ns.LABEL .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r")
-    local stack = tooltip.dlsAhStack
-    if stack and stack.id == id and (stack.count or 1) > 1 then
-        tooltip:AddDoubleLine(ns.LABEL .. "×" .. stack.count .. "|r", ns.money(price * stack.count))
+    if price then
+        any = true
+        tooltip:AddDoubleLine(ns.LABEL .. "AH|r  " .. ns.money(price), ns.LABEL .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r")
+        local stack = tooltip.dlsAhStack
+        if stack and stack.id == id and (stack.count or 1) > 1 then
+            tooltip:AddDoubleLine(ns.LABEL .. "×" .. stack.count .. "|r", ns.money(price * stack.count))
+        end
     end
-    tooltip:Show()
+    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
+        local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
+        if np then
+            any = true
+            tooltip:AddDoubleLine(ns.LABEL .. "Neutral AH|r  " .. ns.money(np), ns.LABEL .. nseen .. " seen  ·  " .. ns.AuctionAgeText(nage) .. "|r")
+        end
+    end
+    if modifierHeld() then
+        local ok = ns.AuctionOtherKey()
+        local op, oage, oseen = ns.AuctionPriceByID(id, ok)
+        if op then
+            any = true
+            tooltip:AddDoubleLine(ns.LABEL .. (ok:match("%-(%a+)$") or "Other") .. " AH|r  " .. ns.money(op), ns.LABEL .. oseen .. " seen  ·  " .. ns.AuctionAgeText(oage) .. "|r")
+        end
+    end
+    tooltip.dlsAhShown = any and id or nil
+    if any then tooltip:Show() end
 end
+
+-- pressing the modifier while hovering: redraw the tooltip so the comparison line appears at once
+ns.On("MODIFIER_STATE_CHANGED", function()
+    local m = ns.db and ns.db.ahCompare
+    if not m or m == "always" or m == "never" then return end
+    if not (GameTooltip and GameTooltip.IsShown and GameTooltip:IsShown() and GameTooltip.dlsAhShown) then return end
+    local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
+    local enter = owner and owner.GetScript and owner:GetScript("OnEnter")
+    if enter then GameTooltip.dlsAhInstance = nil; pcall(enter, owner) end
+end, "ah:modifier")
 
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item ~= nil then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
