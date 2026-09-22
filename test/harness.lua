@@ -125,6 +125,11 @@ C_Spell = {
 local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
     [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 } }
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
+-- Auctionator's public API: last scanned buyout per item (copper) and the scan age in days
+local AH = { [783] = 250, [2140] = 200, [2770] = 30 }
+Auctionator = { API = { v1 = {
+    GetAuctionPriceByItemLink = function(caller, link) assert(caller == "DearLordStats"); return AH[tonumber(link:match("Hitem:(%d+)"))] end,
+    GetAuctionAgeByItemLink = function(caller, link) return AH[tonumber(link:match("Hitem:(%d+)"))] and 2 or nil end } } }
 function GetCursorPosition() return 380, 200 end
 C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
     GetContainerItemInfo = function(bag, slot)
@@ -229,6 +234,7 @@ local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
     C_DamageMeter, C_TradeSkillUI, C_SpellBook, GetProfessions, GetProfessionInfo, MenuUtil = nil, nil, nil, nil, nil, nil
     GetActionInfo, GetNumTrainerServices, C_Item, issecretvalue_real = nil, nil, nil, issecretvalue
+    Auctionator = nil
     UnitHealth = function() return secret() end
     UnitPower = function() return secret() end
     C_Spell.GetSpellCooldown = nil
@@ -375,6 +381,7 @@ fire("CHAT_MSG_LOOT", "You receive item: |cnIQ1:|Hitem:783::|h[Light Hide]|h|r."
 fire("CHAT_MSG_MONEY", "You loot 3 Silver, 20 Copper"); fire("CHAT_MSG_MONEY", "You loot 1 Gold, 5 Copper")
 advance(130)
 local lootBefore = ns.session.loot
+local lootView = ns.LootView()
 
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
@@ -480,6 +487,17 @@ check("note saved", #ns.char.journal == 1)
 check("loot: 9 items incl. the mined ore, vendor value 47s 24c, junk 12c, quest reward ignored", lootBefore and lootBefore.items == 9 and lootBefore.vendor == 12 + 150 + 350 + 4200 + 10 + 2 and lootBefore.junk == 12)
 check("loot: coin 3s20c + 1g5c = 10325", lootBefore.coin == 10325)
 check("loot: one green and one blue recorded as notable drops", #lootBefore.drops == 2 and lootBefore.byQ[3].n == 1)
+if MODE ~= "bare" then
+    -- Light Hide 3 x (237 net vs 50 vendor) = +561, Copper Ore 2 x (28 vs 5) = +46, Carving Knife 190 net < 350 vendor, Blade unpriced
+    check("loot: auction view prefers the AH for hides and ore, the vendor for the knife, gain 607",
+        lootView and lootView.hasAH and lootView.ahGain == 607 and lootView.priced == 3 and lootView.unpriced == 2 and lootView.ahAge == 2
+        and lootView.stacks[1].name == "Blade of the Test" and lootView.stacks[2].name == "Light Hide" and lootView.stacks[2].sellAt == "ah"
+        and lootView.stacks[3].sellAt == "vendor")
+    local forAH, gain = ns.BagsForAuction()
+    check("bags: the Light Hide stack is worth +3s74c on the AH", forAH and #forAH == 1 and gain == 374 and forAH[1].name == "Light Hide")
+else
+    check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
+end
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
 check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 18 and settingsChanged)

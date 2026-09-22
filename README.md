@@ -42,7 +42,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   gathering by zone, nodes your skill was too low for.
 - **Loot**: looted coin, vendor value of everything looted (and how much of it is junk), per hour, drops
   by quality, notable drops with item tooltips, the most valuable stacks, junk sitting in your bags right
-  now, and one-line summaries of previous sessions. Has its own reset.
+  now, and one-line summaries of previous sessions. Has its own reset. With
+  [Auctionator](https://www.curseforge.com/wow/addons/auctionator) installed and a scan done, each stack
+  also shows its auction value after the 5% cut, marked for the vendor or the auction house whichever
+  pays more, plus what is in your bags right now that is worth listing.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
@@ -87,7 +90,10 @@ tools/install-watcher.sh       # optional: re-run the sync automatically wheneve
 
 Start the game (a full start, since these are new addon folders). `/keeper` shows what was handed
 back. The sync script keeps rolling snapshots of your saved files in
-`~/.local/share/wow-keeper/history/` in case a bad session ever saves defaults over good data.
+`~/.local/share/wow-keeper/history/` in case a bad session ever saves defaults over good data. It warns
+when a saved file shrank to a fraction of its size since the newest snapshot, and with the game closed
+`wow-keeper-sync --restore <snapshot> <Addon>` puts the shrunken variables back while keeping the
+newer ones (`--snapshots` lists what there is).
 
 On Windows the in-memory layer works as is (settings survive `/reload`); the restart layer needs the
 sync script run by hand or a port of the watcher.

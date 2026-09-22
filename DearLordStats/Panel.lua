@@ -429,6 +429,17 @@ function render.loot()
         KV(L .. "Vendor value of looted items|r", W .. ns.money(loot.vendor) .. "|r" .. (loot.junk > 0 and ("  " .. L .. "of which junk " .. ns.strip(ns.money(loot.junk)) .. "|r") or ""),
             { tip = "What a vendor would pay for everything you looted, whether or not you kept it." })
         KV(L .. "Items looted|r", W .. loot.items .. "|r")
+        if view.hasAH then
+            if view.priced > 0 then
+                local age = view.ahAge and (view.ahAge >= 1 and string.format(", from a scan %d day%s old", view.ahAge, view.ahAge == 1 and "" or "s") or ", from today's scan") or ""
+                KV(L .. "Worth with the auction house|r", W .. ns.money(view.bestValue) .. "|r" ..
+                    (view.ahGain > 0 and ("  " .. ns.GREEN .. "+" .. ns.strip(ns.money(view.ahGain)) .. " over vendoring|r") or ""),
+                    { tip = "Every stack counted at whichever pays more: the vendor, or the last scanned auction buyout minus the 5% cut. Deposits are not counted"
+                        .. age .. "." .. (view.unpriced > 0 and (" " .. view.unpriced .. (view.unpriced == 1 and " item has" or " items have") .. " no scanned price and count as vendor value.") or "") })
+            elseif loot.items > 0 then
+                KV(L .. "Auction prices|r", L .. "none scanned yet|r", { tip = "Open the auction house and run a full scan in Auctionator. Prices then show up here." })
+            end
+        end
         KV(L .. "Coin and vendor value per hour|r", view.perHour and (W .. ns.money(view.perHour) .. "|r") or (L .. "-|r"))
         KV(ns.BLUE .. "Reset the loot session|r", L .. "click|r", { onClick = function() ns.ResetLoot(); renderNow() end,
             tip = "Files this session under Previous sessions and starts counting again. XP and combat are not touched." })
@@ -451,18 +462,35 @@ function render.loot()
         end
 
         if #view.stacks > 0 then
-            H("Most valuable to a vendor")
+            H(view.hasAH and view.priced > 0 and "Most valuable" or "Most valuable to a vendor")
             for i = 1, math.min(8, #view.stacks) do
                 local e = view.stacks[i]
-                KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", W .. ns.money(e.value) .. "|r", { link = e.link })
+                local right = W .. ns.money(e.value) .. "|r"
+                if e.net then
+                    right = (e.sellAt == "ah" and (L .. "vendor " .. ns.strip(ns.money(e.value)) .. "  ·  |r" .. ns.GREEN .. "AH " .. ns.strip(ns.money(e.net)) .. "|r")
+                        or (W .. "vendor " .. ns.strip(ns.money(e.value)) .. "|r" .. L .. "  ·  AH " .. ns.strip(ns.money(e.net)) .. "|r"))
+                end
+                KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", right, { link = e.link,
+                    tip = e.net and (e.sellAt == "ah" and "Worth more on the auction house (buyout minus the 5% cut)." or "A vendor pays more than the last scanned auction price. Sell it to a vendor.") or nil })
             end
         end
     end
 
     local junk, stacks = ns.JunkInBags()
-    if junk then
+    local forAH, ahGain = ns.BagsForAuction()
+    if junk or forAH then
         H("In your bags right now")
-        KV(L .. "Junk a vendor will buy|r", junk > 0 and (W .. ns.money(junk) .. "|r  " .. L .. stacks .. (stacks == 1 and " stack|r" or " stacks|r")) or (L .. "none|r"))
+        if junk then
+            KV(L .. "Junk a vendor will buy|r", junk > 0 and (W .. ns.money(junk) .. "|r  " .. L .. stacks .. (stacks == 1 and " stack|r" or " stacks|r")) or (L .. "none|r"))
+        end
+        if forAH then
+            KV(L .. "Worth listing on the auction house|r", #forAH > 0 and (ns.GREEN .. "+" .. ns.strip(ns.money(ahGain)) .. "|r  " .. L .. #forAH .. (#forAH == 1 and " stack|r" or " stacks|r")) or (L .. "nothing|r"),
+                { tip = "Stacks that earn at least 50c more on the auction house than at a vendor, after the 5% cut." })
+            for i = 1, math.min(6, #forAH) do
+                local e = forAH[i]
+                KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", ns.GREEN .. "+" .. ns.strip(ns.money(e.gain)) .. "|r" .. L .. "  ·  AH " .. ns.strip(ns.money(e.net)) .. "|r", { link = e.link, indent = 12 })
+            end
+        end
     end
 
     local history = ns.db.lootHistory or {}

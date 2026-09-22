@@ -7,6 +7,8 @@ turns what is on disk into addon CODE, which the client does load:
   Restore.lua   the saved files themselves, wrapped as functions the Keeper runs at login
 Run it any time; it is also triggered automatically whenever the game writes its saved files.
 Usage: wow-keeper-sync [--out DIR] [--quiet]
+       wow-keeper-sync --restore SNAPSHOT ADDON    put an addon's shrunken variables back from a snapshot
+       wow-keeper-sync --snapshots                 list the snapshots (newest last)
 """
 import os, re, subprocess, sys, tempfile, time
 
@@ -103,11 +105,76 @@ def write_if_changed(name, text, stamp_line=None):
     os.replace(tmp, path)                     # atomic: the game sees the old or the new file, never half of one
     return True
 
+HISTORY = os.path.expanduser("~/.local/share/wow-keeper/history")
+
+def blocks(text):
+    """A saved file as {variable: its whole 'NAME = {...}' text}, in file order."""
+    out, cur, name = {}, [], None
+    for line in text.splitlines(keepends=True):
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*) = ", line)
+        if m:
+            if name: out[name] = "".join(cur)
+            name, cur = m.group(1), [line]
+        else: cur.append(line)
+    if name: out[name] = "".join(cur)
+    return out
+
+def read(path): return open(path, encoding="utf-8", errors="surrogateescape").read()
+def write(path, text): open(path, "w", encoding="utf-8", errors="surrogateescape").write(text)
+
+def shrink_check():
+    """A saved file that is suddenly a fraction of its size in the newest snapshot means a session
+    started from defaults and overwrote good data (the reason the snapshots exist). Say so loudly."""
+    if not os.path.isdir(HISTORY): return
+    snaps = sorted(os.listdir(HISTORY))
+    if not snaps: return
+    newest = os.path.join(HISTORY, snaps[-1])
+    for base, _, files in os.walk(newest):
+        for f in files:
+            if not f.endswith(".lua"): continue
+            old_path = os.path.join(base, f)
+            live_path = os.path.join(WTF, os.path.relpath(old_path, newest))
+            if not os.path.isfile(live_path): continue
+            old_size, new_size = os.path.getsize(old_path), os.path.getsize(live_path)
+            if old_size >= 4096 and new_size < old_size * 0.2:
+                print(f"WARNING: {os.path.relpath(live_path, WTF)} shrank from {old_size} to {new_size} bytes since snapshot {snaps[-1]}.\n"
+                      f"         If that was not you resetting the addon, get the data back (game closed):\n"
+                      f"         wow-keeper-sync --restore {snaps[-1]} {f[:-4]}")
+
+def game_running():
+    try: return "WowB.exe" in subprocess.run(["ps", "-eo", "comm"], capture_output=True, text=True).stdout.split()
+    except OSError: return False
+
+def restore(stamp, addon):
+    """Replace, in the live saved files of ADDON, every variable whose text is under 20% of its size
+    in the snapshot. Newer variables that did not shrink (settings, for example) are kept."""
+    if game_running(): sys.exit("The game is running. Close it first: it would overwrite the restored file at logout.")
+    snap = os.path.join(HISTORY, stamp)
+    if not os.path.isdir(snap): sys.exit(f"No snapshot {stamp}. See: wow-keeper-sync --snapshots")
+    done = 0
+    for base, _, files in os.walk(snap):
+        if addon + ".lua" not in files: continue
+        old_path = os.path.join(base, addon + ".lua")
+        live_path = os.path.join(WTF, os.path.relpath(old_path, snap))
+        if not os.path.isfile(live_path): print(f"  {live_path}: no live file, skipped"); continue
+        live_text = read(live_path); live_b, snap_b = blocks(live_text), blocks(read(old_path))
+        for var, old_block in snap_b.items():
+            cur = live_b.get(var)
+            if cur is None or len(cur) < len(old_block) * 0.2:
+                live_text = live_text.replace(cur, old_block, 1) if cur is not None else live_text + old_block
+                print(f"  {var}: {len(cur) if cur else 0} -> {len(old_block)} bytes"); done += 1
+        if done:
+            backup = live_path + time.strftime(".bak-%Y%m%d-%H%M")
+            os.replace(live_path, backup); write(live_path, live_text)
+            if not lua_ok(live_path): os.replace(backup, live_path); sys.exit("  restored file is not valid Lua, put the original back")
+            print(f"  wrote {os.path.relpath(live_path, WTF)} (original kept as {os.path.basename(backup)})")
+    if not done: print(f"  nothing to restore: no variable of {addon} is smaller than in the snapshot")
+
 def history():
     """Rolling snapshots of the third-party saved files: insurance against a session that started
     from defaults and then overwrote good data. At most one snapshot per 15 minutes, 40 kept."""
     import shutil
-    root = os.path.expanduser("~/.local/share/wow-keeper/history")
+    root = HISTORY
     os.makedirs(root, exist_ok=True)
     existing = sorted(os.listdir(root))
     if existing and time.time() - os.path.getmtime(os.path.join(root, existing[-1])) < 900: return
@@ -124,16 +191,24 @@ def history():
 
 def main():
     if not os.path.isdir(out_dir): sys.exit(f"Keeper addon folder not found: {out_dir}")
+    if "--snapshots" in sys.argv:
+        for d in sorted(os.listdir(HISTORY)) if os.path.isdir(HISTORY) else []: print(d)
+        return
+    if "--restore" in sys.argv:
+        i = sys.argv.index("--restore")
+        if len(sys.argv) < i + 3: sys.exit("Usage: wow-keeper-sync --restore SNAPSHOT ADDON")
+        restore(sys.argv[i + 1], sys.argv[i + 2])
+    shrink_check()
     history()
     account, perchar = declared()
     lines = ["-- Generated by wow-keeper-sync from the addons' .toc files. Do not edit.", "DearLordKeeper_Declared = { account = {", ]
     lines += [f"  [{lua_str(v)}] = {lua_str(a)}," for v, a in sorted(account.items())]
     lines += ["}, perchar = {"] + [f"  [{lua_str(v)}] = {lua_str(a)}," for v, a in sorted(perchar.items())] + ["} }", ""]
     changed_d = write_if_changed("Declared.lua", "\n".join(lines))
-    restore, count = build_restore()
-    if restore is None: restore, count = "DearLordKeeper_Restore = { account = {}, perchar = {} }\n", 0
-    restore = restore.replace("local R = { account = {}, perchar = {} }", "local R = { account = {}, perchar = {} }\nR.generated = %d" % int(time.time()), 1)
-    changed_r = write_if_changed("Restore.lua", restore, stamp_line=True)
+    text, count = build_restore()
+    if text is None: text, count = "DearLordKeeper_Restore = { account = {}, perchar = {} }\n", 0
+    text = text.replace("local R = { account = {}, perchar = {} }", "local R = { account = {}, perchar = {} }\nR.generated = %d" % int(time.time()), 1)
+    changed_r = write_if_changed("Restore.lua", text, stamp_line=True)
     log(f"declared: {len(account)} account-wide + {len(perchar)} per-character variables; restore: {count} saved files"
         f"{'' if (changed_d or changed_r) else ' (nothing changed)'}")
 

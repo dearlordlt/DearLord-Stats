@@ -29,6 +29,29 @@ local function amountPattern(global, fallback)
 end
 local GOLD, SILVER, COPPER = amountPattern("GOLD_AMOUNT", "%d Gold"), amountPattern("SILVER_AMOUNT", "%d Silver"), amountPattern("COPPER_AMOUNT", "%d Copper")
 
+-- auction prices come from Auctionator's public API when it is installed and has scanned the AH.
+-- "net" is what a sale is worth after the auction house's 5% cut; the deposit is ignored.
+ns.AH_CUT = 0.05
+local function ahApi()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and type(api.GetAuctionPriceByItemLink) == "function" and api or nil
+end
+function ns.HasAuctionPrices() return ahApi() ~= nil end
+function ns.AuctionPrice(link)
+    local api = ahApi()
+    if not (api and link) then return nil end
+    local ok, price = pcall(api.GetAuctionPriceByItemLink, ADDON, link)
+    price = ok and N(price) or nil
+    if not price or price <= 0 then return nil end
+    local age
+    if type(api.GetAuctionAgeByItemLink) == "function" then
+        local ok2, a = pcall(api.GetAuctionAgeByItemLink, ADDON, link)
+        age = ok2 and N(a) or nil
+    end
+    return price, age
+end
+function ns.AuctionNet(price, count) return math.floor(price * (1 - ns.AH_CUT)) * (count or 1) end
+
 local function lootOf(session, fresh)
     session.loot = session.loot or { coin = 0, vendor = 0, junk = 0, items = 0, byQ = {}, list = {}, drops = {},
         started = fresh and time() or session.start or time() }
@@ -66,6 +89,9 @@ local function record(link, count, attempt)
     local key = id or name
     local entry = loot.list[key] or { name = name, link = link, q = quality, n = 0, value = 0 }
     entry.n, entry.value = entry.n + count, entry.value + value
+    entry.price = price
+    local ah, age = ns.AuctionPrice(link)
+    if ah then entry.ah, entry.ahAge = ah, age end
     loot.list[key] = entry
     loot.charKey = ns.charKey
     if quality >= 2 then
@@ -148,9 +174,53 @@ end
 function ns.LootView()
     local loot = ns.session and ns.session.loot
     if not loot then return nil end
-    local stacks = {}
-    for _, e in pairs(loot.list) do if e.value > 0 then stacks[#stacks + 1] = e end end
-    table.sort(stacks, function(a, b) return a.value > b.value end)
+    local hasAH = ns.HasAuctionPrices()
+    local stacks, best, priced, unpriced, maxAge = {}, 0, 0, 0, nil
+    for _, e in pairs(loot.list) do
+        if hasAH and not e.ah and e.link then                                      -- a scan may have happened since
+            local ah, age = ns.AuctionPrice(e.link)
+            if ah then e.ah, e.ahAge = ah, age end
+        end
+        e.net = e.ah and ns.AuctionNet(e.ah, e.n) or nil
+        e.best = math.max(e.value, e.net or 0)
+        e.sellAt = e.net and (e.net > e.value and "ah" or "vendor") or nil
+        best = best + e.best
+        if e.q >= 1 then
+            if e.ah then priced = priced + 1; if e.ahAge and (not maxAge or e.ahAge > maxAge) then maxAge = e.ahAge end
+            else unpriced = unpriced + 1 end
+        end
+        if e.best > 0 then stacks[#stacks + 1] = e end
+    end
+    table.sort(stacks, function(a, b) return a.best > b.best end)
     local elapsed = math.max(1, time() - (loot.started or ns.session.start))
-    return { loot = loot, stacks = stacks, perHour = elapsed >= 120 and (loot.coin + loot.vendor) / elapsed * 3600 or nil }
+    return { loot = loot, stacks = stacks, perHour = elapsed >= 120 and (loot.coin + loot.vendor) / elapsed * 3600 or nil,
+        hasAH = hasAH, bestValue = best, ahGain = best - loot.vendor, priced = priced, unpriced = unpriced, ahAge = maxAge }
+end
+
+-- what is in the bags that would earn more on the auction house than at a vendor
+function ns.BagsForAuction()
+    local CC = C_Container
+    if not (ns.HasAuctionPrices() and CC and CC.GetContainerNumSlots and CC.GetContainerItemInfo) then return nil end
+    local list, gain = {}, 0
+    for bag = 0, 4 do
+        local slots = N(CC.GetContainerNumSlots(bag)) or 0
+        for slot = 1, slots do
+            local info = T(CC.GetContainerItemInfo(bag, slot))
+            local link = info and S(info.hyperlink)
+            local q = info and N(info.quality)
+            if link and q and q >= 1 and not B(info.hasNoValue) then
+                local count = N(info.stackCount) or 1
+                local ah = ns.AuctionPrice(link)
+                local vendor = C_Item and C_Item.GetItemInfo and N((select(11, C_Item.GetItemInfo(link)))) or 0
+                local net = ah and ns.AuctionNet(ah, count)
+                if net and net - vendor * count >= 50 then                         -- not worth a trip for less than 50c
+                    local name = link:match("%[(.-)%]") or "?"
+                    list[#list + 1] = { name = name, link = link, q = q, n = count, vendor = vendor * count, net = net, gain = net - vendor * count }
+                    gain = gain + net - vendor * count
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.gain > b.gain end)
+    return list, gain
 end
