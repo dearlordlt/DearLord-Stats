@@ -68,7 +68,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | loot | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | loot | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -93,6 +93,13 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "settings" or cmd == "config" or cmd == "options" then ns.OpenPanel("settings")
         elseif cmd == "loot" then ns.OpenPanel("loot")
         elseif cmd == "resetloot" then ns.ResetLoot()
+        elseif cmd == "scan" then
+            local ok, why, wait = ns.AuctionScan(arg == "force")
+            if ok then ns.say("auction scan requested")
+            elseif why == "noapi" then ns.say("this client has no auction house scan API")
+            elseif why == "closed" then ns.say("open the auction house first")
+            elseif why == "busy" then ns.say("a scan is already running")
+            elseif why == "throttled" then ns.say("next scan possible in " .. ns.shortTime(wait) .. " (the game allows one every 15 minutes); /dls scan force to try anyway") end
         elseif cmd == "size" and tonumber(arg) then db.fontSize = math.min(24, math.max(9, math.floor(tonumber(arg)))); applyAndRefresh()
         elseif cmd == "scale" and tonumber(arg) then db.scale = math.min(3, math.max(0.5, tonumber(arg))); applyAndRefresh()
         elseif cmd == "alpha" and tonumber(arg) then db.alpha = math.min(1, math.max(0.2, tonumber(arg))); applyAndRefresh()

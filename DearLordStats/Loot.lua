@@ -29,29 +29,6 @@ local function amountPattern(global, fallback)
 end
 local GOLD, SILVER, COPPER = amountPattern("GOLD_AMOUNT", "%d Gold"), amountPattern("SILVER_AMOUNT", "%d Silver"), amountPattern("COPPER_AMOUNT", "%d Copper")
 
--- auction prices come from Auctionator's public API when it is installed and has scanned the AH.
--- "net" is what a sale is worth after the auction house's 5% cut; the deposit is ignored.
-ns.AH_CUT = 0.05
-local function ahApi()
-    local api = Auctionator and Auctionator.API and Auctionator.API.v1
-    return api and type(api.GetAuctionPriceByItemLink) == "function" and api or nil
-end
-function ns.HasAuctionPrices() return ahApi() ~= nil end
-function ns.AuctionPrice(link)
-    local api = ahApi()
-    if not (api and link) then return nil end
-    local ok, price = pcall(api.GetAuctionPriceByItemLink, ADDON, link)
-    price = ok and N(price) or nil
-    if not price or price <= 0 then return nil end
-    local age
-    if type(api.GetAuctionAgeByItemLink) == "function" then
-        local ok2, a = pcall(api.GetAuctionAgeByItemLink, ADDON, link)
-        age = ok2 and N(a) or nil
-    end
-    return price, age
-end
-function ns.AuctionNet(price, count) return math.floor(price * (1 - ns.AH_CUT)) * (count or 1) end
-
 local function lootOf(session, fresh)
     session.loot = session.loot or { coin = 0, vendor = 0, junk = 0, items = 0, byQ = {}, list = {}, drops = {},
         started = fresh and time() or session.start or time() }

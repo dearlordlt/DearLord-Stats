@@ -437,7 +437,7 @@ function render.loot()
                     { tip = "Every stack counted at whichever pays more: the vendor, or the last scanned auction buyout minus the 5% cut. Deposits are not counted"
                         .. age .. "." .. (view.unpriced > 0 and (" " .. view.unpriced .. (view.unpriced == 1 and " item has" or " items have") .. " no scanned price and count as vendor value.") or "") })
             elseif loot.items > 0 then
-                KV(L .. "Auction prices|r", L .. "none scanned yet|r", { tip = "Open the auction house and run a full scan in Auctionator. Prices then show up here." })
+                KV(L .. "Auction prices|r", L .. "none scanned yet|r", { tip = "Open the auction house: prices are scanned once every 15 minutes (the game's limit), or type /dls scan." })
             end
         end
         KV(L .. "Coin and vendor value per hour|r", view.perHour and (W .. ns.money(view.perHour) .. "|r") or (L .. "-|r"))
@@ -490,6 +490,25 @@ function render.loot()
                 local e = forAH[i]
                 KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", ns.GREEN .. "+" .. ns.strip(ns.money(e.gain)) .. "|r" .. L .. "  ·  AH " .. ns.strip(ns.money(e.net)) .. "|r", { link = e.link, indent = 12 })
             end
+        end
+    end
+
+    local st = ns.AuctionStatus and ns.AuctionStatus()
+    if st and st.api then
+        H("Auction prices")
+        for _, r in ipairs(st.realms) do
+            KV(L .. r.faction .. (r.mine and "" or "  ·  other faction") .. "|r",
+                r.count > 0 and (W .. r.count .. " items|r  " .. L .. "scanned " .. ago(r.scanned) .. "|r") or (L .. "not scanned yet|r"))
+        end
+        if #st.realms == 0 or (st.faction and not (function() for _, r in ipairs(st.realms) do if r.mine then return true end end end)()) then
+            KV(L .. (st.faction or "This faction") .. "|r", L .. "not scanned yet|r")
+        end
+        if st.state ~= "idle" then
+            KV(L .. "Scanning|r", W .. (st.state == "requested" and "waiting for the list" or (st.done .. " / " .. st.total)) .. "|r")
+        else
+            KV(ns.BLUE .. "Scan now|r", L .. (st.ahOpen and "click" or "open the auction house first") .. (st.nextIn > 0 and ("  ·  next in " .. ns.shortTime(st.nextIn)) or "") .. "|r",
+                { onClick = function() local ok, why, wait = ns.AuctionScan(); if not ok and why == "throttled" then ns.say("next scan possible in " .. ns.shortTime(wait)) elseif not ok and why == "closed" then ns.say("open the auction house first") end; renderNow() end,
+                  tip = "Reads every auction once (one scan per 15 minutes, the game's limit) and remembers the lowest buyout per item, per realm and faction. Prices show in item tooltips and on this tab." })
         end
     end
 

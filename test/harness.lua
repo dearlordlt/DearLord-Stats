@@ -70,6 +70,13 @@ GameTooltipTextLeft1 = widget("FontString"); GameTooltipTextLeft1.fontSet = true
 LowHealthFrame = widget("Frame", "LowHealthFrame"); LowHealthFrame.shown = false
 function GameTooltip:IsShown() return world.tooltip ~= nil end
 GameTooltipTextLeft1.GetText = function() return world.tooltip end
+GameTooltip.lines = {}; GameTooltip.forbidden = false
+local function plain(t) return (tostring(t):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+function GameTooltip:AddDoubleLine(l, r) self.lines[#self.lines + 1] = plain(l) .. " | " .. plain(r) end
+function GameTooltip:AddLine(l) self.lines[#self.lines + 1] = plain(l) end
+function GameTooltip:IsForbidden() return self.forbidden end
+function GameTooltip:SetBagItem(bag, slot) self.lines = {} end
+ItemRefTooltip = widget("GameTooltip", "ItemRefTooltip")
 SlashCmdList = {}
 function print(...) local t = {}; for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end; printed[#printed + 1] = table.concat(t, " ") end
 debugstack = function() return "" end
@@ -125,11 +132,24 @@ C_Spell = {
 local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
     [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 } }
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
--- Auctionator's public API: last scanned buyout per item (copper) and the scan age in days
-local AH = { [783] = 250, [2140] = 200, [2770] = 30 }
-Auctionator = { API = { v1 = {
-    GetAuctionPriceByItemLink = function(caller, link) assert(caller == "DearLordStats"); return AH[tonumber(link:match("Hitem:(%d+)"))] end,
-    GetAuctionAgeByItemLink = function(caller, link) return AH[tonumber(link:match("Hitem:(%d+)"))] and 2 or nil end } } }
+-- the addon's own auction price database, as the Keeper hands it back: a scan from two days ago
+local AH_DAY = math.floor((wall - 1577836800) / 86400)
+DearLordAuctionDB = { version = 1, realms = { ["ClassicBetaPvE2-Horde"] = { scanned = wall - 2 * 86400, day = AH_DAY - 2, count = 3, auctions = 9,
+    items = { [783] = { p = 250, n = 19, d = AH_DAY - 2, h = (AH_DAY - 2) .. ":250" }, [2140] = { p = 200, n = 1, d = AH_DAY - 2 }, [2770] = { p = 30, n = 40, d = AH_DAY - 2 } } } } }
+function GetNormalizedRealmName() return "ClassicBetaPvE2" end
+function GetRealmName() return "Classic Beta PvE 2" end
+function UnitFactionGroup() return "Horde", "Horde" end
+function hooksecurefunc(obj, name, fn) local orig = obj[name]; obj[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end end
+-- the modern auction house: a replicated list of every auction (itemID, count, buyout), 0-based
+local REPLICATE = { { 783, 2, 500 }, { 783, 1, 400 }, { 2140, 1, 200 }, { 2770, 20, 600 }, { 2770, 5, 0 }, { 2835, 10, 30 } }
+C_AuctionHouse = { requests = 0,
+    ReplicateItems = function() C_AuctionHouse.requests = C_AuctionHouse.requests + 1; world.replicated = true end,
+    GetNumReplicateItems = function() return world.replicated and #REPLICATE or 0 end,
+    GetReplicateItemInfo = function(i) local r = REPLICATE[i + 1]; if not r then return nil end
+        return "Thing", 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end,
+    GetReplicateItemLink = function(i) return REPLICATE[i + 1] and ("|Hitem:" .. REPLICATE[i + 1][1] .. "::|h[Thing]|h") end,
+    IsThrottledMessageSystemReady = function() return true end }
+TooltipDataProcessor = { calls = {}, AddTooltipPostCall = function(kind, fn) TooltipDataProcessor.calls[kind] = fn end }
 function GetCursorPosition() return 380, 200 end
 C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
     GetContainerItemInfo = function(bag, slot)
@@ -146,7 +166,7 @@ C_Item = { GetItemInfo = function(link)
 Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, DamageTaken = 7, Deaths = 9, EnemyDamageTaken = 10 },
     DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
     SpellBookItemType = { None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4 },
-    SpellBookSpellBank = { Player = 0, Pet = 1 } }
+    SpellBookSpellBank = { Player = 0, Pet = 1 }, TooltipDataType = { Item = 0, Unit = 2 } }
 
 -- built-in damage meter ------------------------------------------------------------
 local dmSessions = { { sessionID = 83, name = "Old Boar", durationSeconds = 20, dmg = 100, taken = 10, spells = { { 75, 100 } } } }
@@ -234,7 +254,7 @@ local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
     C_DamageMeter, C_TradeSkillUI, C_SpellBook, GetProfessions, GetProfessionInfo, MenuUtil = nil, nil, nil, nil, nil, nil
     GetActionInfo, GetNumTrainerServices, C_Item, issecretvalue_real = nil, nil, nil, issecretvalue
-    Auctionator = nil
+    C_AuctionHouse, TooltipDataProcessor, hooksecurefunc, GetNormalizedRealmName, DearLordAuctionDB = nil, nil, nil, nil, nil
     UnitHealth = function() return secret() end
     UnitPower = function() return secret() end
     C_Spell.GetSpellCooldown = nil
@@ -383,6 +403,29 @@ advance(130)
 local lootBefore = ns.session.loot
 local lootView = ns.LootView()
 
+-- auction prices: the tooltip line, then a scan while the auction house is open
+local tipLines, scanResult, tipStack, tipDup, tipOff = {}, {}, nil, nil, nil
+if MODE ~= "bare" then
+    local hook = TooltipDataProcessor.calls[0]
+    GameTooltip.lines = {}; hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipLines = { unpack(GameTooltip.lines) }
+    hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipDup = #GameTooltip.lines
+    GameTooltip.lines = {}; hook(GameTooltip, { id = 9999, dataInstanceID = 12 }); local tipUnknown = #GameTooltip.lines
+    GameTooltip.forbidden = true; hook(GameTooltip, { id = 783, dataInstanceID = 13 }); local tipForbidden = #GameTooltip.lines; GameTooltip.forbidden = false
+    ns.db.ahTooltip = false; hook(GameTooltip, { id = 783, dataInstanceID = 14 }); tipOff = #GameTooltip.lines; ns.db.ahTooltip = true
+    GameTooltip:SetBagItem(0, 2); hook(GameTooltip, { id = 783, dataInstanceID = 15 }); tipStack = { unpack(GameTooltip.lines) }
+    scanResult.unknownAndForbidden = tipUnknown == 0 and tipForbidden == 0
+    fire("AUCTION_HOUSE_SHOW"); advance(3)                       -- the server answers a moment later
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    scanResult.requests = C_AuctionHouse.requests
+    scanResult.stone = ns.AuctionPrice("|Hitem:2835::|h[Rough Stone]|h")
+    scanResult.realm = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"]
+    fire("AUCTION_HOUSE_CLOSED"); fire("AUCTION_HOUSE_SHOW"); advance(3)
+    scanResult.requestsAfterSecondOpen = C_AuctionHouse.requests
+    printed = {}; SlashCmdList["DEARLORDSTATS"]("scan"); scanResult.throttleMsg = printed[1] or ""
+    SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2); scanResult.requestsAfterForce = C_AuctionHouse.requests
+    fire("AUCTION_HOUSE_CLOSED")
+end
+
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
     local f = ns.huds[key]
@@ -495,12 +538,21 @@ if MODE ~= "bare" then
         and lootView.stacks[3].sellAt == "vendor")
     local forAH, gain = ns.BagsForAuction()
     check("bags: the Light Hide stack is worth +3s74c on the AH", forAH and #forAH == 1 and gain == 374 and forAH[1].name == "Light Hide")
+    check("tooltip: 'AH 2s 50c | 19 seen · 2 days ago' (" .. tostring(tipLines[1]) .. ")", #tipLines == 1 and tipLines[1] == "AH  2s 50c | 19 seen  ·  2 days ago")
+    check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 1 and scanResult.unknownAndForbidden and tipOff == 0)
+    check("tooltip: a stack of 2 from the bag adds '×2 | 5s 0c' (" .. tostring(tipStack[2]) .. ")", #tipStack == 2 and tipStack[2] == "×2 | 5s 0c")
+    local r = scanResult.realm
+    check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
+    check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(":", "")) == 2)
+    check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
+    local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
+    check("scan: feed line announces the result", feedHit)
 else
     check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
 end
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
-check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 18 and settingsChanged)
+check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 20 and settingsChanged)
 check("settings reset restores defaults", afterReset)
 check("report resize remembered (760x620) and rows re-flowed to the new width", resized and resized.w == 760 and resized.h == 620)
 check("double-click fits the height to the content (" .. tostring(fitted and fitted.h) .. ")", fitted and fitted.h ~= 620 and fitted.h >= 260)

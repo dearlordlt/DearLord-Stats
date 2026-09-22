@@ -29,6 +29,10 @@ local CONTROLS = {
     { type = "slider", key = "nudgeHold", label = "Reminders stay for", min = 8, max = 60, step = 1, suffix = " s" },
     { type = "check", key = "lootAnnounce", label = "Announce uncommon or better drops" },
 
+    { header = "Auction house" },
+    { type = "check", key = "ahTooltip", label = "Auction price in item tooltips" },
+    { type = "check", key = "ahAutoScan", label = "Scan prices when the auction house opens" },
+
     { header = "This report" },
     { type = "slider", key = "panelAlpha", label = "Background opacity", min = 0.5, max = 1, step = 0.02, percent = true },
     { type = "slider", key = "panelFontSize", label = "Text size", min = 10, max = 16, step = 1 },
