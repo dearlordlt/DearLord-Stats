@@ -607,7 +607,7 @@ local function build()
     end
     panel:ApplyBounds()
     panel:Hide()
-    if UISpecialFrames then table.insert(UISpecialFrames, "DearLordStatsPanel") end      -- Escape closes it
+    ns.ApplyPanelEsc()                                 -- Escape closes it, unless switched off in Settings
 
     local bg = panel:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(); bg:SetColorTexture(0.04, 0.05, 0.07, (ns.db and ns.db.panelAlpha) or 0.92)
@@ -862,8 +862,16 @@ renderNow = function()
     panel.renderedWidth = panel:GetWidth()
 end
 
+-- the game closes whatever is listed in UISpecialFrames when Escape is pressed
+function ns.ApplyPanelEsc()
+    if not UISpecialFrames then return end
+    local want = not ns.db or ns.db.panelEsc ~= false
+    for i = #UISpecialFrames, 1, -1 do if UISpecialFrames[i] == "DearLordStatsPanel" then table.remove(UISpecialFrames, i) end end
+    if want then table.insert(UISpecialFrames, "DearLordStatsPanel") end
+end
 function ns.ApplyPanelStyle()
     if panel and panel.bgTex then panel.bgTex:SetColorTexture(0.04, 0.05, 0.07, ns.db.panelAlpha or 0.92) end
+    ns.ApplyPanelEsc()
 end
 
 function ns.PanelDirty() state.dirty = true end

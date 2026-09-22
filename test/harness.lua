@@ -574,12 +574,15 @@ else
 end
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
-check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 22 and settingsChanged)
+check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 23 and settingsChanged)
 check("settings reset restores defaults", afterReset)
 check("report resize remembered (760x620) and rows re-flowed to the new width", resized and resized.w == 760 and resized.h == 620)
 check("double-click fits the height to the content (" .. tostring(fitted and fitted.h) .. ")", fitted and fitted.h ~= 620 and fitted.h >= 260)
 check("a saved height taller than the screen is clamped to it (" .. tostring(clamped and clamped.h) .. ")", clamped and clamped.h == 980 and clamped.w == 760)
 check("title-bar fit button exists; right-click restores the default size", fitBtn ~= nil and afterDefault == nil)
+local function escListed() for _, n in ipairs(UISpecialFrames) do if n == "DearLordStatsPanel" then return true end end return false end
+local escOn = escListed(); ns.db.panelEsc = false; ns.ApplyPanelStyle(); local escOff = escListed(); ns.db.panelEsc = true; ns.ApplyPanelStyle()
+check("Escape closes the report by default; the setting takes it off the list and back", escOn and not escOff and escListed())
 check("Concussive Shot flagged as not on bars", (function() for _, n in ipairs(ns.spells.missing) do if n == "Concussive Shot" then return true end end end)())
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")

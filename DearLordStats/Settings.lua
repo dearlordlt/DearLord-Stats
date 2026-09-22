@@ -38,6 +38,7 @@ local CONTROLS = {
     { header = "This report" },
     { type = "slider", key = "panelAlpha", label = "Background opacity", min = 0.5, max = 1, step = 0.02, percent = true },
     { type = "slider", key = "panelFontSize", label = "Text size", min = 10, max = 16, step = 1 },
+    { type = "check", key = "panelEsc", label = "Escape closes the report" },
 
     { header = "Reset" },
     { type = "button", label = "Reset window positions and sizes", action = function() ns.ResetLayout() end },
