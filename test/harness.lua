@@ -145,12 +145,12 @@ function IsShiftKeyDown() return false end
 function IsControlKeyDown() return false end
 function hooksecurefunc(obj, name, fn) local orig = obj[name]; obj[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end end
 -- the modern auction house: a replicated list of every auction (itemID, count, buyout), 0-based
-local REPLICATE = { { 783, 2, 500 }, { 783, 1, 400 }, { 2140, 1, 200 }, { 2770, 20, 600 }, { 2770, 5, 0 }, { 2835, 10, 30 } }
+local REPLICATE = { { 783, 2, 500 }, { 783, 1, 400 }, { 2140, 1, 150 }, { 2770, 20, 600 }, { 2770, 5, 0 }, { 2835, 10, 30 } }
 C_AuctionHouse = { requests = 0,
     ReplicateItems = function() C_AuctionHouse.requests = C_AuctionHouse.requests + 1; world.replicated = true end,
     GetNumReplicateItems = function() return world.replicated and #REPLICATE or 0 end,
     GetReplicateItemInfo = function(i) local r = REPLICATE[i + 1]; if not r then return nil end
-        return "Thing", 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end,
+        return ITEMS[r[1]] and ITEMS[r[1]][1] or nil, 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end,
     GetReplicateItemLink = function(i) return REPLICATE[i + 1] and ("|Hitem:" .. REPLICATE[i + 1][1] .. "::|h[Thing]|h") end,
     IsThrottledMessageSystemReady = function() return true end }
 TooltipDataProcessor = { calls = {}, AddTooltipPostCall = function(kind, fn) TooltipDataProcessor.calls[kind] = fn end }
@@ -436,6 +436,14 @@ if MODE ~= "bare" then
     scanResult.neutral = DearLordAuctionDB.realms["ClassicBetaPvE2-Neutral"]
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
+    -- the price browser: trend, search, history
+    scanResult.trend = ns.AuctionTrend(2140)
+    scanResult.search = ns.AuctionSearch("carv")
+    GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 2140, dataInstanceID = 18 }); scanResult.tipTrend = { unpack(GameTooltip.lines) }
+    ns.OpenPanel("prices", "carv"); panelText("Prices / search")
+    for _, f in ipairs(frames) do if rawget(f, "onClick") and f.shown and f.link == "item:2140" then f.onClick(); break end end
+    panelText("Prices / Carving Knife history")
+    scanResult.historyRows = ns.AuctionHistory(2140)
 end
 
 -- every tab and scope of the report, plus menu, tooltips, clicks
@@ -563,10 +571,14 @@ if MODE ~= "bare" then
     check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "AH 2s 50c · ×2 5s 0c |")
     local r = scanResult.realm
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
-    check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(":", "")) == 2)
+    check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
     check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
+    check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
+    check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "AH 1s 50c | -25%")
+    check("search: 'carv' finds the knife with median and max", #scanResult.search == 1 and scanResult.search[1].name == "Carving Knife" and scanResult.search[1].med == 150 and scanResult.search[1].max == 150)
+    check("history: two days for the knife, newest first", #scanResult.historyRows == 2 and scanResult.historyRows[1].min == 150 and scanResult.historyRows[2].min == 200)
     check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 5 and norm(scanResult.tipAlt[3]) == "Alliance AH 3s 0c |" and norm(scanResult.tipAlt[5]) == "Alliance: 7 seen · yesterday")
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")

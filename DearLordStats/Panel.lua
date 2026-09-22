@@ -20,7 +20,7 @@ end
 local function innerWidth() return ((panel and panel:GetWidth()) or WIDTH) - PAD * 2 - 8 end
 local FONT = STANDARD_TEXT_FONT
 local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = "Abilities" },
-    { key = "professions", text = "Professions" }, { key = "loot", text = "Loot" }, { key = "journal", text = "Journal" },
+    { key = "professions", text = "Professions" }, { key = "loot", text = "Loot" }, { key = "prices", text = "Prices" }, { key = "journal", text = "Journal" },
     { key = "summary", text = "Summary" }, { key = "settings", text = "Settings" } }
 local SCOPES = {
     combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
@@ -28,7 +28,7 @@ local SCOPES = {
     summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" } },
 }
 
-local panel, scroll, child, footer, noteBox, summaryBox, selectAll
+local panel, scroll, child, footer, noteBox, summaryBox, selectAll, searchBox
 local tabButtons, scopeButtons = {}, {}
 local rows, used = {}, 0
 local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one" }, dirty = true, offset = 0 }
@@ -537,6 +537,54 @@ function render.loot()
     end
 end
 
+local function dayText(day)
+    local t = 1577836800 + day * 86400
+    return date("%d %b", t)
+end
+
+function render.prices()
+    if not (ns.AuctionStatus and ns.AuctionStatus().api) then P(L .. "This client has no auction house scan API.|r"); return end
+    if not ns.HasAuctionPrices() then
+        P(L .. "No prices yet for this faction. Open the auction house once: the scan runs by itself.|r")
+        return
+    end
+    if state.priceItem then
+        local id = state.priceItem
+        local hist, e = ns.AuctionHistory(id)
+        local name = ns.AuctionItemName(id, e) or ("item " .. id)
+        KV(ns.BLUE .. "‹ back to the list|r", "", { onClick = function() state.priceItem = nil; state.offset = 0; renderNow() end })
+        H(name)
+        local link = "item:" .. id
+        if e then
+            local trend = ns.AuctionTrendText((ns.AuctionTrend(id)))
+            KV(L .. "Lowest buyout now|r", W .. ns.money(e.p) .. "|r" .. (trend and ("  " .. trend) or "") .. L .. "  ·  " .. (e.n or 0) .. " seen  ·  " .. ns.AuctionAgeText(ns.AuctionDay() - (e.d or ns.AuctionDay())) .. "|r", { link = link })
+        end
+        for _, house in ipairs({ { "Neutral AH", ns.AuctionNeutralKey() }, { (ns.AuctionOtherKey() or "-"):match("%-(%a+)$") and ((ns.AuctionOtherKey()):match("%-(%a+)$") .. " AH") or "Other AH", ns.AuctionOtherKey() } }) do
+            local p, age, seen = ns.AuctionPriceByID(id, house[2])
+            if p then KV(L .. house[1] .. "|r", W .. ns.money(p) .. "|r" .. L .. "  ·  " .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r") end
+        end
+        H("History")
+        if #hist == 0 then P(L .. "No history yet.|r") end
+        for i, h in ipairs(hist) do
+            local prev = hist[i + 1]
+            local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
+            KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(h.med)) .. "  ·  " .. ns.strip(ns.money(h.max)) .. "|r" .. (t and ("  " .. t) or ""),
+                { tip = "Lowest · median · highest buyout per unit on that day, and the change of the lowest since the day before." })
+        end
+        return
+    end
+    local q = state.priceQuery or ""
+    local list = ns.AuctionSearch(q, 60)
+    if #list == 0 then P(L .. (q == "" and "Nothing scanned yet." or ("Nothing called \"" .. q .. "\" in the last scans.")) .. "|r"); return end
+    H((q == "" and "All items" or ("Matching \"" .. q .. "\"")) .. "  ·  " .. #list .. (#list >= 60 and "+" or ""))
+    for _, it in ipairs(list) do
+        local trend = ns.AuctionTrendText(it.trend)
+        KV(W .. it.name .. "|r", W .. ns.money(it.p) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(it.med)) .. "  ·  " .. ns.strip(ns.money(it.max)) .. "|r" .. (trend and ("  " .. trend) or ""),
+            { link = "item:" .. it.id, onClick = function() state.priceItem = it.id; state.offset = 0; renderNow() end,
+              tip = "Lowest · median · highest buyout per unit at the last scan. Click for the history." })
+    end
+end
+
 function render.settings() end     -- a page of controls, handled in renderNow
 
 function render.journal()
@@ -710,6 +758,26 @@ local function build()
     noteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     noteBox:Hide()
 
+    -- price browser: a search box at the bottom of the Prices tab
+    searchBox = CreateFrame("EditBox", nil, panel)
+    searchBox:SetFont(FONT, 12, ""); searchBox:SetAutoFocus(false)
+    searchBox:SetPoint("BOTTOMLEFT", PAD + 4, 8); searchBox:SetPoint("BOTTOMRIGHT", -PAD - 4, 8)
+    searchBox:SetHeight(20); searchBox:SetMaxLetters(60)
+    searchBox.bg = searchBox:CreateTexture(nil, "BACKGROUND")
+    searchBox.bg:SetPoint("TOPLEFT", -4, 2); searchBox.bg:SetPoint("BOTTOMRIGHT", 4, -2)
+    searchBox.bg:SetColorTexture(1, 1, 1, 0.06)
+    searchBox.hint = searchBox:CreateFontString(nil, "OVERLAY")
+    searchBox.hint:SetFont(FONT, 12, ""); searchBox.hint:SetPoint("LEFT", 0, 0)
+    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name")
+    searchBox:SetScript("OnTextChanged", function(self)
+        self.hint:SetShown(self:GetText() == "")
+        state.priceQuery, state.priceItem, state.offset = self:GetText(), nil, 0
+        state.dirty = true
+    end)
+    searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus(); renderNow() end)
+    searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    searchBox:Hide()
+
     -- summary text (read-only, selectable)
     summaryBox = CreateFrame("EditBox", nil, child)
     summaryBox:SetMultiLine(true); summaryBox:SetAutoFocus(false)
@@ -798,6 +866,7 @@ local FOOT = {
     professions = "Open a profession window or talk to a trainer once and the details fill in.",
     journal = "",
     loot = "Hover an item for its tooltip. Only real loot counts; quest rewards, purchases and crafts do not.",
+    prices = "Lowest buyout · median · highest, from your scans of this faction's auction house. Click an item for its history.",
     settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
     summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
 }
@@ -845,6 +914,7 @@ renderNow = function()
     end
     if settingsPage then settingsPage:SetShown(isSettings) end
     noteBox:SetShown(isJournal)
+    if searchBox then searchBox:SetShown(state.tab == "prices") end
     footer:SetText(FOOT[state.tab] or "")
     if isSettings then
         cursor = settingsPage:Layout(innerWidth()) + 8
@@ -876,9 +946,10 @@ end
 
 function ns.PanelDirty() state.dirty = true end
 
-function ns.OpenPanel(tab)
+function ns.OpenPanel(tab, query)
     if not panel then build() end
     if tab and tab ~= state.tab then state.tab, state.offset = tab, 0 end
+    if query ~= nil and searchBox then searchBox:SetText(query); state.priceQuery, state.priceItem = query, nil end
     local pos = ns.db.panel or ns.defaults.panel
     local size = ns.db.panelSize
     panel:ApplyBounds()

@@ -10,8 +10,8 @@
 -- on this client), so other addons find their variables already in place. Once Blizzard fixes the
 -- client, its own loading happens afterwards and simply wins.
 local ADDON = ...
-local VERSION = "2.1.0"
-local CHUNK, MAX_TOTAL, MAX_VAR = 15000, 900000, 400000
+local VERSION = "2.1.1"
+local CHUNK, MAX_TOTAL, MAX_VAR = 15000, 2000000, 900000
 local PREFIX = "dearlordKeeperChunk"
 local INDEX = "dearlordKeeperIndex"
 

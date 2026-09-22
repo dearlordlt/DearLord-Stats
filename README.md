@@ -49,13 +49,17 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   minutes, the game's limit, or `/dls scan`) and remembers the lowest buyout per item, per realm and
   faction (Horde and Alliance auction houses are separate on Forever). The price shows in item tooltips
   as `AH 9s 31c · 19 seen · 2 days ago`, with the stack total when you hover a stack, and feeds the Loot
-  tab. Both the tooltip line and the automatic scan can be switched off in Settings.
+  tab. Hold Alt (configurable) for the other faction's price; the goblin (neutral) auction house is shown
+  whenever any of your characters scanned it. A trend (`+12%` / `-8%`) shows how the lowest buyout moved
+  since the previous scan day, and the **Prices** tab is a browser: search by name, see lowest, median
+  and highest buyout, click an item for its day-by-day history. Both the tooltip line and the automatic
+  scan can be switched off in Settings.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls loot`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls loot`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

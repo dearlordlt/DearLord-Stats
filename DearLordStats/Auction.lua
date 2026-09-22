@@ -7,13 +7,14 @@
 -- Saved in its own variable, DearLordAuctionDB, plain numbers and strings only:
 --   { version = 1, lastRequest = <epoch>,
 --     realms = { ["Realm-Horde"] = { scanned = <epoch>, day = 2456, auctions = 4812, count = 1846,
---                items = { [id] = { p = <min unit buyout>, n = <units seen>, d = <scan day>, h = "day:price day:price" } } } } }
+--                items = { [id] = { p = <min unit buyout>, n = <units seen>, d = <scan day>, name = "Light Hide",
+--                                   h = "day:min:median:max day:min:median:max" (newest first) } } } } }
 local ADDON, ns = ...
 local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 
 ns.AH_CUT = 0.05                                             -- the auction house keeps 5% of a sale
 local DAY0 = 1577836800                                      -- 2020-01-01: day numbers count from here
-local CHUNK, HISTORY_MAX, HISTORY_DAYS, KEEP_DAYS, THROTTLE = 500, 8, 28, 60, 900
+local CHUNK, HISTORY_MAX, HISTORY_DAYS, KEEP_DAYS, THROTTLE = 500, 8, 28, 30, 900
 
 local ahOpen = false
 local ahKey                                                  -- database key of the auction house that is open
@@ -105,6 +106,32 @@ function ns.AuctionAgeText(days)
     return days .. " days ago"
 end
 
+function ns.AuctionItemName(id, e)
+    local name = e and e.name
+    if not name and C_Item and C_Item.GetItemNameByID then name = S(C_Item.GetItemNameByID(id)) end
+    return name
+end
+
+-- items of this faction's house whose name contains the query; at most `limit`, sorted by name
+function ns.AuctionSearch(query, limit)
+    local r = realmData()
+    local out = {}
+    if not r then return out end
+    query = (query or ""):lower()
+    for id, e in pairs(r.items) do
+        local name = ns.AuctionItemName(id, e)
+        if name and (query == "" or name:lower():find(query, 1, true)) then
+            local h = ns.AuctionHistory(id)
+            out[#out + 1] = { id = id, name = name, p = e.p, n = e.n, d = e.d, med = h[1] and h[1].med or e.p, max = h[1] and h[1].max or e.p,
+                trend = ns.AuctionTrend(id), days = #h }
+            if #out >= (limit or 60) * 4 then break end
+        end
+    end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    while #out > (limit or 60) do out[#out] = nil end
+    return out
+end
+
 ----------------------------------------------------------------------
 -- the scan
 ----------------------------------------------------------------------
@@ -117,14 +144,35 @@ local function abort(why)
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
--- "day:price day:price", newest first, one entry per day, capped
-local function pushHistory(e, today, price)
-    local out, seen = { today .. ":" .. price }, { [today] = true }
-    for d, p in (e.h or ""):gmatch("(%d+):(%d+)") do
-        d = tonumber(d)
-        if not seen[d] and today - d <= HISTORY_DAYS and #out < HISTORY_MAX then out[#out + 1] = d .. ":" .. p; seen[d] = true end
+-- "day:min:median:max ...", newest first, one entry per day, capped (older entries may be "day:min" only)
+function ns.AuctionHistory(id, k)
+    local r = id and realmData(false, k)
+    local e = r and r.items[id]
+    local out = {}
+    for token in (e and e.h or ""):gmatch("%S+") do
+        local d, mn, md, mx = token:match("^(%d+):(%d+):?(%d*):?(%d*)$")
+        if d then out[#out + 1] = { day = tonumber(d), min = tonumber(mn), med = tonumber(md) or tonumber(mn), max = tonumber(mx) or tonumber(mn) } end
+    end
+    return out, e
+end
+local function pushHistory(e, today, mn, md, mx)
+    local out, seen = { today .. ":" .. mn .. ":" .. md .. ":" .. mx }, { [today] = true }
+    for token in (e.h or ""):gmatch("%S+") do
+        local d = tonumber(token:match("^(%d+):"))
+        if d and not seen[d] and today - d <= HISTORY_DAYS and #out < HISTORY_MAX then out[#out + 1] = token; seen[d] = true end
     end
     e.h = table.concat(out, " ")
+end
+
+-- change of the lowest buyout since the previous scan day, in percent (nil without two days of data)
+function ns.AuctionTrend(id, k)
+    local h = ns.AuctionHistory(id, k)
+    if #h < 2 or not h[2].min or h[2].min <= 0 then return nil end
+    return math.floor((h[1].min - h[2].min) / h[2].min * 100 + 0.5), h[1].min, h[2].min
+end
+function ns.AuctionTrendText(pct)
+    if not pct or math.abs(pct) < 1 then return nil end
+    return (pct > 0 and ns.GREEN .. "+" or ns.RED) .. pct .. "%|r"
 end
 
 local function commit()
@@ -133,8 +181,12 @@ local function commit()
     local today, items, n = ns.AuctionDay(), r.items, 0
     for id, a in pairs(scan.agg) do
         local e = items[id] or {}
+        if not e.h and e.p and e.d and e.d < today then e.h = e.d .. ":" .. e.p end   -- an entry from before history was kept
+        table.sort(a.list)
+        local med = a.list[math.ceil(#a.list / 2)] or a.p
         e.p, e.n, e.d = a.p, a.n, today
-        pushHistory(e, today, a.p)
+        if a.name then e.name = a.name end
+        pushHistory(e, today, a.p, med, a.list[#a.list] or a.p)
         items[id] = e
     end
     for id, e in pairs(items) do
@@ -150,8 +202,8 @@ end
 -- one row of the replicated list: only count, buyout and item id are guaranteed to be there at once
 local function readRow(i)
     local r = { C_AuctionHouse.GetReplicateItemInfo(i) }
-    if type(r[1]) == "table" then return N(r[1].count), N(r[1].buyoutPrice), N(r[1].itemID), r end
-    return N(r[3]), N(r[10]), N(r[17]), r
+    if type(r[1]) == "table" then return N(r[1].count), N(r[1].buyoutPrice), N(r[1].itemID), r, S(r[1].name) end
+    return N(r[3]), N(r[10]), N(r[17]), r, S(r[1])
 end
 
 local function collectChunk()
@@ -160,7 +212,7 @@ local function collectChunk()
     if n == 0 then abort("the list vanished (auction house closed?)"); return end
     local last = math.min(scan.i + CHUNK - 1, scan.n - 1)
     for i = scan.i, last do
-        local count, buyout, id, raw = readRow(i)
+        local count, buyout, id, raw, name = readRow(i)
         if i == 0 then
             ns.diagOnce("ahRow", function()
                 local v = raw[10]
@@ -171,8 +223,10 @@ local function collectChunk()
         if count and id and buyout and buyout > 0 and count > 0 then
             local unit = math.floor(buyout / count)
             local a = scan.agg[id]
-            if not a then scan.agg[id] = { p = unit, n = count }; scan.priced = scan.priced + 1
+            if not a then a = { p = unit, n = count, list = {} }; scan.agg[id] = a; scan.priced = scan.priced + 1
             else a.n = a.n + count; if unit < a.p then a.p = unit end end
+            a.list[#a.list + 1] = unit
+            if name and name ~= "" and not a.name then a.name = name end
         elseif i < 50 then scan.blank = scan.blank + 1 end
     end
     scan.i = last + 1
@@ -303,15 +357,16 @@ local function addLines(tooltip, id)
     if price and vendor and vendor > 0 then
         rows[#rows + 1] = { label = "Vendor", unit = vendor, win = ns.AuctionNet(price) <= vendor }
     end
-    if price then rows[#rows + 1] = { label = "AH", unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age } end
+    if price then rows[#rows + 1] = { label = "AH", unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age,
+        trend = ns.AuctionTrendText((ns.AuctionTrend(id))) } end
     if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
         local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
-        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage } end
+        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ns.AuctionNeutralKey()))) } end
     end
     if modifierHeld() then
         local ok = ns.AuctionOtherKey()
         local op, oage, oseen = ns.AuctionPriceByID(id, ok)
-        if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage } end
+        if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ok))) } end
     end
     tooltip.dlsAhShown = #rows > 0 and id or nil
     if #rows == 0 then return end
@@ -325,7 +380,7 @@ local function addLines(tooltip, id)
         local col = r.win and ns.GREEN or ns.WHITE
         local left = ns.LABEL .. padTo(r.label, labelW) .. "|r   " .. col .. padTo(r.unitText, unitW, true) .. "|r"
         if r.totalText then left = left .. ns.LABEL .. "   ·   ×" .. count .. "   |r" .. col .. padTo(r.totalText, totalW, true) .. "|r" end
-        tooltip:AddDoubleLine(left, " ")
+        tooltip:AddDoubleLine(left, r.trend or " ")
     end
     for _, r in ipairs(rows) do                                -- how fresh each auction price is, on its own dim line
         if r.seen then
