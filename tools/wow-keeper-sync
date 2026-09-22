@@ -60,6 +60,12 @@ def lua_ok(path):
 
 def lua_str(s): return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
+def lua_escape_binary(text):
+    """Saved files hold raw binary inside string literals (Auctionator's CBOR price data, for one).
+    Every byte >= 0x80 becomes a \\ddd escape, so Restore.lua is plain ASCII and Lua reads the same
+    bytes back. Files are handled as latin-1 throughout: one character per byte, nothing replaced."""
+    return "".join(ch if ord(ch) < 0x80 else "\\%d" % ord(ch) for ch in text)
+
 def saved_files(folder):
     if not os.path.isdir(folder): return
     for name in sorted(os.listdir(folder)):
@@ -67,7 +73,7 @@ def saved_files(folder):
         addon = name[:-4]
         path = os.path.join(folder, name)
         if skip(addon) or os.path.getsize(path) > MAX_FILE or os.path.getsize(path) < 8: continue
-        if lua_ok(path): yield addon, open(path, encoding="utf-8", errors="replace").read()
+        if lua_ok(path): yield addon, lua_escape_binary(read(path))
         else: log(f"  skipped (not valid Lua): {path}")
 
 def build_restore():
@@ -93,12 +99,12 @@ def build_restore():
 
 def write_if_changed(name, text, stamp_line=None):
     path = os.path.join(out_dir, name)
-    try: old = open(path, encoding="utf-8").read()
+    try: old = open(path, encoding="latin-1", newline="").read()
     except OSError: old = None
     strip = (lambda s: re.sub(r"^R\.generated = \d+\n", "", s, flags=re.M)) if stamp_line else (lambda s: s)
     if old is not None and strip(old) == strip(text): return False
     fd, tmp = tempfile.mkstemp(dir=out_dir, prefix="." + name)
-    with os.fdopen(fd, "w", encoding="utf-8") as f: f.write(text)
+    with os.fdopen(fd, "w", encoding="latin-1", newline="") as f: f.write(text)
     os.chmod(tmp, 0o644)
     if not lua_ok(tmp):                       # never install a file the game could choke on
         os.unlink(tmp); log(f"  refused to write {name}: generated file is not valid Lua"); return False
@@ -119,8 +125,8 @@ def blocks(text):
     if name: out[name] = "".join(cur)
     return out
 
-def read(path): return open(path, encoding="utf-8", errors="surrogateescape").read()
-def write(path, text): open(path, "w", encoding="utf-8", errors="surrogateescape").write(text)
+def read(path): return open(path, encoding="latin-1", newline="").read()
+def write(path, text): open(path, "w", encoding="latin-1", newline="").write(text)
 
 def shrink_check():
     """A saved file that is suddenly a fraction of its size in the newest snapshot means a session
@@ -170,14 +176,25 @@ def restore(stamp, addon):
             print(f"  wrote {os.path.relpath(live_path, WTF)} (original kept as {os.path.basename(backup)})")
     if not done: print(f"  nothing to restore: no variable of {addon} is smaller than in the snapshot")
 
+def changed_since(snapshot):
+    """True when any third-party saved file differs from its copy in the snapshot (or is new)."""
+    import filecmp
+    for base, _, files in os.walk(WTF):
+        if os.path.basename(base) != "SavedVariables": continue
+        for f in files:
+            if not f.endswith(".lua") or skip(f[:-4]): continue
+            old = os.path.join(snapshot, os.path.relpath(base, WTF), f)
+            if not os.path.isfile(old) or not filecmp.cmp(os.path.join(base, f), old, shallow=False): return True
+    return False
+
 def history():
     """Rolling snapshots of the third-party saved files: insurance against a session that started
-    from defaults and then overwrote good data. At most one snapshot per 15 minutes, 40 kept."""
+    from defaults and then overwrote good data. A snapshot whenever something changed, 60 kept."""
     import shutil
     root = HISTORY
     os.makedirs(root, exist_ok=True)
     existing = sorted(os.listdir(root))
-    if existing and time.time() - os.path.getmtime(os.path.join(root, existing[-1])) < 900: return
+    if existing and not changed_since(os.path.join(root, existing[-1])): return
     dest = os.path.join(root, time.strftime("%Y%m%d-%H%M%S"))
     n = 0
     for base, _, files in os.walk(WTF):
@@ -186,7 +203,7 @@ def history():
             if f.endswith(".lua") and not skip(f[:-4]):
                 target = os.path.join(dest, os.path.relpath(base, WTF))
                 os.makedirs(target, exist_ok=True); shutil.copy2(os.path.join(base, f), target); n += 1
-    for old in existing[:-39]: shutil.rmtree(os.path.join(root, old), ignore_errors=True)
+    for old in existing[:-59]: shutil.rmtree(os.path.join(root, old), ignore_errors=True)
     log(f"history: snapshot of {n} saved files -> {dest}")
 
 def main():

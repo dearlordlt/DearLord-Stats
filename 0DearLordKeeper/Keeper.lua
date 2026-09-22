@@ -45,7 +45,7 @@ local function serialise(value, out, seen, depth)
         end
         out[#out + 1] = "}"
         seen[value] = nil
-    elseif t == "string" then out[#out + 1] = string.format("%q", value)
+    elseif t == "string" then out[#out + 1] = (string.format("%q", value):gsub("[\128-\255]", function(c) return "\\" .. c:byte() end))   -- binary-safe: bytes >= 0x80 as \ddd
     elseif t == "number" then
         if value ~= value or value == math.huge or value == -math.huge then out[#out + 1] = "0"
         elseif value == math.floor(value) and math.abs(value) < 1e15 then out[#out + 1] = string.format("%d", value)

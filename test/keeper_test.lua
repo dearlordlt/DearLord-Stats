@@ -47,9 +47,9 @@ local function boot(tag, opts)
 end
 boot("game restart: values come from the disk copy, only this character's per-character data", { restart = true,
     check = function() return BagDB and BagDB.nested.list[3] == 3 and StatsDB.fights == 7 and ChatCharDB.channel == "trade" end,
-    play = function() StatsDB.fights = 42; BagDB.view = "one bag"; ChatCharDB.channel = "lfg"; BagDB.text = 'quotes " and\nnewlines' end })
+    play = function() StatsDB.fights = 42; BagDB.view = "one bag"; ChatCharDB.channel = "lfg"; BagDB.text = 'quotes " and\nnewlines'; BagDB.bin = "\0\1\128\200\255 bin" end })
 boot("/reload: the in-memory copy carries what changed during play", {
-    check = function() return StatsDB.fights == 42 and BagDB.view == "one bag" and ChatCharDB.channel == "lfg" and BagDB.text == 'quotes " and\nnewlines' end })
+    check = function() return StatsDB.fights == 42 and BagDB.view == "one bag" and ChatCharDB.channel == "lfg" and BagDB.text == 'quotes " and\nnewlines' and BagDB.bin == "\0\1\128\200\255 bin" end })
 boot("/reload with no disk copy at all (memory layer alone)", { noDisk = true,
     check = function() return StatsDB and StatsDB.fights == 42 and ChatCharDB.channel == "lfg" end })
 boot("fixed client: its own loading wins", { clientFixed = true, check = function() return StatsDB.marker == "loaded-by-client" end })
