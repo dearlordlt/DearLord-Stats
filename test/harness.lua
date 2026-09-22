@@ -489,7 +489,7 @@ local fitted = ns.db.panelSize
 UIParent.w, UIParent.h = 2000, 1000
 ns.db.panelSize = { w = 760, h = 5000 }; ns.OpenPanel("loot")
 local clamped = ns.db.panelSize
-local fitBtn; for _, f in ipairs(frames) do if f.kind == "Button" and f.fs and f.fs.text == "⤢" then fitBtn = f end end
+local fitBtn; for _, f in ipairs(frames) do if f.kind == "Button" and f.fs and f.fs.text == "fit" then fitBtn = f end end
 if fitBtn then fitBtn.scripts.OnEnter(fitBtn); fitBtn.scripts.OnLeave(fitBtn); fitBtn.scripts.OnClick(fitBtn, "LeftButton"); fitBtn.scripts.OnClick(fitBtn, "RightButton") end
 local afterDefault = ns.db.panelSize
 for _, f in ipairs(frames) do      -- exercise every row's hover and right-click, and every button

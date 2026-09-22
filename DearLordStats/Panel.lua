@@ -630,10 +630,11 @@ local function build()
     panel.close = close
 
     -- one obvious way back when the window has grown too big or wandered off: fit / default size
-    local fit = textButton(panel, 13)
-    fit:SetLabel("⤢"); fit:SetSize(20, 20)
-    fit:SetPoint("RIGHT", close, "LEFT", -2, 0)
+    local fit = textButton(panel, 11)                 -- plain text: the game's fonts have no glyph for this
+    fit:SetLabel("fit"); fit:SetSize(fit:GetWidth() + 6, 20)
+    fit:SetPoint("RIGHT", close, "LEFT", -6, 0)
     fit:SetActive(false); fit.line:Hide()
+    fit.fs:SetTextColor(0.6, 0.66, 0.74)
     fit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     fit:SetScript("OnClick", function(_, button)
         if button == "RightButton" then ns.ResetPanelSize() else ns.FitPanel() end
@@ -825,14 +826,14 @@ renderNow = function()
             if scopes[i].key == "level" then b:SetLabel("Level " .. viewLevel()) end
             b:ClearAllPoints()
             if anchor then b:SetPoint("RIGHT", anchor, "LEFT", -12, 0)
-            else b:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD - 26, -13) end
+            else b:SetPoint("RIGHT", panel.fit, "LEFT", -14, 0) end
             anchor = b
         end
     end
     -- the character label takes whatever room is left on the title row and truncates instead of overlapping
     panel.who:ClearAllPoints()
     panel.who:SetPoint("LEFT", panel.title, "RIGHT", 10, 0)
-    panel.who:SetPoint("RIGHT", scopes and scopeButtons[1] or panel.close, "LEFT", -14, 0)
+    panel.who:SetPoint("RIGHT", scopes and scopeButtons[1] or panel.fit, "LEFT", -14, 0)
     panel.who:SetText(L .. (ns.charKey and ns.charKey:match("^(.-)%-") or "") .. "  ·  level " .. tostring(ns.curLevel or "?") .. "  ·  " .. (ns.char.class or "") .. "|r")
 
     local isSummary, isJournal, isSettings = state.tab == "summary", state.tab == "journal", state.tab == "settings"
@@ -892,6 +893,7 @@ ns.Every(0.5, function(dt)
     sinceRender = sinceRender + dt
     if state.tab == "summary" and summaryBox:HasFocus() then return end       -- do not disturb a selection
     if settingsPage and settingsPage.dragging then return end                  -- nor a slider being dragged
-    local stale = panel.renderedWidth and math.abs(panel.renderedWidth - panel:GetWidth()) > 0.5
+    local drawn = (panel.GetRight and panel.GetLeft and panel:GetRight() and panel:GetLeft()) and (panel:GetRight() - panel:GetLeft()) or nil
+    local stale = panel.renderedWidth and (math.abs(panel.renderedWidth - panel:GetWidth()) > 0.5 or (drawn and drawn > 1 and math.abs(panel.renderedWidth - drawn) > 0.5))
     if state.dirty or stale or sinceRender >= 2 then sinceRender = 0; renderNow() end
 end, "panel:refresh")
