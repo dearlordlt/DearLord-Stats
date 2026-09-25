@@ -48,9 +48,9 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Auction prices**: the addon scans the auction house itself when you open it (once every 15
   minutes, the game's limit, or `/dls scan`) and remembers the lowest buyout per item, per realm and
   faction (Horde and Alliance auction houses are separate on Forever). The price shows in item tooltips
-  as `AH 9s 31c · 19 seen · 2 days ago`, with the stack total when you hover a stack, and feeds the Loot
-  tab. Hold Alt (configurable) for the other faction's price; the goblin (neutral) auction house is shown
-  whenever any of your characters scanned it. A trend (`+12%` / `-8%`) shows how the lowest buyout moved
+  as `Horde AH 9s 31c` plus `Horde: 19 seen · 2 days ago`, with the stack total when you hover a stack,
+  and feeds the Loot tab. Every house you have scanned is listed: your faction's, the other faction's
+  (by default always; Settings can tie it to Alt, Shift or Ctrl) and the neutral one. A trend (`+12%` / `-8%`) shows how the lowest buyout moved
   since the previous scan day, and the **Prices** tab is a browser: search by name, see lowest, median
   and highest buyout, click an item for its day-by-day history. Both the tooltip line and the automatic
   scan can be switched off in Settings.

@@ -357,16 +357,17 @@ local function addLines(tooltip, id)
     if price and vendor and vendor > 0 then
         rows[#rows + 1] = { label = "Vendor", unit = vendor, win = ns.AuctionNet(price) <= vendor }
     end
-    if price then rows[#rows + 1] = { label = "AH", unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age,
+    local mine = ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH"
+    if price then rows[#rows + 1] = { label = mine, unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age,
         trend = ns.AuctionTrendText((ns.AuctionTrend(id))) } end
-    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
-        local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
-        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ns.AuctionNeutralKey()))) } end
-    end
-    if modifierHeld() then
+    if modifierHeld() then                                     -- the other faction's house: on a modifier, always, or never (Settings)
         local ok = ns.AuctionOtherKey()
         local op, oage, oseen = ns.AuctionPriceByID(id, ok)
         if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ok))) } end
+    end
+    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
+        local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
+        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ns.AuctionNeutralKey()))) } end
     end
     tooltip.dlsAhShown = #rows > 0 and id or nil
     if #rows == 0 then return end
@@ -384,7 +385,7 @@ local function addLines(tooltip, id)
     end
     for _, r in ipairs(rows) do                                -- how fresh each auction price is, on its own dim line
         if r.seen then
-            local who = r.label == "AH" and "" or (r.label:gsub(" AH$", "") .. ":  ")
+            local who = r.label:gsub(" AH$", "") .. ":  "
             tooltip:AddLine(ns.LABEL .. who .. r.seen .. " seen  ·  " .. ns.AuctionAgeText(r.age) .. "|r")
         end
     end

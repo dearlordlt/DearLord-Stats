@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.6.1"
+ns.version = "2.6.2"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -162,7 +162,7 @@ local defaults = {
     showRecap = true, nudges = true,
     font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
-    ahTooltip = true, ahAutoScan = true, ahTooltipNeutral = true, ahCompare = "alt", panelEsc = true,
+    ahTooltip = true, ahAutoScan = true, ahTooltipNeutral = true, ahCompare = "always", panelEsc = true,
     stats = { point = "TOP", x = 0, y = -12 },
     xp    = { point = "TOP", x = 0, y = -34 },
     panel = { point = "CENTER", x = 0, y = 40 },
@@ -200,6 +200,7 @@ ns.On("ADDON_LOADED", function(name)
         end
     end
     if (db.version or 1) < 2 then db.alpha = 1; db.version = 2 end
+    if not db.ahCompareV2 then db.ahCompare, db.ahCompareV2 = "always", true end   -- 2.6.2: every house you scanned is shown by default
     db.chars = db.chars or {}
     db.diag = db.diag or {}
     if db.errorsVersion ~= ns.version then db.errors, db.errorsVersion = {}, ns.version end   -- old versions' errors are stale

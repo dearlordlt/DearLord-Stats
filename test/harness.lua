@@ -411,6 +411,7 @@ local lootView = ns.LootView()
 local tipLines, scanResult, tipStack, tipDup, tipOff = {}, {}, nil, nil, nil
 if MODE ~= "bare" then
     local hook = TooltipDataProcessor.calls[0]
+    ns.db.ahCompare = "alt"
     GameTooltip.lines = {}; hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipLines = { unpack(GameTooltip.lines) }
     hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipDup = #GameTooltip.lines
     GameTooltip.lines = {}; hook(GameTooltip, { id = 9999, dataInstanceID = 12 }); local tipUnknown = #GameTooltip.lines
@@ -418,6 +419,7 @@ if MODE ~= "bare" then
     ns.db.ahTooltip = false; hook(GameTooltip, { id = 783, dataInstanceID = 14 }); tipOff = #GameTooltip.lines; ns.db.ahTooltip = true
     GameTooltip:SetBagItem(0, 2); hook(GameTooltip, { id = 783, dataInstanceID = 15 }); tipStack = { unpack(GameTooltip.lines) }
     world.alt = true; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 16 }); scanResult.tipAlt = { unpack(GameTooltip.lines) }; world.alt = false
+    ns.db.ahCompare = "always"; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 23 }); scanResult.tipAlways = { unpack(GameTooltip.lines) }; ns.db.ahCompare = "alt"
     fire("MODIFIER_STATE_CHANGED", "LALT", 1)
     scanResult.unknownAndForbidden = tipUnknown == 0 and tipForbidden == 0
     fire("AUCTION_HOUSE_SHOW"); advance(3)                       -- the server answers a moment later
@@ -566,9 +568,9 @@ if MODE ~= "bare" then
     local forAH, gain = ns.BagsForAuction()
     check("bags: the Light Hide stack is worth +3s74c on the AH", forAH and #forAH == 1 and gain == 374 and forAH[1].name == "Light Hide")
     local function norm(t) return (tostring(t):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
-    check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 3 and norm(tipLines[1]) == "Vendor 50c |" and norm(tipLines[2]) == "AH 2s 50c |" and norm(tipLines[3]) == "19 seen · 2 days ago")
+    check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 3 and norm(tipLines[1]) == "Vendor 50c |" and norm(tipLines[2]) == "Horde AH 2s 50c |" and norm(tipLines[3]) == "Horde: 19 seen · 2 days ago")
     check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 3 and scanResult.unknownAndForbidden and tipOff == 0)
-    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "AH 2s 50c · ×2 5s 0c |")
+    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "Horde AH 2s 50c · ×2 5s 0c |")
     local r = scanResult.realm
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
@@ -576,10 +578,11 @@ if MODE ~= "bare" then
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
-    check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "AH 1s 50c | -25%")
+    check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "Horde AH 1s 50c | -25%")
     check("search: 'carv' finds the knife with median and max", #scanResult.search == 1 and scanResult.search[1].name == "Carving Knife" and scanResult.search[1].med == 150 and scanResult.search[1].max == 150)
     check("history: two days for the knife, newest first", #scanResult.historyRows == 2 and scanResult.historyRows[1].min == 150 and scanResult.historyRows[2].min == 200)
     check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 5 and norm(scanResult.tipAlt[3]) == "Alliance AH 3s 0c |" and norm(scanResult.tipAlt[5]) == "Alliance: 7 seen · yesterday")
+    check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 5 and norm(scanResult.tipAlways[3]) == "Alliance AH 3s 0c |")
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")
 else
