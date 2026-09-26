@@ -687,15 +687,25 @@ function render.prices()
             local p, age, seen = ns.AuctionPriceByID(id, house[2])
             if p then KV(L .. house[1] .. "|r", W .. ns.money(p) .. "|r" .. L .. "  ·  " .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r") end
         end
-        H("History")
-        if #hist == 0 then P(L .. "No history yet.|r") end
-        if #hist >= 2 then CHART(hist, dayText); GAP(6) end
-        for i, h in ipairs(hist) do
-            local prev = hist[i + 1]
-            local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
-            KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(h.med)) .. "  ·  " .. ns.strip(ns.money(h.max)) .. "|r" .. (t and ("  " .. t) or ""),
-                { tip = "Lowest · median · highest buyout per unit on that day, and the change of the lowest since the day before." })
+        -- one history per house that has one: yours first, then neutral, then the other faction
+        local own = (ns.AuctionKey() or ""):match("%-(%a+)$") or "Your"
+        local other = (ns.AuctionOtherKey() or ""):match("%-(%a+)$") or "Other"
+        local any = false
+        for _, house in ipairs({ { own, ns.AuctionKey() }, { "Neutral", ns.AuctionNeutralKey() }, { other, ns.AuctionOtherKey() } }) do
+            local hh = house[2] and ns.AuctionHistory(id, house[2]) or {}
+            if #hh > 0 then
+                any = true
+                H(house[1] .. " history")
+                if #hh >= 2 then CHART(hh, dayText); GAP(6) end
+                for i, h in ipairs(hh) do
+                    local prev = hh[i + 1]
+                    local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
+                    KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(h.med)) .. "  ·  " .. ns.strip(ns.money(h.max)) .. "|r" .. (t and ("  " .. t) or ""),
+                        { tip = "Lowest · median · highest buyout per unit on that day, and the change of the lowest since the day before." })
+                end
+            end
         end
+        if not any then H("History"); P(L .. "No history yet.|r") end
         return
     end
     local q = state.priceQuery or ""
@@ -898,7 +908,7 @@ local function build()
     searchBox.bg:SetColorTexture(1, 1, 1, 0.06)
     searchBox.hint = searchBox:CreateFontString(nil, "OVERLAY")
     searchBox.hint:SetFont(FONT, 12, ""); searchBox.hint:SetPoint("LEFT", 0, 0)
-    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name  ·  lowest, median and highest buyout  ·  click an item for its history")
+    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name  ·  lowest buyout at each auction house  ·  click an item for its history and charts")
     searchBox:SetScript("OnTextChanged", function(self)
         self.hint:SetShown(self:GetText() == "")
         state.priceQuery, state.priceItem, state.offset = self:GetText(), nil, 0
