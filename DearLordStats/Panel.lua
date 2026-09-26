@@ -146,7 +146,22 @@ local function H(text)
     GAP(4)
 end
 
--- a header for a list that keeps growing: collapsed it shows the newest `few`, a click on the header
+-- real buttons for the "show all / show less" toggles: a row's own click handler proved unreliable in the client
+local toggles, usedToggles = {}, 0
+local function toggleButton()
+    usedToggles = usedToggles + 1
+    local b = toggles[usedToggles]
+    if not b then
+        b = textButton(child, fsize(-2))
+        b:SetScript("OnClick", function(self) if self.onToggle then ns.safe("panel:toggle", self.onToggle) end end)
+        toggles[usedToggles] = b
+    end
+    b.fs:SetFont(FONT, fsize(-2), "")
+    b:SetActive(false); b:ClearAllPoints(); b:Show()
+    return b
+end
+
+-- a header for a list that keeps growing: collapsed it shows the newest `few`, the button on its right
 -- shows everything (remembered per list in the saved settings). Returns how many entries to draw.
 local function HX(text, key, total, few)
     if total <= few then H(text); return total end
@@ -156,14 +171,18 @@ local function HX(text, key, total, few)
     local r = getRow()
     r.left:SetFont(FONT, fsize(-2), ""); r.right:SetFont(FONT, fsize(-2), "")
     r.left:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 4)
-    r.right:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 4)
     r.left:SetText("|cff8fa3b8" .. text:upper() .. "|r")
-    r.right:SetText(ns.BLUE .. (open and "show less" or ("newest " .. few .. " of " .. total .. "  ·  show all")) .. "|r")
     r.rule:Show()
-    r.onClick = function() ns.db.panelOpen[key] = (not open) or nil; renderNow() end
-    r.tip = open and ("Click to show only the newest " .. few .. ".") or ("Click to show all " .. total .. ".")
-    r:EnableMouse(true)
     place(r, fsize(-2) + 8)
+    local toggle = function() ns.db.panelOpen[key] = (not open) or nil; renderNow() end
+    local b = toggleButton()
+    b:SetLabel(open and "show less" or "show all")
+    b:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+    b.onToggle = toggle
+    r.right:SetPoint("RIGHT", b, "LEFT", -8, 0)
+    r.right:SetText(L .. (open and ("all " .. total) or ("newest " .. few .. " of " .. total)) .. "|r")
+    r.onClick = toggle                                        -- the row too, for good measure
+    r:EnableMouse(true)
     GAP(4)
     return open and total or few
 end
@@ -1039,6 +1058,8 @@ renderNow = function()
     if not panel or not ns.char or not ns.session then return end
     state.dirty = false
     used, cursor = 0, 0
+    for _, b in ipairs(toggles) do b:Hide() end
+    usedToggles = 0
     child:SetWidth(innerWidth())
     summaryBox:SetWidth(innerWidth() - 12)
     for key, b in pairs(tabButtons) do b:SetActive(key == state.tab) end
