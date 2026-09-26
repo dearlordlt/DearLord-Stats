@@ -54,6 +54,7 @@ local function widget(kind, name)
     function M:GetPoint() return "TOP", nil, "TOP", 0, -12 end
     function M:HasFocus() return false end
     function M:CreateTexture() return widget("Texture") end
+    function M:CreateLine() return widget("Line") end
     function M:CreateFontString() return widget("FontString") end
     -- unknown METHODS (capitalised) are harmless no-ops; unknown fields are nil, as on real frames
     return setmetatable(w, { __index = function(t, k) return M[k] or (type(k) == "string" and k:match("^%u") and function() end) or nil end })

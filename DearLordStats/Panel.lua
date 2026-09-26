@@ -115,7 +115,11 @@ local function getRow()
     r.left:SetText(""); r.right:SetText("")
     r.left:ClearAllPoints(); r.right:ClearAllPoints()
     if r.cells then for _, c in ipairs(r.cells) do c:Hide() end end
-    if r.chart then for _, t in ipairs(r.chart.bars) do t:Hide() end; for _, l in ipairs(r.chart.labels) do l:Hide() end end
+    if r.chart then
+        for _, t in ipairs(r.chart.bars) do t:Hide() end
+        for _, l in ipairs(r.chart.labels) do l:Hide() end
+        for _, ln in ipairs(r.chart.lines) do ln:Hide() end
+    end
     r.left:SetWordWrap(false)
     r:EnableMouse(false)
     r:Show()
@@ -191,26 +195,36 @@ local function CELLS(left, cells, opts)
     return r
 end
 
--- price over time: one candle per scan day (oldest left), the range low..high as a thin bar, a tick at the
--- median and a thick mark at the lowest buyout, green or red by its move since the day before
+-- price over time: the lowest buyout per scan day as a line (oldest left), each segment green when the price
+-- rose, red when it fell; the median as a dim line behind it. At most POINTS days are drawn, evenly picked.
+local POINTS = 10
 local function CHART(hist, dayText)
-    local r = getRow()
+    local pts = {}
     local n = #hist
+    if n > POINTS then                                        -- thin out evenly, always keeping the oldest and newest
+        for k = 0, POINTS - 1 do pts[#pts + 1] = hist[n - math.floor(k * (n - 1) / (POINTS - 1))] end
+    else
+        for i = n, 1, -1 do pts[#pts + 1] = hist[i] end
+    end
+    n = #pts
+    local r = getRow()
     local height = math.floor(fsize() * 9)
     local labelH = fsize(-2) + 6
     local axisW = fsize() * 4.2
-    local avail = innerWidth() - 8 - axisW
-    local slot = math.max(28, math.min(72, math.floor(avail / n)))
+    local avail = innerWidth() - 12 - axisW
+    local slot = avail / n
     local lo, hi = math.huge, 0
-    for _, h in ipairs(hist) do
-        lo = math.min(lo, h.min or h.med or h.max or 0); hi = math.max(hi, h.max or h.med or h.min or 0)
+    for _, h in ipairs(pts) do
+        local mn, md = h.min or h.med, h.med or h.min
+        if mn then lo = math.min(lo, mn); hi = math.max(hi, mn, md or mn) end
     end
-    if lo == math.huge then lo = 0 end
-    lo = math.max(0, math.floor(lo * 0.9)); hi = math.max(hi * 1.03, lo + 1)
-    local plotH = height - labelH - 6
+    if lo == math.huge then lo, hi = 0, 1 end
+    local pad = math.max(1, (hi - lo) * 0.15)
+    lo, hi = math.max(0, math.floor(lo - pad)), hi + pad
+    local plotH = height - labelH - 8
     local function y(v) return labelH + plotH * (math.min(hi, math.max(lo, v or lo)) - lo) / (hi - lo) end
-    r.chart = r.chart or { bars = {}, labels = {} }
-    local ch, nb, nl = r.chart, 0, 0
+    r.chart = r.chart or { bars = {}, labels = {}, lines = {} }
+    local ch, nb, nl, nn = r.chart, 0, 0, 0
     local function bar(cr, cg, cb, a)
         nb = nb + 1
         local t = ch.bars[nb]
@@ -226,26 +240,44 @@ local function CHART(hist, dayText)
         l:ClearAllPoints(); l:SetPoint(point, r, "BOTTOMLEFT", x, yy); l:SetText(text); l:Show()
         return l
     end
-    local grid = bar(1, 1, 1, 0.06); grid:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", axisW, labelH); grid:SetSize(math.max(1, slot * n), 1)
-    label(L .. ns.strip(ns.money(math.floor(hi))) .. "|r", "TOPLEFT", 4, labelH + plotH + 2, "LEFT")
-    label(L .. ns.strip(ns.money(lo)) .. "|r", "BOTTOMLEFT", 4, labelH - 2, "LEFT")
-    for i = n, 1, -1 do                                       -- oldest on the left
-        local h, prev = hist[i], hist[i + 1]
-        local cx = axisW + (n - i + 0.5) * slot
-        local mn, md, mx = h.min or h.med, h.med or h.min, h.max or h.med or h.min
-        if mn then
-            local range = bar(1, 1, 1, 0.18); range:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 3, y(mn)); range:SetSize(6, math.max(1, y(mx) - y(mn)))
-            if md then local tick = bar(1, 1, 1, 0.55); tick:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 8, y(md) - 1); tick:SetSize(16, 2) end
-            local cr, cg, cb = 0.9, 0.9, 0.9
-            if prev and prev.min and prev.min > 0 then
-                if mn > prev.min then cr, cg, cb = 0.45, 0.9, 0.45 elseif mn < prev.min then cr, cg, cb = 0.95, 0.4, 0.4 end
-            end
-            local mark = bar(cr, cg, cb, 1); mark:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 10, y(mn) - 1.5); mark:SetSize(20, 3)
-            local day = dayText(h.day)
-            label(L .. (slot < 52 and day:match("^%d+") or day) .. "|r", "BOTTOM", cx, 2)
+    local canLine = r.CreateLine ~= nil
+    local function segment(x1, y1, x2, y2, cr, cg, cb, a, thick)
+        if canLine then
+            nn = nn + 1
+            local ln = ch.lines[nn]
+            if not ln then ln = r:CreateLine(nil, "ARTWORK"); ch.lines[nn] = ln end
+            ln:SetColorTexture(cr, cg, cb, a); ln:SetThickness(thick)
+            ln:SetStartPoint("BOTTOMLEFT", r, x1, y1); ln:SetEndPoint("BOTTOMLEFT", r, x2, y2); ln:Show()
+        else                                                  -- no Line widgets: a flat step at the newer price
+            local t = bar(cr, cg, cb, a); t:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", x1, y2 - thick / 2); t:SetSize(math.max(1, x2 - x1), thick)
         end
     end
-    r.tip = "Per scan day: the bar spans the lowest to the highest buyout, the tick is the median, the thick mark the lowest. Green or red: the lowest moved up or down since the previous scan day."
+    for _, ln in ipairs(ch.lines) do ln:Hide() end
+    local grid = bar(1, 1, 1, 0.06); grid:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", axisW, labelH); grid:SetSize(math.max(1, avail), 1)
+    local top = bar(1, 1, 1, 0.06); top:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", axisW, labelH + plotH); top:SetSize(math.max(1, avail), 1)
+    label(L .. ns.strip(ns.money(math.floor(hi))) .. "|r", "TOPLEFT", 4, labelH + plotH + 3, "LEFT")
+    label(L .. ns.strip(ns.money(lo)) .. "|r", "BOTTOMLEFT", 4, labelH - 3, "LEFT")
+    local every = math.max(1, math.ceil((fsize(-2) * 4.2) / slot))   -- day labels only where they fit
+    local px, pmin, pmed
+    for i, h in ipairs(pts) do
+        local cx = axisW + (i - 0.5) * slot
+        local mn, md = h.min or h.med, h.med or h.min
+        if mn then
+            if pmed and md then segment(px, y(pmed), cx, y(md), 1, 1, 1, 0.22, 1.5) end
+            if pmin then
+                local cr, cg, cb = 0.85, 0.85, 0.85
+                if mn > pmin then cr, cg, cb = 0.45, 0.9, 0.45 elseif mn < pmin then cr, cg, cb = 0.95, 0.4, 0.4 end
+                segment(px, y(pmin), cx, y(mn), cr, cg, cb, 1, 3)
+            end
+            local dot = bar(1, 1, 1, 1); dot:SetPoint("CENTER", r, "BOTTOMLEFT", cx, y(mn)); dot:SetSize(5, 5)
+            if (n - i) % every == 0 then
+                local day = dayText(h.day)
+                label(L .. (slot < 52 and day:match("^%d+") or day) .. "|r", "BOTTOM", cx, 2)
+            end
+            px, pmin, pmed = cx, mn, md
+        end
+    end
+    r.tip = "Lowest buyout per unit on each scan day, oldest on the left: green where it rose since the previous point, red where it fell. The faint line is the median. Up to " .. POINTS .. " days are drawn."
     r:EnableMouse(true)
     place(r, height)
     return r
