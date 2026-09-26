@@ -589,7 +589,7 @@ if MODE ~= "bare" then
     check("history: two days for the knife, newest first", #scanResult.historyRows == 2 and scanResult.historyRows[1].min == 150 and scanResult.historyRows[2].min == 200)
     check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 5 and norm(scanResult.tipAlt[3]) == "Alliance AH 3s 0c |" and norm(scanResult.tipAlt[5]) == "Alliance: 7 seen · yesterday")
     check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 5 and norm(scanResult.tipAlways[3]) == "Alliance AH 3s 0c |")
-    check("history header: collapsed shows 1 day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 1 and scanResult.expandedRows == 2)
+    check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")
 else
