@@ -114,6 +114,8 @@ local function getRow()
     r.bar:Hide(); r.rule:Hide(); r.hl:Hide()
     r.left:SetText(""); r.right:SetText("")
     r.left:ClearAllPoints(); r.right:ClearAllPoints()
+    if r.cells then for _, c in ipairs(r.cells) do c:Hide() end end
+    if r.chart then for _, t in ipairs(r.chart.bars) do t:Hide() end; for _, l in ipairs(r.chart.labels) do l:Hide() end end
     r.left:SetWordWrap(false)
     r:EnableMouse(false)
     r:Show()
@@ -156,6 +158,96 @@ local function KV(left, right, opts)
         r.bar:SetWidth(math.max(1, (r:GetWidth()) * math.min(1, opts.bar)))
         r.bar:Show()
     end
+    return r
+end
+
+-- a label on the left and right-aligned columns on the right; opts.widths (per column) or opts.width, plus the KV opts
+local function CELLS(left, cells, opts)
+    opts = opts or {}
+    local r = getRow()
+    r.left:SetFont(FONT, opts.small and fsize(-2) or fsize(), "")
+    r.cells = r.cells or {}
+    local offset = 4
+    for i = #cells, 1, -1 do
+        local c = r.cells[i]
+        if not c then
+            c = r:CreateFontString(nil, "OVERLAY")
+            c:SetFont(FONT, fsize(), ""); c:SetJustifyH("RIGHT"); c:SetWordWrap(false)
+            r.cells[i] = c
+        end
+        local w = (opts.widths and opts.widths[i]) or opts.width or fsize() * 6.4
+        c:SetFont(FONT, opts.small and fsize(-2) or fsize(), "")
+        c:ClearAllPoints(); c:SetPoint("RIGHT", r, "RIGHT", -offset, 0); c:SetWidth(w - 6)
+        c:SetText(cells[i] or ""); c:Show()
+        offset = offset + w
+    end
+    r.left:SetText(left or "")
+    r.left:SetPoint("LEFT", r, "LEFT", 4, 0)
+    r.left:SetPoint("RIGHT", r, "RIGHT", -offset - 6, 0)
+    r.tip, r.onRight, r.onClick, r.link = opts.tip, opts.onRight, opts.onClick, opts.link
+    if opts.tip or opts.onRight or opts.onClick or opts.link then r:EnableMouse(true) end
+    if opts.rule then r.rule:Show() end
+    place(r, (opts.small and fsize(-2) or fsize()) + 6, opts.indent)
+    return r
+end
+
+-- price over time: one candle per scan day (oldest left), the range low..high as a thin bar, a tick at the
+-- median and a thick mark at the lowest buyout, green or red by its move since the day before
+local function CHART(hist, dayText)
+    local r = getRow()
+    local n = #hist
+    local height = math.floor(fsize() * 9)
+    local labelH = fsize(-2) + 6
+    local axisW = fsize() * 4.2
+    local avail = innerWidth() - 8 - axisW
+    local slot = math.max(28, math.min(72, math.floor(avail / n)))
+    local lo, hi = math.huge, 0
+    for _, h in ipairs(hist) do
+        lo = math.min(lo, h.min or h.med or h.max or 0); hi = math.max(hi, h.max or h.med or h.min or 0)
+    end
+    if lo == math.huge then lo = 0 end
+    lo = math.max(0, math.floor(lo * 0.9)); hi = math.max(hi * 1.03, lo + 1)
+    local plotH = height - labelH - 6
+    local function y(v) return labelH + plotH * (math.min(hi, math.max(lo, v or lo)) - lo) / (hi - lo) end
+    r.chart = r.chart or { bars = {}, labels = {} }
+    local ch, nb, nl = r.chart, 0, 0
+    local function bar(cr, cg, cb, a)
+        nb = nb + 1
+        local t = ch.bars[nb]
+        if not t then t = r:CreateTexture(nil, "ARTWORK"); ch.bars[nb] = t end
+        t:ClearAllPoints(); t:SetColorTexture(cr, cg, cb, a); t:Show()
+        return t
+    end
+    local function label(text, point, x, yy, justify)
+        nl = nl + 1
+        local l = ch.labels[nl]
+        if not l then l = r:CreateFontString(nil, "OVERLAY"); l:SetFont(FONT, fsize(-2), ""); l:SetWordWrap(false); ch.labels[nl] = l end
+        l:SetFont(FONT, fsize(-2), ""); l:SetJustifyH(justify or "CENTER")
+        l:ClearAllPoints(); l:SetPoint(point, r, "BOTTOMLEFT", x, yy); l:SetText(text); l:Show()
+        return l
+    end
+    local grid = bar(1, 1, 1, 0.06); grid:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", axisW, labelH); grid:SetSize(math.max(1, slot * n), 1)
+    label(L .. ns.strip(ns.money(math.floor(hi))) .. "|r", "TOPLEFT", 4, labelH + plotH + 2, "LEFT")
+    label(L .. ns.strip(ns.money(lo)) .. "|r", "BOTTOMLEFT", 4, labelH - 2, "LEFT")
+    for i = n, 1, -1 do                                       -- oldest on the left
+        local h, prev = hist[i], hist[i + 1]
+        local cx = axisW + (n - i + 0.5) * slot
+        local mn, md, mx = h.min or h.med, h.med or h.min, h.max or h.med or h.min
+        if mn then
+            local range = bar(1, 1, 1, 0.18); range:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 3, y(mn)); range:SetSize(6, math.max(1, y(mx) - y(mn)))
+            if md then local tick = bar(1, 1, 1, 0.55); tick:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 8, y(md) - 1); tick:SetSize(16, 2) end
+            local cr, cg, cb = 0.9, 0.9, 0.9
+            if prev and prev.min and prev.min > 0 then
+                if mn > prev.min then cr, cg, cb = 0.45, 0.9, 0.45 elseif mn < prev.min then cr, cg, cb = 0.95, 0.4, 0.4 end
+            end
+            local mark = bar(cr, cg, cb, 1); mark:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", cx - 10, y(mn) - 1.5); mark:SetSize(20, 3)
+            local day = dayText(h.day)
+            label(L .. (slot < 52 and day:match("^%d+") or day) .. "|r", "BOTTOM", cx, 2)
+        end
+    end
+    r.tip = "Per scan day: the bar spans the lowest to the highest buyout, the tick is the median, the thick mark the lowest. Green or red: the lowest moved up or down since the previous scan day."
+    r:EnableMouse(true)
+    place(r, height)
     return r
 end
 
@@ -565,6 +657,7 @@ function render.prices()
         end
         H("History")
         if #hist == 0 then P(L .. "No history yet.|r") end
+        if #hist >= 2 then CHART(hist, dayText); GAP(6) end
         for i, h in ipairs(hist) do
             local prev = hist[i + 1]
             local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
@@ -577,11 +670,16 @@ function render.prices()
     local list = ns.AuctionSearch(q, 60)
     if #list == 0 then P(L .. (q == "" and "Nothing scanned yet." or ("Nothing called \"" .. q .. "\" in the last scans.")) .. "|r"); return end
     H((q == "" and "All items" or ("Matching \"" .. q .. "\"")) .. "  ·  " .. #list .. (#list >= 60 and "+" or ""))
+    -- one column per auction house, your own first: the lowest buyout per unit at that house's last scan
+    local own = (ns.AuctionKey() or ""):match("%-(%a+)$") or "Yours"
+    local other = (ns.AuctionOtherKey() or ""):match("%-(%a+)$") or "Other"
+    local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 4 }
+    CELLS(L .. "Item|r", { L .. own .. "|r", L .. "Neutral|r", L .. other .. "|r", L .. "trend|r" }, { widths = widths, small = true, rule = true })
+    local function cell(p) return p and (W .. ns.money(p) .. "|r") or (L .. "–|r") end
     for _, it in ipairs(list) do
-        local trend = ns.AuctionTrendText(it.trend)
-        KV(W .. it.name .. "|r", W .. ns.money(it.p) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(it.med)) .. "  ·  " .. ns.strip(ns.money(it.max)) .. "|r" .. (trend and ("  " .. trend) or ""),
-            { link = "item:" .. it.id, onClick = function() state.priceItem = it.id; state.offset = 0; renderNow() end,
-              tip = "Lowest · median · highest buyout per unit at the last scan. Click for the history." })
+        CELLS(W .. it.name .. "|r", { cell(it.p), cell(it.neutral), cell(it.other), ns.AuctionTrendText(it.trend) or " " },
+            { widths = widths, link = "item:" .. it.id, onClick = function() state.priceItem = it.id; state.offset = 0; renderNow() end,
+              tip = "Lowest buyout per unit at each house's last scan; the trend is your own house's move since its previous scan day. Click for the history." })
     end
 end
 

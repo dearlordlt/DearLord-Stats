@@ -51,9 +51,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   as `Horde AH 9s 31c` plus `Horde: 19 seen · 2 days ago`, with the stack total when you hover a stack,
   and feeds the Loot tab. Every house you have scanned is listed: your faction's, the other faction's
   (by default always; Settings can tie it to Alt, Shift or Ctrl) and the neutral one. A trend (`+12%` / `-8%`) shows how the lowest buyout moved
-  since the previous scan day, and the **Prices** tab is a browser: search by name, see lowest, median
-  and highest buyout, click an item for its day-by-day history. Both the tooltip line and the automatic
-  scan can be switched off in Settings.
+  since the previous scan day, and the **Prices** tab is a browser: search by name across every house
+  you scanned, one labelled column per house (yours, neutral, the other faction), click an item for its
+  day-by-day history with a candle chart (low to high, median tick, lowest marked green or red). Both the
+  tooltip line and the automatic scan can be switched off in Settings.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the

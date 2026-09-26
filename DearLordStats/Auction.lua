@@ -112,19 +112,30 @@ function ns.AuctionItemName(id, e)
     return name
 end
 
--- items of this faction's house whose name contains the query; at most `limit`, sorted by name
+-- items of any house on this realm whose name contains the query; at most `limit`, sorted by name.
+-- p/n/d/med/max/trend describe your own house, neutral/other the lowest buyout at the two others.
 function ns.AuctionSearch(query, limit)
-    local r = realmData()
-    local out = {}
-    if not r then return out end
+    local keys = { ns.AuctionKey(), ns.AuctionNeutralKey(), ns.AuctionOtherKey() }
+    local out, seen = {}, {}
     query = (query or ""):lower()
-    for id, e in pairs(r.items) do
-        local name = ns.AuctionItemName(id, e)
-        if name and (query == "" or name:lower():find(query, 1, true)) then
-            local h = ns.AuctionHistory(id)
-            out[#out + 1] = { id = id, name = name, p = e.p, n = e.n, d = e.d, med = h[1] and h[1].med or e.p, max = h[1] and h[1].max or e.p,
-                trend = ns.AuctionTrend(id), days = #h }
-            if #out >= (limit or 60) * 4 then break end
+    for _, k in ipairs(keys) do
+        local r = k and realmData(false, k)
+        if r then
+            for id, e in pairs(r.items) do
+                if not seen[id] then
+                    local name = ns.AuctionItemName(id, e)
+                    if name and (query == "" or name:lower():find(query, 1, true)) then
+                        seen[id] = true
+                        local own = realmData(false, keys[1]); local oe = own and own.items[id]
+                        local h = ns.AuctionHistory(id)
+                        out[#out + 1] = { id = id, name = name, p = oe and oe.p, n = oe and oe.n, d = oe and oe.d,
+                            med = h[1] and h[1].med or (oe and oe.p), max = h[1] and h[1].max or (oe and oe.p),
+                            trend = oe and ns.AuctionTrend(id) or nil, days = #h,
+                            neutral = (ns.AuctionPriceByID(id, keys[2])), other = (ns.AuctionPriceByID(id, keys[3])) }
+                        if #out >= (limit or 60) * 4 then break end
+                    end
+                end
+            end
         end
     end
     table.sort(out, function(a, b) return a.name < b.name end)
@@ -371,14 +382,14 @@ local function addLines(tooltip, id)
     local mine = ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH"
     if price then rows[#rows + 1] = { label = mine, unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age,
         trend = ns.AuctionTrendText((ns.AuctionTrend(id))) } end
+    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
+        local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
+        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ns.AuctionNeutralKey()))) } end
+    end
     if modifierHeld() then                                     -- the other faction's house: on a modifier, always, or never (Settings)
         local ok = ns.AuctionOtherKey()
         local op, oage, oseen = ns.AuctionPriceByID(id, ok)
         if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ok))) } end
-    end
-    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
-        local np, nage, nseen = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
-        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, trend = ns.AuctionTrendText((ns.AuctionTrend(id, ns.AuctionNeutralKey()))) } end
     end
     tooltip.dlsAhShown = #rows > 0 and id or nil
     if #rows == 0 then return end
