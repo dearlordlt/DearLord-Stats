@@ -242,8 +242,13 @@ end
 
 ns.On("REPLICATE_ITEM_LIST_UPDATE", function()
     local d = diag(); d.updates = (d.updates or 0) + 1
-    if scan.state ~= "requested" then return end
     local n = N(C_AuctionHouse.GetNumReplicateItems()) or 0
+    if scan.state == "idle" and ahOpen and ahKey and n > 0 and db() and time() - (db().lastRequest or 0) < THROTTLE then
+        -- the answer to a request this addon gave up on (or one from before a /reload): the throttle is spent, so take it
+        scan = { state = "requested", requestedAt = db().lastRequest, key = ahKey, late = true }
+        d.late = (d.late or 0) + 1
+    end
+    if scan.state ~= "requested" then return end
     d.firstUpdate = { rows = n, secs = time() - (scan.requestedAt or time()) }
     if n == 0 then return end                                 -- it fires again when the list has arrived
     scan.state, scan.n, scan.i, scan.agg, scan.priced, scan.blank = "collecting", n, 0, {}, 0, 0
@@ -256,7 +261,13 @@ local function start()
     scan = { state = "requested", requestedAt = time(), key = ahKey or ns.AuctionKey() }
     local ok, err = pcall(C_AuctionHouse.ReplicateItems)
     if not ok then diag().error = tostring(err); abort("refused: " .. tostring(err)); return end
-    ns.After(30, function() if scan.state == "requested" then abort("no answer from the server in 30 s") end end, "ah:timeout")
+    -- no answer in 30 s: say so, but keep listening. The 15-minute throttle is spent either way, and the list
+    -- has been seen to arrive late; the wait ends when the auction house closes.
+    ns.After(30, function()
+        if scan.state ~= "requested" then return end
+        local dg = diag(); dg.slow = (dg.slow or 0) + 1; dg.slowAt = time()
+        ns.Feed(ns.LABEL .. "Auction scan|r  no answer from the server yet, still waiting", { tab = "loot", key = "ahscan", hold = 8 })
+    end, "ah:timeout")
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
