@@ -55,6 +55,8 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   you scanned, one labelled column per house (yours, neutral, the other faction), click an item for its
   day-by-day history with a candle chart (low to high, median tick, lowest marked green or red). Both the
   tooltip line and the automatic scan can be switched off in Settings.
+  Lists that grow over time (price histories, previous loot sessions, deaths, notes, reminders) start
+  collapsed to their newest entries; click the header to see everything.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the

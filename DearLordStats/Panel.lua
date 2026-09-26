@@ -146,6 +146,28 @@ local function H(text)
     GAP(4)
 end
 
+-- a header for a list that keeps growing: collapsed it shows the newest `few`, a click on the header
+-- shows everything (remembered per list in the saved settings). Returns how many entries to draw.
+local function HX(text, key, total, few)
+    if total <= few then H(text); return total end
+    ns.db.panelOpen = ns.db.panelOpen or {}
+    local open = ns.db.panelOpen[key] and true or false
+    if cursor > 0 then GAP(12) end
+    local r = getRow()
+    r.left:SetFont(FONT, fsize(-2), ""); r.right:SetFont(FONT, fsize(-2), "")
+    r.left:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 4)
+    r.right:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 4)
+    r.left:SetText("|cff8fa3b8" .. text:upper() .. "|r")
+    r.right:SetText(ns.BLUE .. (open and "show less" or ("newest " .. few .. " of " .. total .. "  ·  show all")) .. "|r")
+    r.rule:Show()
+    r.onClick = function() ns.db.panelOpen[key] = (not open) or nil; renderNow() end
+    r.tip = open and ("Click to show only the newest " .. few .. ".") or ("Click to show all " .. total .. ".")
+    r:EnableMouse(true)
+    place(r, fsize(-2) + 8)
+    GAP(4)
+    return open and total or few
+end
+
 -- opts: tip, onRight, indent, bar (0..1)
 local function KV(left, right, opts)
     opts = opts or {}
@@ -307,8 +329,8 @@ local function recentReminders(tab)
         if ns.recentNudges[i].tab == tab then list[#list + 1] = ns.recentNudges[i] end
     end
     if #list == 0 then return end
-    H("Recent reminders")
-    for i = 1, math.min(5, #list) do KV(list[i].text, L .. ago(list[i].t) .. "|r") end
+    local show = HX("Recent reminders", "nudges:" .. tostring(tab), #list, 5)
+    for i = 1, show do KV(list[i].text, L .. ago(list[i].t) .. "|r") end
 end
 
 
@@ -431,8 +453,8 @@ function render.combat(scope)
     end
 
     if scope == "character" and #ns.char.deathLog > 0 then
-        H("Recent deaths")
-        for i = #ns.char.deathLog, math.max(1, #ns.char.deathLog - 4), -1 do
+        local show = HX("Recent deaths", "combat:deaths", #ns.char.deathLog, 5)
+        for i = #ns.char.deathLog, #ns.char.deathLog - show + 1, -1 do
             local d = ns.char.deathLog[i]
             KV(L .. "Level " .. tostring(d.level or "?") .. "|r  " .. W .. (d.zone or "?") .. ((d.sub and d.sub ~= "") and (", " .. d.sub) or "") .. "|r", L .. ago(d.t) .. "|r")
         end
@@ -648,8 +670,8 @@ function render.loot()
 
     local history = ns.db.lootHistory or {}
     if #history > 0 then
-        H("Previous sessions")
-        for i = #history, math.max(1, #history - 9), -1 do
+        local show = HX("Previous sessions", "loot:sessions", #history, 3)
+        for i = #history, #history - show + 1, -1 do
             local s = history[i]
             local parts = {}
             for q = 2, 5 do if s.byQ and s.byQ[q] then parts[#parts + 1] = ns.QualityColor(q) .. s.byQ[q] .. " " .. (ns.QUALITY_NAME[q] or ""):lower() .. "|r" end end
@@ -695,9 +717,10 @@ function render.prices()
             local hh = house[2] and ns.AuctionHistory(id, house[2]) or {}
             if #hh > 0 then
                 any = true
-                H(house[1] .. " history")
+                local show = HX(house[1] .. " history", "prices:" .. house[1], #hh, 1)
                 if #hh >= 2 then CHART(hh, dayText); GAP(6) end
-                for i, h in ipairs(hh) do
+                for i = 1, show do
+                    local h = hh[i]
                     local prev = hh[i + 1]
                     local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
                     KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(h.med)) .. "  ·  " .. ns.strip(ns.money(h.max)) .. "|r" .. (t and ("  " .. t) or ""),
@@ -733,7 +756,8 @@ function render.journal()
         P(L .. "Thoughts go here. Type below, or use |r" .. W .. "/dls note your text|r" .. L .. " while playing. Each note is stamped with your level and zone, and lands in the summary.|r")
         return
     end
-    for i = #notes, 1, -1 do
+    local show = HX("Notes", "journal", #notes, 5)
+    for i = #notes, #notes - show + 1, -1 do
         local n = notes[i]
         KV(L .. "Level " .. tostring(n.level or "?") .. "  ·  " .. (n.zone or "?") .. "|r", L .. ago(n.t) .. "|r",
             { onRight = function() ns.RemoveNote(i) end, tip = "Right-click to delete this note." })
