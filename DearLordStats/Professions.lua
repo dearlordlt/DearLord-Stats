@@ -215,12 +215,17 @@ local function scanRecipes()
                     reagents[#reagents + 1] = { id = itemID, qty = qty }
                 end
             end
+            -- what it makes and how many: the advisor prices the product against its materials
+            local out = sch and N(sch.outputItemID)
+            local qmin, qmax = sch and N(sch.quantityMin), sch and N(sch.quantityMax)
             list[#list + 1] = { id = id, name = S(info.name) or "?", diff = N(info.relativeDifficulty) or 3,
-                trivial = N(info.maxTrivialLevel), reagents = reagents }
+                trivial = N(info.maxTrivialLevel), reagents = reagents, out = out,
+                qmin = (qmin and qmin > 1) and qmin or nil, qmax = (qmax and qmax > 1) and qmax or nil }
         end
     end
     ns.diagOnce("recipeSample", function() return ns.dump(T(TS.GetRecipeSchematic and TS.GetRecipeSchematic(ids[1], false))) end)
-    ns.char.recipes[prof] = { scanned = time(), rank = N(base.skillLevel), max = N(base.maxSkillLevel), list = list }
+    ns.char.recipes[prof] = { scanned = time(), rank = N(base.skillLevel), max = N(base.maxSkillLevel), list = list, outputs = true }
+    if ns.AdviceDirty then ns.AdviceDirty() end
     if ns.PanelDirty then ns.PanelDirty() end
 end
 

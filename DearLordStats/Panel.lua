@@ -17,22 +17,26 @@ local function clampSize(w, h)
     local maxW, maxH = screenMax()
     return math.max(MIN_W, math.min(maxW, w or WIDTH)), math.max(MIN_H, math.min(maxH, h or HEIGHT))
 end
+local panel, scroll, child, footer, noteBox, summaryBox, selectAll, searchBox
 local function innerWidth() return ((panel and panel:GetWidth()) or WIDTH) - PAD * 2 - 8 end
 local FONT = STANDARD_TEXT_FONT
 local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = "Abilities" },
-    { key = "professions", text = "Professions" }, { key = "loot", text = "Loot" }, { key = "prices", text = "Prices" }, { key = "journal", text = "Journal" },
+    { key = "professions", text = "Professions" }, { key = "economy", text = "Economy" }, { key = "prices", text = "Prices" }, { key = "journal", text = "Journal" },
     { key = "summary", text = "Summary" }, { key = "settings", text = "Settings" } }
 local SCOPES = {
     combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
     abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
     summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" } },
+    economy = { { key = "advice", text = "Advice" }, { key = "session", text = "Session" }, { key = "history", text = "History" } },
 }
 
-local panel, scroll, child, footer, noteBox, summaryBox, selectAll, searchBox
 local tabButtons, scopeButtons = {}, {}
 local rows, used = {}, 0
-local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one" }, dirty = true, offset = 0 }
+local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one", economy = "advice" }, dirty = true, offset = 0 }
 local cursor = 0
+-- the column rows are drawn into: x offset and width inside the scroll child (see COLUMNS / SECTION)
+local colX, colW = 0, nil
+local function colWidth() return colW or innerWidth() end
 local renderNow
 local settingsPage
 local function fsize(delta) return ((ns.db and ns.db.panelFontSize) or 12) + (delta or 0) end
@@ -44,6 +48,7 @@ local function ago(t)
     if d < 86400 then return math.floor(d / 3600) .. " h ago" end
     return math.floor(d / 86400) .. " d ago"
 end
+local function m(c) return ns.strip(ns.money(c)) end
 local function pctText(v) return v and string.format("%d%%", math.floor(v * 100 + 0.5)) or "-" end
 
 ----------------------------------------------------------------------
@@ -94,9 +99,14 @@ local function getRow()
         r.right:SetJustifyH("RIGHT")
         r:SetScript("OnEnter", function(self)
             if self.tip or self.onRight or self.onClick or self.link then self.hl:Show() end
-            if self.link then                                    -- an item: show the game's own tooltip for it
+            if self.link then                                    -- an item: the game's own tooltip, then our reasoning under it
                 GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-                if not pcall(GameTooltip.SetHyperlink, GameTooltip, self.link) then GameTooltip:Hide() end
+                local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.link)
+                if self.tip then
+                    if ok then GameTooltip:AddLine(" ") end
+                    for line in tostring(self.tip):gmatch("[^\n]+") do GameTooltip:AddLine(line, 0.9, 0.9, 0.9, true) end
+                    GameTooltip:Show()
+                elseif not ok then GameTooltip:Hide() end
             elseif self.tip then
                 GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
                 GameTooltip:AddLine(self.tip, 0.9, 0.9, 0.9, true)
@@ -128,8 +138,9 @@ end
 
 local function place(r, height, indent)
     r:ClearAllPoints()
-    r:SetPoint("TOPLEFT", child, "TOPLEFT", indent or 0, -cursor)
-    r:SetSize(innerWidth() - (indent or 0), height)
+    r:SetPoint("TOPLEFT", child, "TOPLEFT", colX + (indent or 0), -cursor)
+    r:SetSize(colWidth() - (indent or 0), height)
+    r.colX = colX
     cursor = cursor + height
 end
 
@@ -163,7 +174,7 @@ end
 
 -- a header for a list that keeps growing: collapsed it shows the newest `few`, the button on its right
 -- shows everything (remembered per list in the saved settings). Returns how many entries to draw.
-local function HX(text, key, total, few)
+local function HX(text, key, total, few, word)
     if total <= few then H(text); return total end
     ns.db.panelOpen = ns.db.panelOpen or {}
     local open = ns.db.panelOpen[key] and true or false
@@ -180,7 +191,7 @@ local function HX(text, key, total, few)
     b:SetPoint("RIGHT", r, "RIGHT", -4, 0)
     b.onToggle = toggle
     r.right:SetPoint("RIGHT", b, "LEFT", -8, 0)
-    r.right:SetText(L .. (open and ("all " .. total) or ("newest " .. few .. " of " .. total)) .. "|r")
+    r.right:SetText(L .. (open and ("all " .. total) or ((word or "newest") .. " " .. few .. " of " .. total)) .. "|r")
     r.onClick = toggle                                        -- the row too, for good measure
     r:EnableMouse(true)
     GAP(4)
@@ -252,7 +263,7 @@ local function CHART(hist, dayText)
     local height = math.floor(fsize() * 9)
     local labelH = fsize(-2) + 6
     local axisW = fsize() * 4.2
-    local avail = innerWidth() - 12 - axisW
+    local avail = colWidth() - 12 - axisW
     local slot = avail / n
     local lo, hi = math.huge, 0
     for _, h in ipairs(pts) do
@@ -326,7 +337,7 @@ end
 
 local function P(text, indent)
     local r = getRow()
-    local width = innerWidth() - 8 - (indent or 0)
+    local width = colWidth() - 8 - (indent or 0)
     r.left:SetFont(FONT, fsize(), "")
     r.left:SetWordWrap(true)
     r.left:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -2)
@@ -335,6 +346,35 @@ local function P(text, indent)
     local h = math.max(16, (r.left:GetStringHeight() or 14) + 4)
     place(r, h, indent)
     return r
+end
+
+-- side-by-side sections when the window is wide: COLUMNS(max) starts a flow, each SECTION(fn) is drawn into
+-- the shortest column, ENDCOLUMNS() continues below the tallest. One column (a narrow window) draws exactly
+-- as if none of this were here.
+local cols
+local COL_GAP = 18
+local function COLUMNS(max)
+    local inner = innerWidth()
+    local n = math.max(1, math.min(max or 3, math.floor((inner + COL_GAP) / (fsize() * 26 + COL_GAP))))
+    if n == 1 then cols = nil; return 1 end
+    cols = { n = n, w = math.floor((inner - COL_GAP * (n - 1)) / n), start = cursor, y = {} }
+    for i = 1, n do cols.y[i] = cursor end
+    return n
+end
+local function SECTION(fn)
+    if not cols then fn(); return end
+    local best = 1
+    for i = 2, cols.n do if cols.y[i] < cols.y[best] - 1 then best = i end end
+    cursor, colX, colW = cols.y[best], (best - 1) * (cols.w + COL_GAP), cols.w
+    fn()
+    cols.y[best] = cursor
+    colX, colW = 0, nil
+end
+local function ENDCOLUMNS()
+    if not cols then return end
+    local m = cols.start
+    for i = 1, cols.n do m = math.max(m, cols.y[i]) end
+    cursor, cols, colX, colW = m, nil, 0, nil
 end
 
 ----------------------------------------------------------------------
@@ -394,6 +434,8 @@ function render.combat(scope)
         P(L .. "No fights recorded yet" .. where .. ". Go and hit something.|r")
         return
     end
+    COLUMNS(3)
+    SECTION(function()
     H("Overview")
     KV(L .. "Fights|r", W .. v.fights .. "|r  " .. L .. "(" .. v.kills .. (v.kills == 1 and " kill)|r" or " kills)|r"))
     KV(L .. "Time per kill|r", W .. ns.seconds(v.ttk) .. "|r", { tip = "Fight time divided by mobs killed. The plain feel of how fast things die." })
@@ -401,7 +443,9 @@ function render.combat(scope)
         { tip = "From the game's built-in damage meter, read after each fight." })
     KV(L .. "In combat|r", W .. pctText(v.combatShare) .. "|r " .. L .. "of played time|r")
     KV(L .. "Rest between pulls|r", W .. ns.seconds(v.rest) .. "|r", { tip = "Average pause between one fight and the next, counting only pauses under 90 s. High numbers mean eating, drinking or bandaging a lot." })
+    end)
 
+    SECTION(function()
     H("Safety")
     KV(L .. "Damage taken per fight|r", W .. pctText(v.takenPct) .. "|r " .. L .. "of your health pool|r",
         { tip = "This client hides your current health from addons, so danger is measured as how much of your total health an average fight costs you." })
@@ -411,11 +455,12 @@ function render.combat(scope)
     KV(L .. "Close calls|r", (v.close > 0 and ns.AMBER or W) .. v.close .. "|r", { tip = "Fights where the low-health warning came up, or where you took most of your health pool in damage." })
     KV(L .. "Ran out of mana, rage or energy|r", W .. v.oomFights .. "|r " .. L .. (v.oomFights == 1 and "fight|r" or "fights|r"))
     KV(L .. "Deaths|r", (v.deaths > 0 and ns.RED or W) .. v.deaths .. "|r" .. (v.deathsPerHour and ("  " .. L .. string.format("%.1f per hour", v.deathsPerHour) .. "|r") or ""))
+    end)
 
     local label = { "One mob", "Two mobs", "Three or more" }
     local any = false
     for b = 1, 3 do if v.size[b] then any = true end end
-    if any then
+    if any then SECTION(function()
         H("By pull size")
         for b = 1, 3 do
             local z = v.size[b]
@@ -428,56 +473,58 @@ function render.combat(scope)
                 KV(L .. label[b] .. "|r", W .. table.concat(parts, L .. "  ·  |r" .. W) .. "|r")
             end
         end
-    end
+    end) end
 
     if scope == "character" then
         local levels = {}
         for lvl, a in pairs(ns.char.byLevel) do if a.fights > 0 then levels[#levels + 1] = lvl end end
         table.sort(levels, function(a, b) return a > b end)
-        if #levels > 0 then
-            H("By level")
-            for _, lvl in ipairs(levels) do
+        if #levels > 0 then SECTION(function()
+            local show = HX("By level", "combat:levels", #levels, 10)
+            for i = 1, show do
+                local lvl = levels[i]
                 KV(L .. "Level " .. lvl .. "|r", sliceLine(ns.CombatView(ns.LevelAggregate(ns.char, lvl))),
                     { onClick = function() state.scope.combat, state.level, state.offset = "level", lvl, 0; renderNow() end,
                       tip = "Click to look at this level on its own." })
             end
-        end
+        end) end
         local order, names = { "lower", "even", "higher" }, { lower = "Lower level", even = "About your level", higher = "Higher level" }
         local tips = { lower = "Mobs three or more levels below you.", even = "Mobs from two levels below you to one above.", higher = "Mobs two or more levels above you." }
         local anyDiff = false
         for _, k in ipairs(order) do if ns.char.byDiff[k] and ns.char.byDiff[k].fights > 0 then anyDiff = true end end
-        if anyDiff then
+        if anyDiff then SECTION(function()
             H("By mob level")
             for _, k in ipairs(order) do
                 local a = ns.char.byDiff[k]
                 if a and a.fights > 0 then KV(L .. names[k] .. "|r", sliceLine(ns.CombatView(a)), { tip = tips[k] }) end
             end
-        end
+        end) end
         local zones = {}
         for zone, a in pairs(ns.char.byZone) do if a.fights > 0 then zones[#zones + 1] = zone end end
         table.sort(zones, function(a, b) return ns.char.byZone[a].fights > ns.char.byZone[b].fights end)
-        if #zones > 0 then
-            H("By zone")
-            for i = 1, math.min(8, #zones) do KV(L .. zones[i] .. "|r", sliceLine(ns.CombatView(ns.char.byZone[zones[i]]))) end
-        end
+        if #zones > 0 then SECTION(function()
+            local show = HX("By zone", "combat:zones", #zones, 8, "top")
+            for i = 1, show do KV(L .. zones[i] .. "|r", sliceLine(ns.CombatView(ns.char.byZone[zones[i]]))) end
+        end) end
         local tough = ns.ToughestMobs(5)
-        if #tough > 0 then
+        if #tough > 0 then SECTION(function()
             H("Toughest opponents")
             for _, m in ipairs(tough) do
                 KV(W .. m.name .. "|r" .. (m.level and ("  " .. L .. "level " .. m.level .. "|r") or ""),
                     W .. "costs " .. pctText(m.cost) .. " health|r" .. L .. "  ·  " .. m.fights .. " fights" .. (m.ttk and ("  ·  " .. ns.seconds(m.ttk)) or "") .. "|r",
                     { tip = "Average share of your health pool lost per fight against this mob, single pulls only, at least two fights." })
             end
-        end
+        end) end
     end
 
-    if scope == "character" and #ns.char.deathLog > 0 then
+    if scope == "character" and #ns.char.deathLog > 0 then SECTION(function()
         local show = HX("Recent deaths", "combat:deaths", #ns.char.deathLog, 5)
         for i = #ns.char.deathLog, #ns.char.deathLog - show + 1, -1 do
             local d = ns.char.deathLog[i]
             KV(L .. "Level " .. tostring(d.level or "?") .. "|r  " .. W .. (d.zone or "?") .. ((d.sub and d.sub ~= "") and (", " .. d.sub) or "") .. "|r", L .. ago(d.t) .. "|r")
         end
-    end
+    end) end
+    ENDCOLUMNS()
 end
 
 function render.abilities(scope)
@@ -485,6 +532,8 @@ function render.abilities(scope)
     local casts = scope == "character" and ns.char.casts or (scope == "session" and ns.session.casts or nil)
     if scope == "level" then levelStepper() end
     local list, total = ns.AbilityView(agg, casts)
+    COLUMNS(2)
+    SECTION(function()
     H("Where your damage comes from")
     if #list == 0 then
         P(L .. "Nothing yet. The breakdown fills in after each fight.|r")
@@ -497,22 +546,26 @@ function render.abilities(scope)
         GAP(2)
         KV(L .. "Total|r", W .. ns.shortNumber(total) .. "|r")
     end
+    end)
 
     local missing, unused = ns.spells.missing, ns.spells.unused
-    if #missing > 0 then
-        H("Learned, but not on your bars")
-        for _, name in ipairs(missing) do
+    if #missing > 0 then SECTION(function()
+        local show = HX("Learned, but not on your bars", "abilities:missing", #missing, 8, "first")
+        for i = 1, show do
+            local name = missing[i]
             KV(W .. name .. "|r", L .. "right-click to ignore|r", { onRight = function() ns.IgnoreSpell(name) end,
                 tip = "This spell is in your spellbook but on no action bar or macro." })
         end
-    end
-    recentReminders("abilities")
-    if #unused > 0 and ns.UnusedIsMeaningful() then
-        H("On your bars, never pressed this session")
-        for _, name in ipairs(unused) do
+    end) end
+    SECTION(function() recentReminders("abilities") end)
+    if #unused > 0 and ns.UnusedIsMeaningful() then SECTION(function()
+        local show = HX("On your bars, never pressed this session", "abilities:unused", #unused, 8, "first")
+        for i = 1, show do
+            local name = unused[i]
             KV(W .. name .. "|r", L .. "right-click to ignore|r", { onRight = function() ns.IgnoreSpell(name) end })
         end
-    end
+    end) end
+    ENDCOLUMNS()
 end
 
 function render.professions()
@@ -520,7 +573,8 @@ function render.professions()
     if #profs == 0 then
         P(L .. "No professions on this character yet.|r")
     end
-    for _, p in ipairs(profs) do
+    COLUMNS(3)
+    for _, p in ipairs(profs) do SECTION(function()
         H(p.name .. "   " .. p.rank .. " / " .. p.max)
         if p.ups > 0 or p.gathers > 0 then
             local parts = {}
@@ -561,12 +615,12 @@ function render.professions()
         for _, u in ipairs(p.unlocks) do
             KV((u.ready and ns.GREEN or L) .. "at " .. u.req .. "|r  " .. W .. u.service .. "|r", u.ready and (ns.GREEN .. "trainable|r") or "", { indent = 12 })
         end
-    end
+    end) end
 
     local zones = {}
     for zone, byProf in pairs(ns.char.gather) do zones[#zones + 1] = zone end
     table.sort(zones)
-    if #zones > 0 then
+    if #zones > 0 then SECTION(function()
         H("Gathered by zone")
         for _, zone in ipairs(zones) do
             for prof, rec in pairs(ns.char.gather[zone]) do
@@ -578,11 +632,11 @@ function render.professions()
                 KV(W .. zone .. "|r  " .. L .. prof .. ", " .. rec.gathers .. " gathers|r", L .. table.concat(text, ", ") .. "|r")
             end
         end
-    end
+    end) end
 
-    recentReminders("professions")
+    SECTION(function() recentReminders("professions") end)
 
-    if #ns.char.lowskill > 0 then
+    if #ns.char.lowskill > 0 then SECTION(function()
         H("Skill was too low for")
         for i = #ns.char.lowskill, math.max(1, #ns.char.lowskill - 7), -1 do
             local e = ns.char.lowskill[i]
@@ -590,15 +644,115 @@ function render.professions()
                 ns.AMBER .. e.skill .. " " .. e.req .. "|r" .. (e.had and ("  " .. L .. "you had " .. e.had .. "|r") or ""),
                 { onRight = function() table.remove(ns.char.lowskill, i); ns.PanelDirty() end, tip = "Right-click to remove this entry." })
         end
-    end
+    end) end
+    ENDCOLUMNS()
 end
 
-function render.loot()
+-- the auction scan in one line: each house's age, and the scan action (or its progress) on the right
+local function scanStatusRow()
+    local st = ns.AuctionStatus and ns.AuctionStatus()
+    if not (st and st.api) then return end
+    local parts, tip = {}, {}
+    local order = { [true] = 1, Neutral = 2 }
+    table.sort(st.realms, function(a, b) return (order[a.mine] or order[a.faction] or 3) < (order[b.mine] or order[b.faction] or 3) end)
+    for _, r in ipairs(st.realms) do
+        local age = r.count > 0 and ago(r.scanned):gsub(" ago", ""):gsub("just now", "now") or "never"
+        parts[#parts + 1] = (r.mine and W or L) .. r.faction .. "|r " .. L .. age .. "|r"
+        tip[#tip + 1] = r.faction .. (r.open and " (open now)" or (r.mine and "" or (r.faction == "Neutral" and " (goblins, both factions)" or " (other faction)")))
+            .. ": " .. (r.count > 0 and (r.count .. " items, scanned " .. ago(r.scanned)) or "not scanned yet")
+    end
+    if #parts == 0 then parts[1] = L .. "no house scanned yet|r" end
+    local right
+    if st.state ~= "idle" then
+        right = W .. (st.state == "requested" and "waiting for the list" or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
+    else
+        right = ns.BLUE .. "Scan now|r" .. L .. (st.ahOpen and "" or " · at the AH") .. (st.nextIn > 0 and (" · in " .. ns.shortTime(st.nextIn)) or "") .. "|r"
+    end
+    KV(table.concat(parts, L .. "  ·  |r"), right, { onClick = function()
+        local ok, why, wait = ns.AuctionScan()
+        if not ok and why == "throttled" then ns.say("next scan possible in " .. ns.shortTime(wait))
+        elseif not ok and why == "closed" then ns.say("open the auction house first") end
+        renderNow()
+    end, tip = table.concat(tip, "\n") .. "\n\nClick to scan while the auction house is open: every auction is read once (the game allows one scan per 15 minutes) and the lowest buyout per item is kept, per realm and faction." })
+end
+
+local ADVICE = {
+    { key = "sell", title = "Sell from your bags", empty = "Nothing in your bags earns more at the auction house than at a vendor." },
+    { key = "craft", title = "Craft for profit", empty = "None of your known recipes makes a profit at the last scan's prices." },
+    { key = "gather", title = "Gather", empty = "No gathering profession on this character." },
+    { key = "flips", title = "Vendor flips", empty = "Nothing a vendor you met sells for less than the auction house pays. Talk to vendors: their prices are remembered." },
+    { key = "bargains", title = "Bargains", empty = "No auction below what a vendor pays for it." },
+}
+
+local function renderAdvice()
+    local adv = ns.Advice()
+    local view = ns.LootView()
+    local s = ns.session
+    local elapsed = math.max(1, time() - (s.start or time()))
+    local earned, spent = s.earned or 0, s.spent or 0
+    -- the strip at the top: this session's money and what the bags are worth
+    local widths = { fsize() * 7.5, fsize() * 7.5, fsize() * 9 }
+    CELLS(L .. "This session|r", { L .. "gold / hour|r", L .. "net|r", L .. "bags: vendor · best|r" }, { widths = widths, small = true, rule = true })
+    CELLS(L .. ns.shortTime(elapsed) .. "|r", { (earned > 0 and elapsed >= 30) and (W .. ns.money(earned / elapsed * 3600) .. "|r") or (L .. "-|r"),
+        W .. ns.money(earned - spent, true) .. "|r",
+        adv.bagsVendor and (W .. m(adv.bagsVendor) .. "|r" .. L .. " · |r" .. ns.GREEN .. m(adv.bagsBest or 0) .. "|r") or (L .. "-|r") },
+        { widths = widths, tip = "Gold per hour counts every copper that came in this session (loot, quests, sales). Net is what came in minus what went out.\nBags: what a vendor pays for everything in your bags, and the value when each stack goes wherever pays more."
+            .. (view and view.perHour and ("\nLoot alone (coin plus vendor value): " .. ns.strip(ns.money(view.perHour)) .. " per hour.") or "") })
+    scanStatusRow()
+    if not adv.hasPrices then
+        GAP(6)
+        P(L .. "No auction prices for your faction yet. Open the auction house once: the scan runs by itself and every hint below needs it.|r")
+    elseif adv.age and adv.age >= 3 then
+        GAP(6)
+        P(ns.AMBER .. "Prices are from a scan " .. adv.age .. " days old. Open the auction house for fresh ones.|r")
+    end
+    for _, note in ipairs(adv.notes) do P(L .. note.text .. "|r") end
+
+    COLUMNS(3)
+    for _, sec in ipairs(ADVICE) do
+        local list = adv[sec.key] or {}
+        local show
+        if not adv.hasPrices and (sec.key ~= "sell" or (#list == 0 and not adv.vendor)) then list = nil end
+        if list then
+            SECTION(function()
+                show = HX(sec.title, "adv:" .. sec.key, #list, 4, "top")
+                for i = 1, show do
+                    local e = list[i]
+                    KV(e.left, e.right, { link = e.link, tip = e.tip,
+                        onClick = e.id and function() state.tab, state.priceItem, state.offset = "prices", e.id, 0; renderNow() end or nil,
+                        onRight = function() ns.HideAdvice(e.kind, e.id); ns.PanelDirty() end })
+                end
+                if sec.key == "sell" and adv.vendor then
+                    local v = adv.vendor
+                    KV(L .. "To a vendor|r" .. L .. "  " .. v.stacks .. (v.stacks == 1 and " stack|r" or " stacks|r"), W .. m(v.value) .. "|r",
+                        { tip = "Junk, and stacks a vendor pays at least as much for as the auction house would after its cut:\n" .. table.concat(v.names, "\n") })
+                end
+                if sec.key == "craft" and adv.craftSkipped then
+                    KV(L .. adv.craftSkipped.n .. (adv.craftSkipped.n == 1 and " recipe" or " recipes") .. " without prices|r", "",
+                        { tip = "Left out because a material has no auction price and no vendor you met sells it: " .. table.concat(adv.craftSkipped.names, ", ") .. "." })
+                end
+                if #list == 0 and not (sec.key == "sell" and adv.vendor) and not (sec.key == "craft" and adv.craftSkipped) then
+                    local empty = sec.empty
+                    if sec.key == "bargains" and adv.age and adv.age > 1 then empty = "Needs a scan from today or yesterday." end
+                    if sec.key == "craft" and not next(ns.char.recipes or {}) then empty = "No recipes remembered yet: open a profession window once." end
+                    P(L .. empty .. "|r")
+                end
+            end)
+        end
+    end
+    ENDCOLUMNS()
+end
+
+local function renderSession()
     local view = ns.LootView()
     local loot = view and view.loot
     if not loot or (loot.items == 0 and loot.coin == 0) then
         P(L .. "Nothing looted yet this session.|r")
-    else
+        KV(ns.BLUE .. "Reset the loot session|r", L .. "click|r", { onClick = function() ns.ResetLoot(); renderNow() end })
+        return
+    end
+    COLUMNS(2)
+    SECTION(function()
         H("This session")
         KV(L .. "Looted coin|r", W .. ns.money(loot.coin) .. "|r")
         KV(L .. "Vendor value of looted items|r", W .. ns.money(loot.vendor) .. "|r" .. (loot.junk > 0 and ("  " .. L .. "of which junk " .. ns.strip(ns.money(loot.junk)) .. "|r") or ""),
@@ -608,7 +762,7 @@ function render.loot()
             if view.priced > 0 then
                 local age = view.ahAge and (view.ahAge >= 1 and string.format(", from a scan %d day%s old", view.ahAge, view.ahAge == 1 and "" or "s") or ", from today's scan") or ""
                 KV(L .. "Worth with the auction house|r", W .. ns.money(view.bestValue) .. "|r" ..
-                    (view.ahGain > 0 and ("  " .. ns.GREEN .. "+" .. ns.strip(ns.money(view.ahGain)) .. " over vendoring|r") or ""),
+                    (view.ahGain > 0 and ("  " .. ns.GREEN .. "+" .. ns.strip(ns.money(view.ahGain)) .. "|r") or ""),
                     { tip = "Every stack counted at whichever pays more: the vendor, or the last scanned auction buyout minus the 5% cut. Deposits are not counted"
                         .. age .. "." .. (view.unpriced > 0 and (" " .. view.unpriced .. (view.unpriced == 1 and " item has" or " items have") .. " no scanned price and count as vendor value.") or "") })
             elseif loot.items > 0 then
@@ -616,9 +770,6 @@ function render.loot()
             end
         end
         KV(L .. "Coin and vendor value per hour|r", view.perHour and (W .. ns.money(view.perHour) .. "|r") or (L .. "-|r"))
-        KV(ns.BLUE .. "Reset the loot session|r", L .. "click|r", { onClick = function() ns.ResetLoot(); renderNow() end,
-            tip = "Files this session under Previous sessions and starts counting again. XP and combat are not touched." })
-
         H("By quality")
         for q = 0, 5 do
             local b = loot.byQ[q]
@@ -626,19 +777,14 @@ function render.loot()
                 KV(ns.QualityColor(q) .. (ns.QUALITY_NAME[q] or "?") .. "|r", W .. b.n .. "|r " .. L .. (b.n == 1 and "item" or "items") .. "  ·  |r" .. W .. ns.money(b.value) .. "|r")
             end
         end
-
-        if #loot.drops > 0 then
-            H("Notable drops")
-            for i = #loot.drops, math.max(1, #loot.drops - 11), -1 do
-                local d = loot.drops[i]
-                KV(ns.QualityColor(d.q) .. d.name .. "|r" .. (d.n > 1 and (L .. "  ×" .. d.n .. "|r") or ""),
-                    (d.value > 0 and (W .. ns.money(d.value) .. "|r  ") or "") .. L .. ago(d.t) .. "|r", { link = d.link })
-            end
-        end
-
-        if #view.stacks > 0 then
-            H(view.hasAH and view.priced > 0 and "Most valuable" or "Most valuable to a vendor")
-            for i = 1, math.min(8, #view.stacks) do
+        GAP(6)
+        KV(ns.BLUE .. "Reset the loot session|r", L .. "click|r", { onClick = function() ns.ResetLoot(); renderNow() end,
+            tip = "Files this session under History and starts counting again. XP and combat are not touched." })
+    end)
+    if #view.stacks > 0 then
+        SECTION(function()
+            local show = HX(view.hasAH and view.priced > 0 and "Most valuable" or "Most valuable to a vendor", "loot:valuable", #view.stacks, 6, "top")
+            for i = 1, show do
                 local e = view.stacks[i]
                 local right = W .. ns.money(e.value) .. "|r"
                 if e.net then
@@ -648,58 +794,50 @@ function render.loot()
                 KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", right, { link = e.link,
                     tip = e.net and (e.sellAt == "ah" and "Worth more on the auction house (buyout minus the 5% cut)." or "A vendor pays more than the last scanned auction price. Sell it to a vendor.") or nil })
             end
-        end
+        end)
     end
-
-    local junk, stacks = ns.JunkInBags()
-    local forAH, ahGain = ns.BagsForAuction()
-    if junk or forAH then
-        H("In your bags right now")
-        if junk then
-            KV(L .. "Junk a vendor will buy|r", junk > 0 and (W .. ns.money(junk) .. "|r  " .. L .. stacks .. (stacks == 1 and " stack|r" or " stacks|r")) or (L .. "none|r"))
-        end
-        if forAH then
-            KV(L .. "Worth listing on the auction house|r", #forAH > 0 and (ns.GREEN .. "+" .. ns.strip(ns.money(ahGain)) .. "|r  " .. L .. #forAH .. (#forAH == 1 and " stack|r" or " stacks|r")) or (L .. "nothing|r"),
-                { tip = "Stacks that earn at least 50c more on the auction house than at a vendor, after the 5% cut." })
-            for i = 1, math.min(6, #forAH) do
-                local e = forAH[i]
-                KV(ns.QualityColor(e.q) .. e.name .. "|r" .. L .. "  ×" .. e.n .. "|r", ns.GREEN .. "+" .. ns.strip(ns.money(e.gain)) .. "|r" .. L .. "  ·  AH " .. ns.strip(ns.money(e.net)) .. "|r", { link = e.link, indent = 12 })
+    if #loot.drops > 0 then
+        SECTION(function()
+            local list = {}
+            for i = #loot.drops, 1, -1 do list[#list + 1] = loot.drops[i] end
+            local show = HX("Notable drops", "loot:drops", #list, 6)
+            for i = 1, show do
+                local d = list[i]
+                KV(ns.QualityColor(d.q) .. d.name .. "|r" .. (d.n > 1 and (L .. "  ×" .. d.n .. "|r") or ""),
+                    (d.value > 0 and (W .. ns.money(d.value) .. "|r  ") or "") .. L .. ago(d.t) .. "|r", { link = d.link })
             end
-        end
+        end)
     end
+    ENDCOLUMNS()
+end
 
-    local st = ns.AuctionStatus and ns.AuctionStatus()
-    if st and st.api then
-        H("Auction prices")
-        for _, r in ipairs(st.realms) do
-            KV(L .. r.faction .. (r.open and "  ·  open" or (r.mine and "" or (r.faction == "Neutral" and "  ·  goblins, both factions" or "  ·  other faction"))) .. "|r",
-                r.count > 0 and (W .. r.count .. " items|r  " .. L .. "scanned " .. ago(r.scanned) .. "|r") or (L .. "not scanned yet|r"))
-        end
-        if #st.realms == 0 or (st.faction and not (function() for _, r in ipairs(st.realms) do if r.mine then return true end end end)()) then
-            KV(L .. (st.faction or "This faction") .. "|r", L .. "not scanned yet|r")
-        end
-        if st.state ~= "idle" then
-            KV(L .. "Scanning|r", W .. (st.state == "requested" and "waiting for the list" or (st.done .. " / " .. st.total)) .. "|r")
-        else
-            KV(ns.BLUE .. "Scan now|r", L .. (st.ahOpen and "click" or "open the auction house first") .. (st.nextIn > 0 and ("  ·  next in " .. ns.shortTime(st.nextIn)) or "") .. "|r",
-                { onClick = function() local ok, why, wait = ns.AuctionScan(); if not ok and why == "throttled" then ns.say("next scan possible in " .. ns.shortTime(wait)) elseif not ok and why == "closed" then ns.say("open the auction house first") end; renderNow() end,
-                  tip = "Reads every auction once (one scan per 15 minutes, the game's limit) and remembers the lowest buyout per item, per realm and faction. Prices show in item tooltips and on this tab." })
-        end
-    end
-
+local function renderHistory()
     local history = ns.db.lootHistory or {}
-    if #history > 0 then
-        local show = HX("Previous sessions", "loot:sessions", #history, 3)
-        for i = #history, #history - show + 1, -1 do
-            local s = history[i]
-            local parts = {}
-            for q = 2, 5 do if s.byQ and s.byQ[q] then parts[#parts + 1] = ns.QualityColor(q) .. s.byQ[q] .. " " .. (ns.QUALITY_NAME[q] or ""):lower() .. "|r" end end
-            local who = s.char and s.char:match("^(.-)%-") or "?"
-            KV(L .. date("%d %b %H:%M", s.started or s.ended) .. "  ·  " .. ns.shortTime((s.ended or 0) - (s.started or 0)) .. "  ·  " .. who .. "|r",
-                W .. ns.money((s.coin or 0) + (s.vendor or 0)) .. "|r" .. (#parts > 0 and ("  " .. table.concat(parts, L .. ", |r")) or ""),
-                { tip = "Coin plus vendor value. " .. (s.items or 0) .. " items looted" .. (s.best and (", best drop: " .. s.best.name) or "") .. "." })
-        end
+    if #history == 0 then P(L .. "Earlier loot sessions land here: one line each, kept for the last 30.|r"); return end
+    local total, secs = 0, 0
+    for _, s in ipairs(history) do
+        total = total + (s.coin or 0) + (s.vendor or 0)
+        secs = secs + math.max(0, (s.ended or 0) - (s.started or 0))
     end
+    H("All sessions")
+    KV(L .. #history .. (#history == 1 and " session|r" or " sessions|r") .. L .. "  ·  " .. ns.shortTime(secs) .. "|r", W .. ns.money(total) .. "|r" ..
+        (secs >= 600 and (L .. "  ·  " .. ns.strip(ns.money(total / secs * 3600)) .. " per hour|r") or ""), { tip = "Coin plus vendor value of what was looted." })
+    local show = HX("Previous sessions", "loot:sessions", #history, 12)
+    for i = #history, #history - show + 1, -1 do
+        local s = history[i]
+        local parts = {}
+        for q = 2, 5 do if s.byQ and s.byQ[q] then parts[#parts + 1] = ns.QualityColor(q) .. s.byQ[q] .. " " .. (ns.QUALITY_NAME[q] or ""):lower() .. "|r" end end
+        local who = s.char and s.char:match("^(.-)%-") or "?"
+        KV(L .. date("%d %b %H:%M", s.started or s.ended) .. "  ·  " .. ns.shortTime((s.ended or 0) - (s.started or 0)) .. "  ·  " .. who .. "|r",
+            W .. ns.money((s.coin or 0) + (s.vendor or 0)) .. "|r" .. (#parts > 0 and ("  " .. table.concat(parts, L .. ", |r")) or ""),
+            { tip = "Coin plus vendor value. " .. (s.items or 0) .. " items looted" .. (s.best and (", best drop: " .. s.best.name) or "") .. "." })
+    end
+end
+
+function render.economy(scope)
+    if scope == "session" then renderSession()
+    elseif scope == "history" then renderHistory()
+    else renderAdvice() end
 end
 
 local function dayText(day)
@@ -710,53 +848,65 @@ end
 function render.prices()
     if not (ns.AuctionStatus and ns.AuctionStatus().api) then P(L .. "This client has no auction house scan API.|r"); return end
     if not ns.HasAuctionPrices() then
+        scanStatusRow()
+        GAP(6)
         P(L .. "No prices yet for this faction. Open the auction house once: the scan runs by itself.|r")
         return
     end
+    local own = (ns.AuctionKey() or ""):match("%-(%a+)$") or "Yours"
+    local other = (ns.AuctionOtherKey() or ""):match("%-(%a+)$") or "Other"
+    local houses = { { own, ns.AuctionKey() }, { "Neutral", ns.AuctionNeutralKey() }, { other, ns.AuctionOtherKey() } }
     if state.priceItem then
         local id = state.priceItem
-        local hist, e = ns.AuctionHistory(id)
-        local name = ns.AuctionItemName(id, e) or ("item " .. id)
+        local _, e = ns.AuctionHistory(id)
+        local name = ns.AuctionItemName(id, e)
+        if not name then for _, h in ipairs(houses) do local _, he = ns.AuctionHistory(id, h[2]); name = name or ns.AuctionItemName(id, he) end end
         KV(ns.BLUE .. "‹ back to the list|r", "", { onClick = function() state.priceItem = nil; state.offset = 0; renderNow() end })
-        H(name)
-        local link = "item:" .. id
-        if e then
-            local trend = ns.AuctionTrendText((ns.AuctionTrend(id)))
-            KV(L .. "Lowest buyout now|r", W .. ns.money(e.p) .. "|r" .. (trend and ("  " .. trend) or "") .. L .. "  ·  " .. (e.n or 0) .. " seen  ·  " .. ns.AuctionAgeText(ns.AuctionDay() - (e.d or ns.AuctionDay())) .. "|r", { link = link })
-        end
-        for _, house in ipairs({ { "Neutral AH", ns.AuctionNeutralKey() }, { (ns.AuctionOtherKey() or "-"):match("%-(%a+)$") and ((ns.AuctionOtherKey()):match("%-(%a+)$") .. " AH") or "Other AH", ns.AuctionOtherKey() } }) do
+        H(name or ("item " .. id))
+        -- every house in one table: lowest, median, how many were up, the move since the day before, the scan's age
+        local widths = { fsize() * 6, fsize() * 6, fsize() * 4, fsize() * 4, fsize() * 6.5 }
+        CELLS(L .. "House|r", { L .. "lowest|r", L .. "median|r", L .. "on AH|r", L .. "trend|r", L .. "scanned|r" }, { widths = widths, small = true, rule = true })
+        local sv = ns.SellPrice and ns.SellPrice(id)
+        for _, house in ipairs(houses) do
             local p, age, seen = ns.AuctionPriceByID(id, house[2])
-            if p then KV(L .. house[1] .. "|r", W .. ns.money(p) .. "|r" .. L .. "  ·  " .. seen .. " seen  ·  " .. ns.AuctionAgeText(age) .. "|r") end
+            if p then
+                local hh = ns.AuctionHistory(id, house[2])
+                CELLS(W .. house[1] .. "|r", { W .. m(p) .. "|r", L .. (hh[1] and hh[1].med and m(hh[1].med) or "-") .. "|r", L .. (seen or 0) .. "|r",
+                    ns.AuctionTrendText((ns.AuctionTrend(id, house[2]))) or " ", L .. ns.AuctionAgeText(age) .. "|r" },
+                    { widths = widths, link = "item:" .. id, tip = "Lowest and median buyout per unit at this house's last scan, units up for sale, and the lowest price's move since the scan day before." })
+            end
         end
-        -- one history per house that has one: yours first, then neutral, then the other faction
-        local own = (ns.AuctionKey() or ""):match("%-(%a+)$") or "Your"
-        local other = (ns.AuctionOtherKey() or ""):match("%-(%a+)$") or "Other"
+        if sv and sv > 0 then CELLS(L .. "Vendor pays|r", { W .. m(sv) .. "|r", "", "", "", "" }, { widths = widths }) end
+        -- one history per house that has one, side by side when the window is wide
         local any = false
-        for _, house in ipairs({ { own, ns.AuctionKey() }, { "Neutral", ns.AuctionNeutralKey() }, { other, ns.AuctionOtherKey() } }) do
+        COLUMNS(3)
+        for _, house in ipairs(houses) do
             local hh = house[2] and ns.AuctionHistory(id, house[2]) or {}
             if #hh > 0 then
                 any = true
-                local show = HX(house[1] .. " history", "prices:" .. house[1], #hh, 1)
-                if #hh >= 2 then CHART(hh, dayText); GAP(6) end
-                for i = 1, show do
-                    local h = hh[i]
-                    local prev = hh[i + 1]
-                    local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
-                    KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. ns.strip(ns.money(h.med)) .. "  ·  " .. ns.strip(ns.money(h.max)) .. "|r" .. (t and ("  " .. t) or ""),
-                        { tip = "Lowest · median · highest buyout per unit on that day, and the change of the lowest since the day before." })
-                end
+                SECTION(function()
+                    local show = HX(house[1] .. " history", "prices:" .. house[1], #hh, 1)
+                    if #hh >= 2 then CHART(hh, dayText); GAP(6) end
+                    for i = 1, show do
+                        local h = hh[i]
+                        local prev = hh[i + 1]
+                        local t = prev and prev.min and prev.min > 0 and ns.AuctionTrendText(math.floor((h.min - prev.min) / prev.min * 100 + 0.5))
+                        KV(L .. dayText(h.day) .. "|r", W .. ns.money(h.min) .. "|r" .. L .. "  ·  " .. m(h.med) .. "|r" .. (t and ("  " .. t) or ""),
+                            { tip = "Lowest · median buyout per unit on that day, and the change of the lowest since the day before." })
+                    end
+                end)
             end
         end
+        ENDCOLUMNS()
         if not any then H("History"); P(L .. "No history yet.|r") end
         return
     end
+    scanStatusRow()
     local q = state.priceQuery or ""
     local list = ns.AuctionSearch(q, 60)
     if #list == 0 then P(L .. (q == "" and "Nothing scanned yet." or ("Nothing called \"" .. q .. "\" in the last scans.")) .. "|r"); return end
     H((q == "" and "All items" or ("Matching \"" .. q .. "\"")) .. "  ·  " .. #list .. (#list >= 60 and "+" or ""))
     -- one column per auction house, your own first: the lowest buyout per unit at that house's last scan
-    local own = (ns.AuctionKey() or ""):match("%-(%a+)$") or "Yours"
-    local other = (ns.AuctionOtherKey() or ""):match("%-(%a+)$") or "Other"
     local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 4 }
     CELLS(L .. "Item|r", { L .. own .. "|r", L .. "Neutral|r", L .. other .. "|r", L .. "trend|r" }, { widths = widths, small = true, rule = true })
     local function cell(p) return p and (W .. ns.money(p) .. "|r") or (L .. "–|r") end
@@ -880,12 +1030,9 @@ local function build()
     fit:SetScript("OnLeave", function() GameTooltip:Hide() end)
     panel.fit = fit
 
-    local x = PAD
     for i, tab in ipairs(TABS) do
         local b = textButton(panel, 12)
         b:SetLabel(tab.text)
-        b:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -38)
-        x = x + b:GetWidth() + 14
         b:SetScript("OnClick", function() ns.OpenPanel(tab.key) end)
         tabButtons[tab.key] = b
     end
@@ -951,7 +1098,7 @@ local function build()
     searchBox.bg:SetColorTexture(1, 1, 1, 0.06)
     searchBox.hint = searchBox:CreateFontString(nil, "OVERLAY")
     searchBox.hint:SetFont(FONT, 12, ""); searchBox.hint:SetPoint("LEFT", 0, 0)
-    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search an item name  ·  lowest buyout at each auction house  ·  click an item for its history and charts")
+    searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search items  ·  click one for its history")
     searchBox:SetScript("OnTextChanged", function(self)
         self.hint:SetShown(self:GetText() == "")
         state.priceQuery, state.priceItem, state.offset = self:GetText(), nil, 0
@@ -1045,10 +1192,10 @@ end
 
 local FOOT = {
     combat = "Numbers come from the game's own damage meter, read after each fight.",
-    abilities = "Right-click a spell in the lists below the chart to stop being reminded of it.",
+    abilities = "Right-click a spell in the lists to stop being reminded of it.",
     professions = "Open a profession window or talk to a trainer once and the details fill in.",
     journal = "",
-    loot = "Hover an item for its tooltip. Only real loot counts; quest rewards, purchases and crafts do not.",
+    economy = "Hover a hint for the numbers behind it; click an item for its price history, right-click to hide a hint.",
     prices = "",                                   -- the search box sits where the footer would be
     settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
     summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
@@ -1058,11 +1205,30 @@ renderNow = function()
     if not panel or not ns.char or not ns.session then return end
     state.dirty = false
     used, cursor = 0, 0
+    cols, colX, colW = nil, 0, nil
     for _, b in ipairs(toggles) do b:Hide() end
     usedToggles = 0
     child:SetWidth(innerWidth())
     summaryBox:SetWidth(innerWidth() - 12)
-    for key, b in pairs(tabButtons) do b:SetActive(key == state.tab) end
+    -- the tab row: tighter (smaller text, smaller gaps) when a narrow window cannot fit it
+    local tabSize, tabGap = 12, 14
+    for pass = 1, 2 do
+        local total = 0
+        for _, tab in ipairs(TABS) do
+            local b = tabButtons[tab.key]
+            b.fs:SetFont(FONT, tabSize, ""); b:SetLabel(tab.text)
+            total = total + b:GetWidth() + tabGap
+        end
+        if total - tabGap <= (panel:GetWidth() or WIDTH) - PAD * 2 then break end
+        tabSize, tabGap = 11, 9
+    end
+    local x = PAD
+    for _, tab in ipairs(TABS) do
+        local b = tabButtons[tab.key]
+        b:ClearAllPoints(); b:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -38)
+        x = x + b:GetWidth() + tabGap
+        b:SetActive(tab.key == state.tab)
+    end
     local scopes = SCOPES[state.tab]
     for i, b in ipairs(scopeButtons) do
         local sc = scopes and scopes[i]
@@ -1110,6 +1276,7 @@ renderNow = function()
         cursor = (summaryBox:GetHeight() or 200) + 8
     else
         ns.safe("panel:" .. state.tab, function() render[state.tab](state.scope[state.tab]) end)
+        ENDCOLUMNS()
     end
     for i = used + 1, #rows do rows[i]:Hide() end
     child:SetHeight(math.max(10, cursor))
@@ -1133,6 +1300,7 @@ function ns.PanelDirty() state.dirty = true end
 
 function ns.OpenPanel(tab, query)
     if not panel then build() end
+    if tab == "loot" then tab, state.scope.economy = "economy", "session" end        -- the Loot tab grew into Economy (2.7)
     if tab and tab ~= state.tab then state.tab, state.offset = tab, 0 end
     if query ~= nil and searchBox then searchBox:SetText(query); state.priceQuery, state.priceItem = query, nil end
     local pos = ns.db.panel or ns.defaults.panel
@@ -1148,6 +1316,7 @@ function ns.OpenPanel(tab, query)
 end
 
 function ns.TogglePanel(tab)
+    if tab == "loot" then tab = "economy" end
     if panel and panel:IsShown() and (not tab or tab == state.tab) then panel:Hide() else ns.OpenPanel(tab) end
 end
 

@@ -76,7 +76,7 @@ local function record(link, count, attempt)
         if #loot.drops > 60 then table.remove(loot.drops, 1) end
         if ns.db.lootAnnounce then
             ns.Feed(string.format("%sLooted|r %s%s|r%s", ns.LABEL, ns.QualityColor(quality), name,
-                value > 0 and ("  " .. ns.LABEL .. ns.strip(ns.money(value)) .. "|r") or ""), { tab = "loot", hold = 8 })
+                value > 0 and ("  " .. ns.LABEL .. ns.strip(ns.money(value)) .. "|r") or ""), { tab = "economy", hold = 8 })
         end
     end
     if ns.PanelDirty then ns.PanelDirty() end

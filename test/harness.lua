@@ -131,7 +131,9 @@ C_Spell = {
     end,
 }
 local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
-    [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 } }
+    [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 },
+    [4357] = { "Rough Blasting Powder", 1, 4 }, [4359] = { "Handful of Copper Bolts", 1, 300 }, [2840] = { "Copper Bar", 1, 10 },
+    [2506] = { "Hornwood Recurve Bow", 1, 400 }, [2589] = { "Linen Cloth", 1, 13 } }
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
 -- the addon's own auction price database, as the Keeper hands it back: a scan from two days ago
 local AH_DAY = math.floor((wall - 1577836800) / 86400)
@@ -212,10 +214,10 @@ local PROFS = { [7] = { "Mining", 136248, 50, 75 }, [8] = { "Engineering", 13624
 function GetProfessions() return 7, 8, 5, nil, 6 end
 function GetProfessionInfo(i) local p = PROFS[i]; if p then return p[1], p[2], p[3], p[4], 2, 21, 186, 0 end end
 local RECIPES = {
-    [3918] = { name = "Rough Blasting Powder", diff = 0, trivial = 60, reagents = { { 2835, 1 } } },
-    [3919] = { name = "Rough Dynamite", diff = 1, trivial = 90, reagents = { { 2835, 2 }, { 2589, 1 } } },
-    [3920] = { name = "Crafted Light Shot", diff = 3, trivial = 30, reagents = { { 2840, 1 } } },
-    [3921] = { name = "Handful of Copper Bolts", diff = 2, trivial = 45, reagents = { { 2840, 1 } } },
+    [3918] = { name = "Rough Blasting Powder", diff = 0, trivial = 60, reagents = { { 2835, 1 } }, out = 4357 },
+    [3919] = { name = "Rough Dynamite", diff = 1, trivial = 90, reagents = { { 2835, 2 }, { 2589, 1 } }, out = 4358, qmin = 2, qmax = 2 },
+    [3920] = { name = "Crafted Light Shot", diff = 3, trivial = 30, reagents = { { 2840, 1 } }, out = 2516 },
+    [3921] = { name = "Handful of Copper Bolts", diff = 2, trivial = 45, reagents = { { 2840, 1 } }, out = 4359 },
     [9999] = { name = "Unlearned Thing", diff = 0, learned = false, reagents = {} },
 }
 C_TradeSkillUI = {
@@ -227,7 +229,8 @@ C_TradeSkillUI = {
     GetRecipeSchematic = function(id)
         local slots = {}
         for i, x in ipairs(RECIPES[id].reagents) do slots[i] = { required = true, reagentType = 1, quantityRequired = x[2], reagents = { { itemID = x[1] } } } end
-        return { recipeID = id, reagentSlotSchematics = slots }
+        local r = RECIPES[id]
+        return { recipeID = id, reagentSlotSchematics = slots, outputItemID = r.out, quantityMin = r.qmin or 1, quantityMax = r.qmax or 1 }
     end,
 }
 local TRAINER = { { "Coarse Blasting Powder", "unavailable", "Engineering", 75 }, { "Rough Copper Bomb", "unavailable", "Engineering", 36 }, { "Rough Dynamite", "used", "Engineering", 1 } }
@@ -254,12 +257,20 @@ MenuUtil = { CreateContextMenu = function(owner, gen)
     gen(owner, root)
 end, buttons = {}, checks = {} }
 
+-- a vendor: a bow it sells for 20s (the auction house pays more), and a price with an extended cost (skipped)
+local MERCHANT = { { 2506, "Hornwood Recurve Bow", 2000, 1, -1 }, { 2589, "Linen Cloth", 0, 1, -1 } }
+function GetMerchantNumItems() return world.merchant and #MERCHANT or 0 end
+function GetMerchantItemInfo(i) local m = MERCHANT[i]; return m[2], 1, m[3], m[4], m[5], true, true, m[3] == 0 end
+function GetMerchantItemID(i) return MERCHANT[i][1] end
+
+
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
 local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
     C_DamageMeter, C_TradeSkillUI, C_SpellBook, GetProfessions, GetProfessionInfo, MenuUtil = nil, nil, nil, nil, nil, nil
     GetActionInfo, GetNumTrainerServices, C_Item, issecretvalue_real = nil, nil, nil, issecretvalue
     C_AuctionHouse, TooltipDataProcessor, hooksecurefunc, GetNormalizedRealmName, DearLordAuctionDB = nil, nil, nil, nil, nil
+    GetMerchantNumItems, GetMerchantItemInfo, GetMerchantItemID = nil, nil, nil
     UnitHealth = function() return secret() end
     UnitPower = function() return secret() end
     C_Spell.GetSpellCooldown = nil
@@ -311,6 +322,12 @@ local function panelText(title)
             io.write("   " .. (c.header and c.header:upper() or ("  " .. c.label .. (rawget(f, "value") and ("    | " .. f.value.text) or ""))) .. "\n")
         elseif f.kind == "Frame" and f.shown and f.left and f.left.text ~= "" then
             local right = (f.right and f.right.text ~= "") and ("    | " .. strip(f.right.text)) or ""
+            local cells = rawget(f, "cells")
+            if cells then
+                local t = {}
+                for _, c in ipairs(cells) do if c.shown then t[#t + 1] = strip(c.text) end end
+                if #t > 0 then right = right .. "    | " .. table.concat(t, " | ") end
+            end
             io.write("   " .. strip(f.left.text) .. right .. "\n")
         end
     end
@@ -454,6 +471,33 @@ if MODE ~= "bare" then
     scanResult.historyRows = ns.AuctionHistory(2140)
 end
 
+-- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
+local adv, advAfterHide, advWide, advTip = nil, nil, nil, nil
+if MODE ~= "bare" then
+    local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
+    items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
+    items[2840] = { p = 60, n = 30, d = AH_DAY, name = "Copper Bar", k = 10, h = AH_DAY .. ":60:65" }
+    items[2506] = { p = 10000, n = 2, d = AH_DAY, name = "Hornwood Recurve Bow", h = AH_DAY .. ":10000:12000" }
+    world.npc, world.npcFaction, world.merchant = true, "Horde", true
+    fire("MERCHANT_SHOW"); advance(1); world.merchant = nil; world.npc = nil
+    ns.AdviceDirty(true); advance(1); advance(3)
+    adv = ns.Advice()
+    ns.OpenPanel("economy"); panelText("Economy / advice")
+    for _, f in ipairs(frames) do
+        if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:4357" and rawget(f, "tip") then
+            GameTooltip.lines = {}; f.scripts.OnEnter(f); advTip = table.concat(GameTooltip.lines, "\n"); f.scripts.OnLeave(f)
+        end
+    end
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:2506" and rawget(f, "onRight") then f.onRight(); break end end
+    advance(3); advAfterHide = ns.Advice(); advAfterHide.flag = (ns.db.adviceHidden or {})["flip:2506"]
+    local uw, uh = UIParent.w, UIParent.h
+    UIParent.w, UIParent.h = 2000, 1000; ns.db.panelSize = { w = 1000, h = 700 }; ns.OpenPanel("economy")
+    advWide = 0
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and (rawget(f, "colX") or 0) > 0 then advWide = advWide + 1 end end
+    panelText("Economy / advice, wide")
+    UIParent.w, UIParent.h = uw, uh; ns.db.panelSize = nil
+end
+
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
     local f = ns.huds[key]
@@ -470,8 +514,11 @@ for _, f in ipairs(frames) do if rawget(f, "onClick") and f.shown then f.onClick
 panelText("Combat / level after stepping back")
 ns.OpenPanel("abilities"); panelText("Abilities (level view carried over)")
 ns.OpenPanel("professions"); panelText("Professions")
+ns.OpenPanel("economy"); panelText("Economy / advice (every mode)")
 ns.OpenPanel("loot"); panelText("Loot")
 ns.ResetLoot(); ns.OpenPanel("loot"); panelText("Loot after reset")
+for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "history" and f.scripts.OnClick then f.scripts.OnClick(f) end end
+panelText("Economy / history")
 ns.OpenPanel("settings"); advance(1)
 local touched, fontBefore = 0, ns.db.fontSize
 for _, f in ipairs(frames) do
@@ -592,6 +639,24 @@ if MODE ~= "bare" then
     check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")
+    local function find(list, id) for _, e in ipairs(list or {}) do if e.id == id then return e end end end
+    local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
+    check("advisor: Rough Blasting Powder +1s 87c to AH, 14 craftable (" .. tostring(powder and strip(powder.right)) .. ")",
+        powder and powder.value == 187 and strip(powder.right):find("to AH") and strip(powder.left):find("make 14"))
+    check("advisor: Copper Bolts pay more at a vendor, +2s 40c (" .. tostring(bolts and strip(bolts.right)) .. ")", bolts and bolts.value == 240 and strip(bolts.right):find("to vendor"))
+    check("advisor: Rough Dynamite skipped, Linen Cloth has no price", adv and adv.craftSkipped and adv.craftSkipped.n >= 1 and table.concat(adv.craftSkipped.names, ","):find("Linen Cloth"))
+    local bow = adv and find(adv.flips, 2506)
+    check("advisor: the vendor's bow flips for +75s (" .. tostring(bow and strip(bow.right)) .. ")", bow and bow.value == 7500 and ns.db.vendors[2506].c == 2000 and not ns.db.vendors[2589])
+    local knife = adv and find(adv.bargains, 2140)
+    check("advisor: the knife listed at 1s 50c is a bargain, a vendor pays 3s 50c", knife and knife.value == 200)
+    local ore = adv and find(adv.gather, 2770)
+    check("advisor: Mining suggests Copper Ore by the stack of 20 (" .. tostring(ore and strip(ore.right)) .. ")", ore and strip(ore.right):find("/20") and ore.value == 28 * 20)
+    local hide = adv and find(adv.sell, 783)
+    check("advisor: sell the Light Hide on the AH, +3s 74c (" .. tostring(hide and strip(hide.right)) .. ")", hide and hide.value == 374 and adv.vendor and adv.vendor.stacks == 1)
+    check("advisor: item row tooltip shows the item and the reasoning", advTip and advTip:find("Materials") ~= nil)
+    check("advisor: right-click hides a hint", advAfterHide and not find(advAfterHide.flips, 2506) and advAfterHide.flag)
+    check("layout: a 1000px window puts sections side by side (" .. tostring(advWide) .. " rows in later columns)", advWide and advWide > 0)
+    check("auction history keeps day:min:median only", not DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items[2140].h:find("%d+:%d+:%d+:%d+") and DearLordAuctionDB.version == 2)
 else
     check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
 end

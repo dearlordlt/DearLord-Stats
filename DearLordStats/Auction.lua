@@ -8,7 +8,10 @@
 --   { version = 1, lastRequest = <epoch>,
 --     realms = { ["Realm-Horde"] = { scanned = <epoch>, day = 2456, auctions = 4812, count = 1846,
 --                items = { [id] = { p = <min unit buyout>, n = <units seen>, d = <scan day>, name = "Light Hide",
---                                   h = "day:min:median:max day:min:median:max" (newest first) } } } } }
+--                                   k = <most common stack size, when not 1>,
+--                                   h = "day:min:median day:min:median" (newest first) } } } } }
+-- (2.6 and older kept a third number, the highest buyout: outlier listings made it useless, and it
+--  pushed the variable past the Keeper's size limit, so it is dropped)
 local ADDON, ns = ...
 local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 
@@ -78,6 +81,14 @@ ns.On("ADDON_LOADED", function(name)
     if type(DearLordAuctionDB) ~= "table" then DearLordAuctionDB = { version = 1, realms = {} } end
     DearLordAuctionDB.realms = DearLordAuctionDB.realms or {}
     DearLordAuctionDB.version = DearLordAuctionDB.version or 1
+    if DearLordAuctionDB.version < 2 then                     -- 2.7: history without the highest buyout
+        for _, r in pairs(DearLordAuctionDB.realms) do
+            for _, e in pairs(r.items or {}) do
+                if e.h then e.h = e.h:gsub("(%d+:%d+:%d+):%d+", "%1") end
+            end
+        end
+        DearLordAuctionDB.version = 2
+    end
 end, "ah:loaded")
 ns.OnLogin(function() ns.AuctionKey() end, "ah:key")
 
@@ -151,7 +162,7 @@ local function api() return C_AuctionHouse and type(C_AuctionHouse.ReplicateItem
 
 local function abort(why)
     scan = { state = "idle" }
-    if why then ns.Feed(ns.LABEL .. "Auction scan|r  " .. why, { tab = "loot", key = "ahscan", hold = 8 }) end
+    if why then ns.Feed(ns.LABEL .. "Auction scan|r  " .. why, { tab = "prices", key = "ahscan", hold = 8 }) end
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
@@ -166,8 +177,8 @@ function ns.AuctionHistory(id, k)
     end
     return out, e
 end
-local function pushHistory(e, today, mn, md, mx)
-    local out, seen = { today .. ":" .. mn .. ":" .. md .. ":" .. mx }, { [today] = true }
+local function pushHistory(e, today, mn, md)
+    local out, seen = { today .. ":" .. mn .. ":" .. md }, { [today] = true }
     for token in (e.h or ""):gmatch("%S+") do
         local d = tonumber(token:match("^(%d+):"))
         if d and not seen[d] and today - d <= HISTORY_DAYS and #out < HISTORY_MAX then out[#out + 1] = token; seen[d] = true end
@@ -197,7 +208,10 @@ local function commit()
         local med = a.list[math.ceil(#a.list / 2)] or a.p
         e.p, e.n, e.d = a.p, a.n, today
         if a.name then e.name = a.name end
-        pushHistory(e, today, a.p, med, a.list[#a.list] or a.p)
+        local k, best = nil, 0                                   -- the stack size most sellers use
+        for size, times in pairs(a.k or {}) do if times > best or (times == best and size > (k or 0)) then k, best = size, times end end
+        e.k = (k and k > 1) and k or nil
+        pushHistory(e, today, a.p, med)
         items[id] = e
     end
     for id, e in pairs(items) do
@@ -205,8 +219,9 @@ local function commit()
     end
     r.scanned, r.day, r.auctions, r.count = time(), today, scan.n, n
     local d = diag(); d.lastScan = { at = time(), rows = scan.n, items = n, secs = time() - (scan.requestedAt or time()) }
-    ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "loot", key = "ahscan", hold = 10 })
+    ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "prices", key = "ahscan", hold = 10 })
     scan = { state = "idle" }
+    if ns.AdviceDirty then ns.AdviceDirty(true) end
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
@@ -234,9 +249,10 @@ local function collectChunk()
         if count and id and buyout and buyout > 0 and count > 0 then
             local unit = math.floor(buyout / count)
             local a = scan.agg[id]
-            if not a then a = { p = unit, n = count, list = {} }; scan.agg[id] = a; scan.priced = scan.priced + 1
+            if not a then a = { p = unit, n = count, list = {}, k = {} }; scan.agg[id] = a; scan.priced = scan.priced + 1
             else a.n = a.n + count; if unit < a.p then a.p = unit end end
             a.list[#a.list + 1] = unit
+            a.k[count] = (a.k[count] or 0) + 1
             if name and name ~= "" and not a.name then a.name = name end
         elseif i < 50 then scan.blank = scan.blank + 1 end
     end
@@ -246,7 +262,7 @@ local function collectChunk()
     end
     if scan.i >= scan.n then commit(); return end
     if scan.i % 2000 == 0 then
-        ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. scan.i .. " / " .. scan.n .. "|r", { tab = "loot", key = "ahscan", hold = 4 })
+        ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. scan.i .. " / " .. scan.n .. "|r", { tab = "prices", key = "ahscan", hold = 4 })
     end
     ns.After(0, collectChunk, "ah:chunk")
 end
@@ -277,7 +293,7 @@ local function start()
     ns.After(30, function()
         if scan.state ~= "requested" then return end
         local dg = diag(); dg.slow = (dg.slow or 0) + 1; dg.slowAt = time()
-        ns.Feed(ns.LABEL .. "Auction scan|r  no answer from the server yet, still waiting", { tab = "loot", key = "ahscan", hold = 8 })
+        ns.Feed(ns.LABEL .. "Auction scan|r  no answer from the server yet, still waiting", { tab = "prices", key = "ahscan", hold = 8 })
     end, "ah:timeout")
     if ns.PanelDirty then ns.PanelDirty() end
 end

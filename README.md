@@ -40,29 +40,49 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Professions**: skill-ups this session, what you can craft *right now* from your bags for points
   (orange / yellow / green), a rough shopping list to the next milestone, remembered trainer unlocks,
   gathering by zone, nodes your skill was too low for.
-- **Loot**: looted coin, vendor value of everything looted (and how much of it is junk), per hour, drops
-  by quality, notable drops with item tooltips, the most valuable stacks, junk sitting in your bags right
-  now, and one-line summaries of previous sessions. Has its own reset. Each stack also shows its
-  auction value after the 5% cut, marked for the vendor or the auction house whichever pays more, plus
-  what is in your bags right now that is worth listing.
+- **Economy** (was Loot), three views:
+  - **Advice**: ways to earn gold, built only from real numbers: your auction scans, this character's
+    recipes and gathering skills, your bags, what vendors pay, and the prices of vendors you have talked
+    to. Anything without a price is left out rather than guessed. The top strip shows gold per hour,
+    session net, and what your bags are worth at a vendor and at their best.
+    - *Sell from your bags*: stacks that earn at least 50c and 15% more on the auction house than at a
+      vendor, with the stack split most sellers use (`Light Leather ×23 → 2×10 + 3`), plus one line for
+      everything a vendor should get.
+    - *Craft for profit*: recipes whose product sells for more than its materials cost, sold to the
+      auction house **or a vendor**, whichever pays more. Materials count at the cheaper of their lowest
+      auction and a vendor you met. Shows how many you can make from your bags and flags skill-ups.
+      Open each profession window once after updating, so the addon learns what every recipe makes.
+    - *Gather*: what your gathering skills collect (and anything you have gathered), ranked by the value
+      of a stack, with the move against the median of earlier scan days.
+    - *Vendor flips*: items a vendor you met sells for well under what the auction house pays.
+    - *Bargains*: auctions listed below what a vendor pays for the item (today's or yesterday's scan).
+    Hover a hint for the numbers behind it, click it for the item's price history, right-click to hide
+    it (Settings brings hidden hints back).
+  - **Session**: looted coin, vendor value (and how much of it is junk), worth with the auction house,
+    per hour, drops by quality, the most valuable stacks, notable drops. Has its own reset.
+  - **History**: one line per earlier loot session, with the total and the average per hour.
 - **Auction prices**: the addon scans the auction house itself when you open it (once every 15
-  minutes, the game's limit, or `/dls scan`) and remembers the lowest buyout per item, per realm and
-  faction (Horde and Alliance auction houses are separate on Forever). The price shows in item tooltips
-  as `Horde AH 9s 31c` plus `Horde: 19 seen · 2 days ago`, with the stack total when you hover a stack,
-  and feeds the Loot tab. Every house you have scanned is listed: your faction's, the other faction's
-  (by default always; Settings can tie it to Alt, Shift or Ctrl) and the neutral one. A trend (`+12%` / `-8%`) shows how the lowest buyout moved
-  since the previous scan day, and the **Prices** tab is a browser: search by name across every house
-  you scanned, one labelled column per house (yours, neutral, the other faction), click an item for its
-  day-by-day history with a candle chart (low to high, median tick, lowest marked green or red). Both the
-  tooltip line and the automatic scan can be switched off in Settings.
-  Lists that grow over time (price histories, previous loot sessions, deaths, notes, reminders) start
-  collapsed to their newest entries; click the header to see everything.
+  minutes, the game's limit, or `/dls scan`) and remembers the lowest and median buyout per item and the
+  stack size most sellers use, per realm and faction (Horde and Alliance auction houses are separate on
+  Forever; goblin houses are neutral). The price shows in item tooltips as `Horde AH 9s 31c` plus
+  `Horde: 19 seen · 2 days ago`, with the stack total when you hover a stack. Every house you have
+  scanned is listed: yours, the other faction's (by default always; Settings can tie it to Alt, Shift or
+  Ctrl) and the neutral one. A trend (`+12%` / `-8%`) shows how the lowest buyout moved since the
+  previous scan day. The **Prices** tab starts with one line for the scans (each house's age, and Scan
+  now), then a browser: search by name across every house, one labelled column per house, click an item
+  for a table of every house (lowest, median, units up, trend, age, and what a vendor pays) and a line
+  chart per house, green where the price rose and red where it fell. Both the tooltip line and the
+  automatic scan can be switched off in Settings.
+- The report follows its window: drag the corner wider and sections sit side by side in two or three
+  columns (Economy, Combat, Abilities, Professions, price histories), so more fits without scrolling.
+  Lists that grow over time (price histories, loot sessions, levels, zones, deaths, notes, reminders,
+  hints) start collapsed to their first entries; "show all" on the header shows everything.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls loot`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

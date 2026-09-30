@@ -76,3 +76,18 @@ prices. The Keeper's `Fixes.lua` wraps `Auctionator.Variables.GetConnectedRealmR
 Auctionator's `ADDON_LOADED` (the Keeper registered for the event first, so its handler runs before
 Auctionator's own initialisation) and appends the faction, the way Auctionator does on Classic.
 Prices scanned before the fix go to the first faction that logs in afterwards.
+
+## Auction house API (as DearLord Stats uses it)
+
+`C_AuctionHouse.ReplicateItems()` works while the auction house window is open, once every 15
+minutes per account. The answer comes as `REPLICATE_ITEM_LIST_UPDATE`; the list has been seen to
+arrive well after 30 seconds, so the addon keeps listening until the window closes.
+`GetReplicateItemInfo(i)` is 0-based and returns 18 values: count at 3, buyout at 10 and item id at
+17. Buyouts are plain numbers, not secret values. A full Horde scan was about 60,000 auctions, read
+in 11 seconds in chunks of 500 rows per frame. Goblin auctioneers, and the Skyborne one on Zephras
+Isle, report no faction (or Neutral), so they are kept under `<Realm>-Neutral`.
+
+`C_TradeSkillUI.GetRecipeSchematic(id, false)` includes `outputItemID`, `quantityMin` and
+`quantityMax`. `GetAllRecipeIDs` also returns modern recipes the character has not learned, so the
+`learned` flag has to be checked. The item vendor price is position 11 of `C_Item.GetItemInfo`, and
+is nil until the item is cached.
