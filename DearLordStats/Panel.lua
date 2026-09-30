@@ -21,18 +21,19 @@ local panel, scroll, child, footer, noteBox, summaryBox, selectAll, searchBox
 local function innerWidth() return ((panel and panel:GetWidth()) or WIDTH) - PAD * 2 - 8 end
 local FONT = STANDARD_TEXT_FONT
 local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = "Abilities" },
-    { key = "professions", text = "Professions" }, { key = "economy", text = "Economy" }, { key = "prices", text = "Prices" }, { key = "journal", text = "Journal" },
+    { key = "professions", text = "Professions" }, { key = "economy", text = "Economy" }, { key = "prices", text = "Prices" }, { key = "census", text = "Census" }, { key = "journal", text = "Journal" },
     { key = "summary", text = "Summary" }, { key = "settings", text = "Settings" } }
 local SCOPES = {
     combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
     abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
     summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" } },
     economy = { { key = "advice", text = "Advice" }, { key = "session", text = "Session" }, { key = "history", text = "History" } },
+    census = { { key = "classes", text = "Classes" }, { key = "races", text = "Races" }, { key = "places", text = "Guilds & zones" } },
 }
 
 local tabButtons, scopeButtons = {}, {}
 local rows, used = {}, 0
-local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one", economy = "advice" }, dirty = true, offset = 0 }
+local state = { tab = "combat", scope = { combat = "session", abilities = "session", summary = "one", economy = "advice", census = "classes" }, dirty = true, offset = 0 }
 local cursor = 0
 -- the column rows are drawn into: x offset and width inside the scroll child (see COLUMNS / SECTION)
 local colX, colW = 0, nil
@@ -122,6 +123,7 @@ local function getRow()
     end
     r.tip, r.onRight, r.onClick, r.link = nil, nil, nil, nil
     r.bar:Hide(); r.rule:Hide(); r.hl:Hide()
+    r.bar:SetColorTexture(0.5, 0.7, 1, 0.16)
     r.left:SetText(""); r.right:SetText("")
     r.left:ClearAllPoints(); r.right:ClearAllPoints()
     if r.cells then for _, c in ipairs(r.cells) do c:Hide() end end
@@ -211,6 +213,7 @@ local function KV(left, right, opts)
     if opts.tip or opts.onRight or opts.onClick or opts.link then r:EnableMouse(true) end
     place(r, fsize() + 6, opts.indent)
     if opts.bar then
+        if opts.barColor then r.bar:SetColorTexture(opts.barColor[1], opts.barColor[2], opts.barColor[3], opts.barColor[4] or 0.3) end
         r.bar:SetWidth(math.max(1, (r:GetWidth()) * math.min(1, opts.bar)))
         r.bar:Show()
     end
@@ -345,6 +348,67 @@ local function P(text, indent)
     r.left:SetText(text)
     local h = math.max(16, (r.left:GetStringHeight() or 14) + 4)
     place(r, h, indent)
+    return r
+end
+
+-- a row of small switches: groups of { options = { {key, text} }, current = key, pick = function(key) }
+local function CHIPS(groups)
+    local r = getRow()
+    place(r, fsize(-2) + 10)
+    local x = 4
+    for gi, grp in ipairs(groups) do
+        if gi > 1 then x = x + 14 end
+        for _, o in ipairs(grp.options) do
+            local b = toggleButton()
+            b:SetLabel(o.text)
+            b:SetActive(grp.current == o.key)
+            b:SetPoint("LEFT", r, "LEFT", x, 0)
+            b.onToggle = function() grp.pick(o.key) end
+            b.chipKey = o.key
+            x = x + b:GetWidth() + 9
+        end
+    end
+    return r
+end
+
+-- vertical bars with the count on top and a label under each: values = { {label, n, highlight} }
+local function HIST(values)
+    local r = getRow()
+    local height = math.floor(fsize() * 8)
+    local labelH = fsize(-2) + 4
+    local n = #values
+    local avail = colWidth() - 8
+    local slot = avail / math.max(1, n)
+    local top = 1
+    for _, v in ipairs(values) do top = math.max(top, v[2]) end
+    r.chart = r.chart or { bars = {}, labels = {}, lines = {} }
+    local ch, nb, nl = r.chart, 0, 0
+    local function label(text, x, yy)
+        nl = nl + 1
+        local l = ch.labels[nl]
+        if not l then l = r:CreateFontString(nil, "OVERLAY"); l:SetWordWrap(false); ch.labels[nl] = l end
+        l:SetFont(FONT, fsize(-2), ""); l:SetJustifyH("CENTER")
+        l:ClearAllPoints(); l:SetPoint("BOTTOM", r, "BOTTOMLEFT", x, yy); l:SetText(text); l:Show()
+    end
+    local plotH = height - labelH * 2 - 6
+    local every = math.max(1, math.ceil((fsize(-2) * 2.6) / slot))
+    for i, v in ipairs(values) do
+        nb = nb + 1
+        local t = ch.bars[nb]
+        if not t then t = r:CreateTexture(nil, "ARTWORK"); ch.bars[nb] = t end
+        local h = math.max(1, plotH * v[2] / top)
+        local cx = 4 + (i - 0.5) * slot
+        t:ClearAllPoints()
+        if v[3] then t:SetColorTexture(0.85, 0.72, 0.45, 0.9) else t:SetColorTexture(0.42, 0.55, 1, 0.75) end
+        t:SetPoint("BOTTOM", r, "BOTTOMLEFT", cx, labelH)
+        t:SetSize(math.max(1, slot - math.max(2, slot * 0.18)), h)
+        t:Show()
+        if (n - i) % every == 0 or v[3] then
+            label(L .. v[1] .. "|r", cx, 1)
+            if v[2] > 0 and slot >= fsize(-2) * 2.2 then label(W .. ns.shortNumber(v[2]) .. "|r", cx, labelH + h + 1) end
+        end
+    end
+    place(r, height)
     return r
 end
 
@@ -917,6 +981,116 @@ function render.prices()
     end
 end
 
+-- 14810 -> "14,810"
+local function comma(n) local s = tostring(math.floor(n + 0.5)); while true do local k; s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2"); if k == 0 then return s end end end
+local SHORT_CLASS = { WARRIOR = "War", PALADIN = "Pal", HUNTER = "Hun", ROGUE = "Rog", PRIEST = "Pri", SHAMAN = "Sha", MAGE = "Mag", WARLOCK = "Wlk", DRUID = "Dru",
+    DEATHKNIGHT = "DK", MONK = "Mon", DEMONHUNTER = "DH", EVOKER = "Evo" }
+local function classHex(token)
+    local cr, cg, cb = ns.CensusClassColor(token)
+    return string.format("|cff%02x%02x%02x", math.floor(cr * 255), math.floor(cg * 255), math.floor(cb * 255))
+end
+
+function render.census(scope)
+    if not ns.CensusView then return end
+    ns.db.censusFilter = ns.db.censusFilter or { faction = "both", range = "all", days = 7 }
+    local f = ns.db.censusFilter
+    local top = ns.CensusTopLevel()
+    local ranges = { all = { 1, 999, "All levels" }, low = { 1, 9, "1-9" }, mid = { 10, top - 1, "10-" .. (top - 1) }, top = { top, top, tostring(top) } }
+    local rg = ranges[f.range] or ranges.all
+    local v = ns.CensusView({ faction = f.faction, lo = rg[1], hi = rg[2], days = f.days })
+    local st = ns.CensusStatus()
+    -- what the census is doing, in one line
+    local who
+    if not st.api then who = "passive only (no /who on this client)"
+    elseif st.blocked then who = ns.AMBER .. "/who blocked by the game|r" .. L .. ", passive only"
+    elseif not st.on then who = "/who off in Settings"
+    elseif st.pending then who = "asking: " .. st.pending
+    else who = "/who " .. st.fresh .. " of " .. st.leaves .. " checked today" end
+    KV(W .. comma(v.total) .. "|r" .. L .. " characters" .. (v.total ~= v.all and ("  ·  " .. comma(v.all) .. " counted") or "") .. (v.newToday > 0 and ("  ·  " .. ns.GREEN .. "+" .. comma(v.newToday) .. "|r" .. L .. " new today") or "") .. "|r",
+        L .. who .. "|r", { tip = "Each character is counted once: seen again, it moves to its new level, guild and zone.\n"
+            .. "Players you see (mouseover, target, nameplates, your group) are counted as you meet them. Now and then a /who is sent while you are pressing keys anyway (the game only allows /who from a key press or click): never in combat, never while you use the Who window, and hidden from chat. "
+            .. "It goes one level at a time; a level with 50 answers, the most /who gives, is split by class, then race, then zone. The oldest checks go first."
+            .. (st.last and ("\nLast: " .. st.last.filter .. ", " .. st.last.n .. " answers" .. ((st.last.total or 0) > st.last.n and (" of " .. st.last.total) or "")) or "") })
+    local function pick(field) return function(key) f[field] = key; state.offset = 0; renderNow() end end
+    CHIPS({ { options = { { key = "both", text = "Both" }, { key = "Alliance", text = "Alliance" }, { key = "Horde", text = "Horde" } }, current = f.faction, pick = pick("faction") },
+        { options = { { key = "all", text = "All" }, { key = "low", text = ranges.low[3] }, { key = "mid", text = ranges.mid[3] }, { key = "top", text = ranges.top[3] } }, current = f.range, pick = pick("range") },
+        { options = { { key = 1, text = "today" }, { key = 7, text = "7 days" }, { key = 0, text = "ever" } }, current = f.days, pick = pick("days") } })
+    if v.total == 0 then
+        GAP(6)
+        P(L .. (v.all == 0 and "Nobody counted yet. Players fill in as you meet them, and /who runs by itself while you play." or "Nobody matches these filters yet.") .. "|r")
+        return
+    end
+    if scope == "races" then
+        local classes = v.classes
+        local widths, cells, head = {}, {}, {}
+        for i, c in ipairs(classes) do widths[i] = fsize() * 3.3; head[i] = classHex(c.token) .. (SHORT_CLASS[c.token] or c.token:sub(1, 3)) .. "|r" end
+        widths[#classes + 1] = fsize() * 4.4; head[#classes + 1] = L .. "Total|r"
+        H("Race × class")
+        CELLS(L .. "Race|r", head, { widths = widths, small = true, rule = true })
+        for _, race in ipairs(v.raceList) do
+            local row, tip = {}, { race.name .. ": " .. comma(race.n) .. " (" .. string.format("%.1f%%", race.n / v.total * 100) .. ")" }
+            for i, c in ipairs(classes) do
+                local n = race[c.token] or 0
+                row[i] = n > 0 and (classHex(c.token) .. comma(n) .. "|r") or (L .. "-|r")
+                if n > 0 then tip[#tip + 1] = ns.CensusClassName(c.token) .. ": " .. comma(n) .. ", " .. string.format("%.0f%%", n / c.n * 100) .. " of all " .. ns.CensusClassName(c.token) .. "s" end
+            end
+            row[#classes + 1] = W .. comma(race.n) .. "|r"
+            CELLS(W .. race.name .. "|r" .. L .. "  " .. string.format("%.0f%%", race.n / v.total * 100) .. "|r", row, { widths = widths, tip = table.concat(tip, "\n") })
+        end
+        local tot = {}
+        for i, c in ipairs(classes) do tot[i] = W .. comma(c.n) .. "|r" end
+        tot[#classes + 1] = ns.AMBER .. comma(v.total) .. "|r"
+        CELLS(W .. "Total|r", tot, { widths = widths, rule = true })
+        return
+    end
+    if scope == "places" then
+        COLUMNS(2)
+        SECTION(function()
+            local widths = { fsize() * 4.2, fsize() * 4.2, fsize() * 4.2 }
+            local show = HX("Guilds", "census:guilds", #v.guilds, 10, "top")
+            if #v.guilds == 0 then P(L .. "No guild seen yet.|r"); return end
+            CELLS(L .. "Guild|r", { L .. "avg lvl|r", L .. "at " .. v.maxLevel .. "|r", L .. "chars|r" }, { widths = widths, small = true, rule = true })
+            for i = 1, show do
+                local g = v.guilds[i]
+                CELLS(W .. g.name .. "|r", { L .. string.format("%.1f", g.lv / g.n) .. "|r", L .. g.top .. "|r", W .. comma(g.n) .. "|r" }, { widths = widths,
+                    tip = "Characters of this guild counted so far, not its full roster." })
+            end
+        end)
+        SECTION(function()
+            local widths = { fsize() * 4.2, fsize() * 4.2, fsize() * 4.2 }
+            local show = HX("Zones", "census:zones", #v.zones, 10, "top")
+            CELLS(L .. "Zone|r", { L .. "share|r", L .. "avg lvl|r", L .. "chars|r" }, { widths = widths, small = true, rule = true })
+            for i = 1, show do
+                local z = v.zones[i]
+                CELLS(W .. z.name .. "|r", { L .. string.format("%.1f%%", z.n / v.total * 100) .. "|r", L .. string.format("%.1f", z.lv / z.n) .. "|r", W .. comma(z.n) .. "|r" },
+                    { widths = widths, tip = "Where each character was last seen." })
+            end
+        end)
+        ENDCOLUMNS()
+        return
+    end
+    COLUMNS(2)
+    SECTION(function()
+        H("Classes")
+        local best = v.classes[1] and v.classes[1].n or 1
+        for _, c in ipairs(v.classes) do
+            local cr, cg, cb = ns.CensusClassColor(c.token)
+            KV(classHex(c.token) .. ns.CensusClassName(c.token) .. "|r", W .. string.format("%.1f%%", c.n / v.total * 100) .. "|r" .. L .. "   " .. comma(c.n) .. "|r",
+                { bar = c.n / best, barColor = { cr, cg, cb, 0.28 } })
+        end
+    end)
+    SECTION(function()
+        H("Levels")
+        local lo, hi = math.max(1, rg[1]), math.min(v.maxLevel, rg[2])
+        local values = {}
+        for lv = lo, hi do values[#values + 1] = { tostring(lv), v.levels[lv] or 0, lv == v.maxLevel } end
+        HIST(values)
+        local atTop = v.levels[v.maxLevel] or 0
+        if atTop > 0 then KV(L .. "At level " .. v.maxLevel .. "|r", W .. comma(atTop) .. "|r" .. L .. "  " .. string.format("%.1f%%", atTop / v.total * 100) .. "|r") end
+    end)
+    ENDCOLUMNS()
+end
+
 function render.settings() end     -- a page of controls, handled in renderNow
 
 function render.journal()
@@ -1197,6 +1371,7 @@ local FOOT = {
     journal = "",
     economy = "Hover a hint for the numbers behind it; click an item for its price history, right-click to hide a hint.",
     prices = "",                                   -- the search box sits where the footer would be
+    census = "Every character counted once. Filters: faction, level range, and how recently they were seen.",
     settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
     summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
 }

@@ -36,6 +36,10 @@ local CONTROLS = {
     { type = "choice", key = "ahCompare", label = "Other faction's price", options = function() return ns.AH_MODIFIERS end },
     { type = "button", label = "Show hidden economy hints again", action = function() ns.db.adviceHidden = nil; if ns.AdviceDirty then ns.AdviceDirty() end; ns.say("hidden hints restored") end },
 
+    { header = "Census" },
+    { type = "check", key = "censusPassive", label = "Count the players you see (mouseover, target, nameplates, group)" },
+    { type = "check", key = "censusWho", label = "Background /who now and then, sent while you press keys" },
+
     { header = "This report" },
     { type = "slider", key = "panelAlpha", label = "Background opacity", min = 0.5, max = 1, step = 0.02, percent = true },
     { type = "slider", key = "panelFontSize", label = "Text size", min = 10, max = 16, step = 1 },

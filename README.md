@@ -77,12 +77,22 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   columns (Economy, Combat, Abilities, Professions, price histories), so more fits without scrolling.
   Lists that grow over time (price histories, loot sessions, levels, zones, deaths, notes, reminders,
   hints) start collapsed to their first entries; "show all" on the header shows everything.
+- **Census**: counts the players of your realm, each character once, and shows class shares, a race ×
+  class grid, the level spread, the biggest guilds and the busiest zones, filtered by faction, level
+  range and how recently they were seen. It fills in by itself: every player you see (mouseover,
+  target, nameplates, your group) is counted, and now and then a `/who` goes out while you are pressing
+  keys anyway (the game only allows `/who` from a key press or click). Never in combat, never while you
+  use the Who window, hidden from chat. The queries go one level at a time; a level that comes back
+  with 50 names (the most `/who` returns) is split by class, then race, then zone, and whatever was
+  checked longest ago goes next. A character seen again moves to its new level, guild and zone. If the
+  game ever blocks the background `/who`, the addon says so once and keeps counting the players you
+  see. Both parts can be switched off in Settings.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
 - **Summary**: paste-ready plain text for one character or all of them.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

@@ -90,11 +90,13 @@ C_Timer = { After = function(d, fn) timers[#timers + 1] = { at = now + d, fn = f
 function GetNetStats() return 0, 0, 127, 128 end
 function GetFramerate() return 99.6 end
 function GetBuildInfo() return "1.60.1", "69913", "Sep 17 2026", 16001 end
-function UnitName(u) if u == "player" then return "Tess Ter" elseif u == "pet" then return world.pet elseif u == "target" then return world.targetName end end
+function UnitName(u) if u == "mouseover" and world.mo then return world.mo.name end if u == "player" then return "Tess Ter" elseif u == "pet" then return world.pet elseif u == "target" then return world.targetName end end
+function UnitIsPlayer(u) return u == "mouseover" and world.mo ~= nil end
+function GetGuildInfo(u) if u == "mouseover" and world.mo then return world.mo.guild end end
 function GetRealmName() return "Classic Beta PvE 2" end
-function UnitClass() return "Hunter", "HUNTER", 3 end
-function UnitRace() return "Troll", "Troll", 8 end
-function UnitLevel(u) if u == "target" then return world.targetLevel end return world.level end
+function UnitClass(u) if u == "mouseover" and world.mo then return world.mo.className, world.mo.class end return "Hunter", "HUNTER", 3 end
+function UnitRace(u) if u == "mouseover" and world.mo then return world.mo.race, world.mo.race end return "Troll", "Troll", 8 end
+function UnitLevel(u) if u == "mouseover" and world.mo then return world.mo.level end if u == "target" then return world.targetLevel end return world.level end
 function GetMaxPlayerLevel() return 60 end
 function UnitXP() return world.xp end
 function UnitXPMax() return world.xpMax end
@@ -142,7 +144,7 @@ DearLordAuctionDB = { version = 1, realms = { ["ClassicBetaPvE2-Horde"] = { scan
     ["ClassicBetaPvE2-Alliance"] = { scanned = wall - 86400, day = AH_DAY - 1, count = 1, items = { [783] = { p = 300, n = 7, d = AH_DAY - 1 } } } } }
 function GetNormalizedRealmName() return "ClassicBetaPvE2" end
 function GetRealmName() return "Classic Beta PvE 2" end
-function UnitFactionGroup(u) if u == "npc" then return world.npcFaction end return "Horde", "Horde" end
+function UnitFactionGroup(u) if u == "npc" then return world.npcFaction end if u == "mouseover" and world.mo then return world.mo.faction end return "Horde", "Horde" end
 function IsAltKeyDown() return world.alt end
 function IsShiftKeyDown() return false end
 function IsControlKeyDown() return false end
@@ -264,6 +266,28 @@ function GetMerchantItemInfo(i) local m = MERCHANT[i]; return m[2], 1, m[3], m[4
 function GetMerchantItemID(i) return MERCHANT[i][1] end
 
 
+-- /who: a small population; the server answers at most 50 names, and says how many matched
+local WHO_POP = {}
+for i = 1, 60 do WHO_POP[#WHO_POP + 1] = { fullName = "Pally" .. i, level = 20, classStr = "Paladin", filename = "PALADIN", raceStr = i <= 40 and "Tauren" or "Orc",
+    fullGuildName = i <= 12 and "Lifers" or "", area = i <= 30 and "Orgrimmar" or "The Barrens" } end
+for i = 1, 5 do WHO_POP[#WHO_POP + 1] = { fullName = "Hunty" .. i, level = 12, classStr = "Hunter", filename = "HUNTER", raceStr = "Orc", fullGuildName = "", area = "Durotar" } end
+local function whoMatch(filter)
+    local lo, hi = filter:match("^(%d+)%-(%d+)")
+    local c, r, z = filter:match('c%-"(.-)"'), filter:match('r%-"(.-)"'), filter:match('z%-"(.-)"')
+    local out = {}
+    for _, p in ipairs(WHO_POP) do
+        if p.level >= (tonumber(lo) or 1) and p.level <= (tonumber(hi) or 999) and (not c or p.classStr == c) and (not r or p.raceStr == r) and (not z or p.area == z) then out[#out + 1] = p end
+    end
+    return out
+end
+C_FriendList = {
+    SendWho = function(filter) world.whoSent = (world.whoSent or 0) + 1; world.lastWho = filter; world.whoResults = whoMatch(filter) end,
+    GetNumWhoResults = function() local r = world.whoResults or {}; return math.min(50, #r), #r end,
+    GetWhoInfo = function(i) return (world.whoResults or {})[i] end,
+    SetWhoToUi = function() end }
+FriendsFrame = CreateFrame("Frame", "FriendsFrame")
+WorldFrame = CreateFrame("Frame", "WorldFrame")
+
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
 local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
@@ -271,6 +295,7 @@ if MODE == "bare" then
     GetActionInfo, GetNumTrainerServices, C_Item, issecretvalue_real = nil, nil, nil, issecretvalue
     C_AuctionHouse, TooltipDataProcessor, hooksecurefunc, GetNormalizedRealmName, DearLordAuctionDB = nil, nil, nil, nil, nil
     GetMerchantNumItems, GetMerchantItemInfo, GetMerchantItemID = nil, nil, nil
+    C_FriendList, UnitIsPlayer = nil, nil
     UnitHealth = function() return secret() end
     UnitPower = function() return secret() end
     C_Spell.GetSpellCooldown = nil
@@ -502,6 +527,47 @@ if MODE ~= "bare" then
     UIParent.w, UIParent.h = uw, uh; ns.db.panelSize = nil
 end
 
+-- census: a player seen twice (levelled in between), then /who riding on key presses
+local census = {}
+do
+    world.mo = { name = "Chuck", className = "Paladin", class = "PALADIN", race = "Tauren", level = 10, guild = "Beans", faction = "Horde" }
+    fire("UPDATE_MOUSEOVER_UNIT"); advance(61)
+    world.mo.level = 20; fire("UPDATE_MOUSEOVER_UNIT"); world.mo = nil
+    local r = DearLordCensusDB.realms[GetNormalizedRealmName and "ClassicBetaPvE2" or "ClassicBetaPvE2"]
+    census.chuck = r and r.c.Chuck
+    census.countAfterMouseover = r and r.count
+    local keys = DearLordStatsCensusKeys
+    if C_FriendList then
+        local asked = {}
+        for _ = 1, 90 do                                  -- press keys while playing; every answer arrives a moment later
+            local before = world.whoSent or 0
+            keys.scripts.OnKeyDown(keys, "W")
+            if (world.whoSent or 0) > before then asked[#asked + 1] = world.lastWho; advance(1); fire("WHO_LIST_UPDATE") end
+            advance(16)
+        end
+        census.asked = asked
+        local sent = world.whoSent
+        keys.scripts.OnKeyDown(keys, "W"); keys.scripts.OnKeyDown(keys, "W"); keys.scripts.OnKeyDown(keys, "W")
+        census.burst = (world.whoSent - sent)                         -- three presses in a row: one query
+        sent = world.whoSent
+        advance(40); world.combat = true; keys.scripts.OnKeyDown(keys, "W"); census.combat = world.whoSent - sent; world.combat = false
+        C_FriendList.SendWho("tauren"); local mine = world.whoSent; advance(20); keys.scripts.OnKeyDown(keys, "W"); census.afterUser = world.whoSent - mine
+        census.plan = r.plan["20-20"]
+        census.r = r
+        fire("ADDON_ACTION_BLOCKED", "DearLordStats", "C_FriendList.SendWho()"); advance(200)
+        local b = world.whoSent; keys.scripts.OnKeyDown(keys, "W"); census.afterBlock = world.whoSent - b
+    end
+    ns.OpenPanel("census"); panelText("Census / classes")
+    for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "races" and f.scripts.OnClick then f.scripts.OnClick(f) end end
+    panelText("Census / races")
+    for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "places" and f.scripts.OnClick then f.scripts.OnClick(f) end end
+    panelText("Census / guilds and zones")
+    for _, f in ipairs(frames) do if f.kind == "Button" and rawget(f, "chipKey") == "Alliance" and f.shown then f.scripts.OnClick(f) end end
+    census.allianceText = {}
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and f.left and f.left.text:find("characters") then census.allianceText[#census.allianceText + 1] = strip(f.left.text) end end
+    ns.db.censusFilter = nil
+end
+
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
     local f = ns.huds[key]
@@ -664,6 +730,17 @@ if MODE ~= "bare" then
     check("auction history keeps day:min:median only", not DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items[2140].h:find("%d+:%d+:%d+:%d+") and DearLordAuctionDB.version == 2)
 else
     check("loot: no auction data in a bare client, view still works", lootView and not lootView.hasAH and lootView.ahGain == 0 and ns.BagsForAuction() == nil)
+end
+check("census: a player seen at 10 then 20 is one character at level 20 (" .. tostring(census.chuck) .. ")", census.chuck and census.chuck:match("^20,") and census.countAfterMouseover == 1)
+if MODE ~= "bare" then
+    local function has(list, x) for _, v in ipairs(list or {}) do if v == x then return true end end end
+    check("census: /who walks the levels one at a time (" .. tostring(census.asked and #census.asked) .. " queries)", census.asked and census.asked[1] == "1-1" and has(census.asked, "20-20"))
+    check("census: a full answer at level 20 is split by class, then race", census.plan and census.plan.n == 60 and census.plan.kids and has(census.plan.kids, '20-20 c-"Paladin"')
+        and census.r.plan['20-20 c-"Paladin"'] and census.r.plan['20-20 c-"Paladin"'].kids and has(census.asked, '20-20 c-"Paladin" r-"Tauren"'))
+    check("census: every character once (60 paladins + 5 hunters + Chuck = " .. tostring(census.r and census.r.count) .. ")", census.r and census.r.count == 66)
+    check("census: no query right after one, none in combat, none while the player uses /who", census.burst == 1 and census.combat == 0 and census.afterUser == 0)
+    check("census: a blocked /who switches it off", census.afterBlock == 0 and ns.db.diag.census.blocked)
+    check("census: the Alliance filter hides the Horde characters (" .. tostring(census.allianceText[1]) .. ")", census.allianceText[1] and census.allianceText[1]:find("^0 characters"))
 end
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
