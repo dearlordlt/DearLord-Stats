@@ -218,6 +218,7 @@ local function commit()
         if (e.d or 0) < today - KEEP_DAYS then items[id] = nil else n = n + 1 end
     end
     r.scanned, r.day, r.auctions, r.count = time(), today, scan.n, n
+    if db() then db().lastRead = scan.requestedAt end
     local d = diag(); d.lastScan = { at = time(), rows = scan.n, items = n, secs = time() - (scan.requestedAt or time()) }
     ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "prices", key = "ahscan", hold = 10 })
     scan = { state = "idle" }
@@ -270,7 +271,9 @@ end
 ns.On("REPLICATE_ITEM_LIST_UPDATE", function()
     local d = diag(); d.updates = (d.updates or 0) + 1
     local n = N(C_AuctionHouse.GetNumReplicateItems()) or 0
-    if scan.state == "idle" and ahOpen and ahKey and n > 0 and db() and time() - (db().lastRequest or 0) < THROTTLE then
+    -- the list stays in the client and the event fires again whenever item data loads: a request is read once
+    if scan.state == "idle" and ahOpen and ahKey and n > 0 and db() and time() - (db().lastRequest or 0) < THROTTLE
+        and db().lastRead ~= db().lastRequest then
         -- the answer to a request this addon gave up on (or one from before a /reload): the throttle is spent, so take it
         scan = { state = "requested", requestedAt = db().lastRequest, key = ahKey, late = true }
         d.late = (d.late or 0) + 1

@@ -445,6 +445,10 @@ if MODE ~= "bare" then
     scanResult.requests = C_AuctionHouse.requests
     scanResult.stone = ns.AuctionPrice("|Hitem:2835::|h[Rough Stone]|h")
     scanResult.realm = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"]
+    -- the client fires the event again as item data loads: the list already read must not be read again
+    local feedBefore, lateBefore = #feedLog, ns.db.diag.ah.late or 0
+    for _ = 1, 3 do fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2) end
+    scanResult.rereads = (#feedLog - feedBefore) + ((ns.db.diag.ah.late or 0) - lateBefore)
     fire("AUCTION_HOUSE_CLOSED"); fire("AUCTION_HOUSE_SHOW"); advance(3)
     scanResult.requestsAfterSecondOpen = C_AuctionHouse.requests
     printed = {}; SlashCmdList["DEARLORDSTATS"]("scan"); scanResult.throttleMsg = printed[1] or ""
@@ -628,6 +632,7 @@ if MODE ~= "bare" then
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
     check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
+    check("scan: repeated list events after a finished scan do not start it again (" .. tostring(scanResult.rereads) .. ")", scanResult.rereads == 0)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
