@@ -286,6 +286,12 @@ C_FriendList = {
     GetWhoInfo = function(i) return (world.whoResults or {})[i] end,
     SetWhoToUi = function() end }
 FriendsFrame = CreateFrame("Frame", "FriendsFrame")
+-- this client's own /who list ("Looking For Group"): it pops up on every answer it hears
+LFGWhoFrame = CreateFrame("Frame", "LFGWhoFrame"); LFGWhoFrame.shown = false
+LFGWhoFrame:RegisterEvent("WHO_LIST_UPDATE")
+LFGWhoFrame:SetScript("OnEvent", function(self) self.shown = true end)
+function LFGWhoFrame:UnregisterEvent(e) self.events[e] = nil end
+function GetFramesRegisteredForEvent(e) local out = {}; for _, f in ipairs(frames) do if f.events and f.events[e] then out[#out + 1] = f end end; return unpack(out) end
 WorldFrame = CreateFrame("Frame", "WorldFrame")
 
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
@@ -546,6 +552,8 @@ do
             advance(16)
         end
         census.asked = asked
+        census.lfgShown = LFGWhoFrame.shown
+        census.lfgListening = LFGWhoFrame.events.WHO_LIST_UPDATE
         local sent = world.whoSent
         keys.scripts.OnKeyDown(keys, "W"); keys.scripts.OnKeyDown(keys, "W"); keys.scripts.OnKeyDown(keys, "W")
         census.burst = (world.whoSent - sent)                         -- three presses in a row: one query
@@ -738,6 +746,7 @@ if MODE ~= "bare" then
     check("census: a full answer at level 20 is split by class, then race", census.plan and census.plan.n == 60 and census.plan.kids and has(census.plan.kids, '20-20 c-"Paladin"')
         and census.r.plan['20-20 c-"Paladin"'] and census.r.plan['20-20 c-"Paladin"'].kids and has(census.asked, '20-20 c-"Paladin" r-"Tauren"'))
     check("census: every character once (60 paladins + 5 hunters + Chuck = " .. tostring(census.r and census.r.count) .. ")", census.r and census.r.count == 66)
+    check("census: the game's own /who window stays shut and listens again afterwards", census.lfgShown == false and census.lfgListening == true)
     check("census: no query right after one, none in combat, none while the player uses /who", census.burst == 1 and census.combat == 0 and census.afterUser == 0)
     check("census: a blocked /who switches it off", census.afterBlock == 0 and ns.db.diag.census.blocked)
     check("census: the Alliance filter hides the Horde characters (" .. tostring(census.allianceText[1]) .. ")", census.allianceText[1] and census.allianceText[1]:find("^0 characters"))

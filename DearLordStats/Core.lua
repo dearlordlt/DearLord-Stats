@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.8.0"
+ns.version = "2.8.1"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -123,6 +123,7 @@ end
 -- events, ticker, timers
 ----------------------------------------------------------------------
 local frame = CreateFrame("Frame")
+ns.eventFrame = frame
 local handlers, refused = {}, {}
 function ns.On(event, fn, label)
     if not handlers[event] then

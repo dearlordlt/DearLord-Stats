@@ -238,10 +238,25 @@ local function canWho()
     return time() - lastSent >= interval
 end
 
--- hide our own answers: the Who window stays shut and chat stays clean
+-- hide our own answers: whatever window shows /who results (the Who window, or this client's own
+-- "Looking For Group" list) stops listening while our query runs, and chat stays clean
+local muted = {}
 local function quiet(on)
-    if FriendsFrame and FriendsFrame.UnregisterEvent then
-        if on then FriendsFrame:UnregisterEvent("WHO_LIST_UPDATE") else FriendsFrame:RegisterEvent("WHO_LIST_UPDATE") end
+    if on then
+        local list = {}
+        if GetFramesRegisteredForEvent then list = { GetFramesRegisteredForEvent("WHO_LIST_UPDATE") } end
+        if FriendsFrame then list[#list + 1] = FriendsFrame end
+        local names = {}
+        for _, f in ipairs(list) do
+            if type(f) == "table" and f ~= ns.eventFrame and not muted[f] and f.UnregisterEvent and pcall(f.UnregisterEvent, f, "WHO_LIST_UPDATE") then
+                muted[f] = true
+                names[#names + 1] = (f.GetName and S(f:GetName())) or "?"
+            end
+        end
+        ns.diagOnce("whoListeners", function() return table.concat(names, ", ") end)
+    else
+        for f in pairs(muted) do pcall(f.RegisterEvent, f, "WHO_LIST_UPDATE") end
+        muted = {}
     end
 end
 local WHO_TOTAL = type(WHO_NUM_RESULTS) == "string" and WHO_NUM_RESULTS:match("^(.-)%%d") or nil
