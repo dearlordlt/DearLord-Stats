@@ -691,7 +691,7 @@ local function renderAdvice()
     local elapsed = math.max(1, time() - (s.start or time()))
     local earned, spent = s.earned or 0, s.spent or 0
     -- the strip at the top: this session's money and what the bags are worth
-    local widths = { fsize() * 7.5, fsize() * 7.5, fsize() * 9 }
+    local widths = { fsize() * 7, fsize() * 7, fsize() * 12 }
     CELLS(L .. "This session|r", { L .. "gold / hour|r", L .. "net|r", L .. "bags: vendor · best|r" }, { widths = widths, small = true, rule = true })
     CELLS(L .. ns.shortTime(elapsed) .. "|r", { (earned > 0 and elapsed >= 30) and (W .. ns.money(earned / elapsed * 3600) .. "|r") or (L .. "-|r"),
         W .. ns.money(earned - spent, true) .. "|r",

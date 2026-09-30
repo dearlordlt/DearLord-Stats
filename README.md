@@ -46,7 +46,7 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
     to. Anything without a price is left out rather than guessed. The top strip shows gold per hour,
     session net, and what your bags are worth at a vendor and at their best.
     - *Sell from your bags*: stacks that earn at least 50c and 15% more on the auction house than at a
-      vendor, with the stack split most sellers use (`Light Leather ×23 → 2×10 + 3`), plus one line for
+      vendor, with the stack split most sellers use (`Light Leather ×23 as 2×10 + 3`), plus one line for
       everything a vendor should get.
     - *Craft for profit*: recipes whose product sells for more than its materials cost, sold to the
       auction house **or a vendor**, whichever pays more. Materials count at the cheaper of their lowest

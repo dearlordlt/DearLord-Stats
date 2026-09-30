@@ -211,7 +211,7 @@ local function adviseSell(out)
                 else plan = "it" end
                 local med = median(b.id)
                 out.sell[#out.sell + 1] = { kind = "sell", id = b.id, link = b.link, q = b.q, name = b.name, n = b.n, value = aTotal - vTotal,
-                    left = ns.QualityColor(b.q) .. b.name .. "|r" .. ns.LABEL .. "  ×" .. b.n .. (split and ("  →  " .. split) or "") .. "|r",
+                    left = ns.QualityColor(b.q) .. b.name .. "|r" .. ns.LABEL .. "  ×" .. b.n .. (split and ("  as " .. split) or "") .. "|r",
                     right = ns.GREEN .. "+" .. m(aTotal - vTotal) .. "|r" .. ns.LABEL .. "  at " .. m(p) .. "|r",
                     tip = "List " .. plan .. " at " .. m(p) .. " each, the lowest buyout at your last scan" .. (med and med ~= p and (" (median " .. m(med) .. ")") or "") .. ".\n"
                         .. "After the 5% cut: " .. m(aTotal) .. ". A vendor pays " .. m(vTotal) .. ".\n"
