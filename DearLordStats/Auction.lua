@@ -5,7 +5,7 @@
 -- faction, because Horde and Alliance have separate auction houses on this server.
 --
 -- Saved in its own variable, DearLordAuctionDB, plain numbers and strings only:
---   { version = 1, lastRequest = <epoch>,
+--   { version = 1, lastRequest = <epoch>, lastByKey = { ["Realm-Horde"] = <epoch> }, throttle = "key" | "account" | nil,
 --     realms = { ["Realm-Horde"] = { scanned = <epoch>, day = 2456, auctions = 4812, count = 1846,
 --                items = { [id] = { p = <min unit buyout>, n = <units seen>, d = <scan day>, name = "Light Hide",
 --                                   k = <most common stack size, when not 1>,
@@ -160,6 +160,26 @@ end
 local function api() return C_AuctionHouse and type(C_AuctionHouse.ReplicateItems) == "function"
     and type(C_AuctionHouse.GetNumReplicateItems) == "function" and type(C_AuctionHouse.GetReplicateItemInfo) == "function" end
 
+-- the game allows one full scan per 15 minutes. Whether that is per account or per character/faction is
+-- not documented, so it is learned: the first scan at one house within 15 minutes of another house's scan
+-- either works (each house has its own 15 minutes) or gets no answer (one 15 minutes for the account).
+local function waitFor(k)
+    local d = db()
+    if not d then return 0 end
+    local account = THROTTLE - (time() - (d.lastRequest or 0))
+    if d.throttle == "account" then return math.max(0, account) end
+    local own = THROTTLE - (time() - ((d.lastByKey or {})[k or ""] or 0))
+    return math.max(0, own)
+end
+local function learn(rule)
+    local d = db()
+    if not d or d.throttle == rule then return end
+    d.throttle = rule
+    diag().throttle = rule
+    ns.Feed(ns.LABEL .. "Auction scan|r  " .. (rule == "key" and "each auction house has its own 15 minutes" or "the server allows one scan per 15 minutes for the whole account"),
+        { tab = "prices", key = "ahrule", hold = 10 })
+end
+
 local function abort(why)
     scan = { state = "idle" }
     if why then ns.Feed(ns.LABEL .. "Auction scan|r  " .. why, { tab = "prices", key = "ahscan", hold = 8 }) end
@@ -219,6 +239,7 @@ local function commit()
     end
     r.scanned, r.day, r.auctions, r.count = time(), today, scan.n, n
     if db() then db().lastRead = scan.requestedAt end
+    if scan.cross then learn("key") end
     local d = diag(); d.lastScan = { at = time(), rows = scan.n, items = n, secs = time() - (scan.requestedAt or time()) }
     ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "prices", key = "ahscan", hold = 10 })
     scan = { state = "idle" }
@@ -287,8 +308,12 @@ end, "ah:replicate")
 
 local function start()
     local d = db(); if not d then return end
-    d.lastRequest = time()                                    -- the throttle is spent whether or not the answer comes
-    scan = { state = "requested", requestedAt = time(), key = ahKey or ns.AuctionKey() }
+    local k = ahKey or ns.AuctionKey()
+    local cross = d.throttle == nil and time() - (d.lastRequest or 0) < THROTTLE and d.lastRequestKey ~= k
+    d.lastRequest, d.lastRequestKey = time(), k               -- the throttle is spent whether or not the answer comes
+    d.lastByKey = d.lastByKey or {}
+    d.lastByKey[k] = time()
+    scan = { state = "requested", requestedAt = time(), key = k, cross = cross }
     local ok, err = pcall(C_AuctionHouse.ReplicateItems)
     if not ok then diag().error = tostring(err); abort("refused: " .. tostring(err)); return end
     -- no answer in 30 s: say so, but keep listening. The 15-minute throttle is spent either way, and the list
@@ -306,7 +331,7 @@ function ns.AuctionScan(force)
     if not api() then return false, "noapi" end
     if not ahOpen then return false, "closed" end
     if scan.state ~= "idle" then return false, "busy" end
-    local wait = THROTTLE - (time() - ((db() and db().lastRequest) or 0))
+    local wait = waitFor(ahKey)
     if wait > 0 and not force then return false, "throttled", wait end
     local ready = C_AuctionHouse.IsThrottledMessageSystemReady
     if type(ready) == "function" and B(ready()) == false then
@@ -321,7 +346,7 @@ end
 
 function ns.AuctionStatus()
     local d = db()
-    local wait = THROTTLE - (time() - ((d and d.lastRequest) or 0))
+    local wait = waitFor(ahKey or ns.AuctionKey())
     local realms = {}
     local mine = ns.AuctionKey()
     local realmName = ns.AuctionRealmName()
@@ -333,7 +358,7 @@ function ns.AuctionStatus()
         table.sort(realms, function(a, b) return a.faction < b.faction end)
     end
     return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(), openKey = ahKey,
-        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$") }
+        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle }
 end
 
 ns.On("AUCTION_HOUSE_SHOW", function()
@@ -345,13 +370,21 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 end, "ah:show")
 ns.On("AUCTION_HOUSE_CLOSED", function()
     ahOpen = false; ahKey = nil
-    if scan.state == "requested" then abort("auction house closed before the list arrived") end
+    if scan.state == "requested" then
+        -- a try at a second house that waited half a minute for nothing: the 15 minutes are the account's
+        if scan.cross and time() - (scan.requestedAt or time()) >= 30 then learn("account") end
+        abort("auction house closed before the list arrived")
+    end
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:closed")
 ns.On("UI_ERROR_MESSAGE", function(_, msg)
     msg = S(msg)
     if not msg or scan.state ~= "requested" or time() - (scan.requestedAt or 0) > 5 then return end
-    if msg:lower():find("auction") then diag().error = msg; abort("refused: " .. msg) end
+    if msg:lower():find("auction") then
+        diag().error = msg
+        if scan.cross then learn("account") end
+        abort("refused: " .. msg)
+    end
 end, "ah:error")
 
 ----------------------------------------------------------------------

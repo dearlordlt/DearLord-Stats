@@ -487,8 +487,19 @@ if MODE ~= "bare" then
     fire("AUCTION_HOUSE_CLOSED")
     -- a goblin auction house: neutral, shared by both factions, scanned into its own key
     world.npc, world.npcFaction = true, nil
-    fire("AUCTION_HOUSE_SHOW"); SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    -- minutes after the Horde scan: the goblin house has its own 15 minutes, so the scan runs by itself
+    local reqBefore = C_AuctionHouse.requests
+    fire("AUCTION_HOUSE_SHOW"); advance(1.5); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    scanResult.neutralAuto = C_AuctionHouse.requests - reqBefore
+    scanResult.rule = DearLordAuctionDB.throttle
     scanResult.neutral = DearLordAuctionDB.realms["ClassicBetaPvE2-Neutral"]
+    -- the status row's button: "Try now" while the 15 minutes run, and it does try
+    ns.OpenPanel("prices")
+    local tryBtn; for _, f in ipairs(frames) do if f.kind == "Button" and f.shown and f.fs and f.fs.text == "Try now" then tryBtn = f end end
+    reqBefore = C_AuctionHouse.requests
+    if tryBtn then tryBtn.scripts.OnClick(tryBtn) end
+    scanResult.tryNow = tryBtn ~= nil and C_AuctionHouse.requests - reqBefore == 1
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
     -- the price browser: trend, search, history
@@ -709,6 +720,8 @@ if MODE ~= "bare" then
     check("scan: repeated list events after a finished scan do not start it again (" .. tostring(scanResult.rereads) .. ")", scanResult.rereads == 0)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
+    check("scan: a second house scans by itself within the first one's 15 minutes, and the rule is learned (" .. tostring(scanResult.rule) .. ")", scanResult.neutralAuto == 1 and scanResult.rule == "key")
+    check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
     check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "Horde AH 1s 50c | -25%")
     check("search: 'carv' finds the knife with median and max", #scanResult.search == 1 and scanResult.search[1].name == "Carving Knife" and scanResult.search[1].med == 150 and scanResult.search[1].max == 150)

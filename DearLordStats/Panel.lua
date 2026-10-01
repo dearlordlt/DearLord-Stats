@@ -71,7 +71,8 @@ local function textButton(parent, size)
     function b:SetLabel(text) self.fs:SetText(text); self:SetSize(self.fs:GetStringWidth() + 2, 16) end
     function b:SetActive(on)
         self.active = on
-        self.fs:SetTextColor(on and 1 or 0.62, on and 1 or 0.62, on and 1 or 0.62)
+        if not on and self.color then self.fs:SetTextColor(self.color[1], self.color[2], self.color[3])
+        else self.fs:SetTextColor(on and 1 or 0.62, on and 1 or 0.62, on and 1 or 0.62) end
         self.line:SetShown(on)
     end
     b:SetScript("OnEnter", function(self) if not self.active then self.fs:SetTextColor(0.9, 0.9, 0.9) end end)
@@ -170,6 +171,7 @@ local function toggleButton()
         toggles[usedToggles] = b
     end
     b.fs:SetFont(FONT, fsize(-2), "")
+    b.color = nil
     b:SetActive(false); b:ClearAllPoints(); b:Show()
     return b
 end
@@ -726,18 +728,35 @@ local function scanStatusRow()
             .. ": " .. (r.count > 0 and (r.count .. " items, scanned " .. ago(r.scanned)) or "not scanned yet")
     end
     if #parts == 0 then parts[1] = L .. "no house scanned yet|r" end
-    local right
+    local status
     if st.state ~= "idle" then
-        right = W .. (st.state == "requested" and "waiting for the list" or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
+        status = W .. (st.state == "requested" and "waiting for the list" or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
+    elseif not st.ahOpen then
+        status = L .. "open the auction house to scan" .. (st.nextIn > 0 and (" · ready in " .. ns.shortTime(st.nextIn)) or "") .. "|r"
+    elseif st.nextIn > 0 then
+        status = L .. "ready in " .. ns.shortTime(st.nextIn) .. "|r"
     else
-        right = ns.BLUE .. "Scan now|r" .. L .. (st.ahOpen and "" or " · at the AH") .. (st.nextIn > 0 and (" · in " .. ns.shortTime(st.nextIn)) or "") .. "|r"
+        status = ""
     end
-    KV(table.concat(parts, L .. "  ·  |r"), right, { onClick = function()
-        local ok, why, wait = ns.AuctionScan()
-        if not ok and why == "throttled" then ns.say("next scan possible in " .. ns.shortTime(wait))
-        elseif not ok and why == "closed" then ns.say("open the auction house first") end
-        renderNow()
-    end, tip = table.concat(tip, "\n") .. "\n\nClick to scan while the auction house is open: every auction is read once (the game allows one scan per 15 minutes) and the lowest buyout per item is kept, per realm and faction." })
+    local r = KV(table.concat(parts, L .. "  ·  |r"), status, { tip = table.concat(tip, "\n")
+        .. "\n\nWith the auction house open every auction is read once and the lowest buyout per item is kept, per realm and faction. "
+        .. "The game allows one scan per 15 minutes; whether that counts per account or per house is learned from the first try"
+        .. (st.rule == "key" and " (here: each house has its own 15 minutes)." or (st.rule == "account" and " (here: one 15 minutes for the whole account)." or ".")) })
+    -- a real button: tries even when the 15 minutes are not over (the server decides; a refused try costs nothing)
+    if st.ahOpen and st.state == "idle" then
+        local b = toggleButton()
+        b:SetLabel(st.nextIn > 0 and "Try now" or "Scan now")
+        b.color = { 0.5, 0.7, 1 }; b:SetActive(false)
+        b:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+        b.onToggle = function()
+            local ok, why = ns.AuctionScan(true)
+            if ok then ns.say("auction scan requested" .. (st.nextIn > 0 and " (before the 15 minutes are over: the server may not answer)" or ""))
+            elseif why == "busy" then ns.say("a scan is already running") end
+            renderNow()
+        end
+        r.right:ClearAllPoints()
+        r.right:SetPoint("RIGHT", b, "LEFT", -8, 0)
+    end
 end
 
 local ADVICE = {
