@@ -159,7 +159,7 @@ local function buyCost(id)
     if p then return p, "auction" end
     if v then return v, "vendor" end
 end
-local function m(c) return ns.strip(ns.money(c)) end
+local function m(c) return (ns.strip(ns.money(c)):gsub(" 0[sc]$", "")) end     -- "1s", "48s 61c", "2g"
 local function hidden(kind, id) return ns.db.adviceHidden and ns.db.adviceHidden[kind .. ":" .. id] end
 function ns.HideAdvice(kind, id)
     ns.db.adviceHidden = ns.db.adviceHidden or {}
@@ -358,7 +358,7 @@ local function adviseFlips(out)
                 local name = nameOf(id) or ("item " .. id)
                 out.flips[#out.flips + 1] = { kind = "flip", id = id, link = "item:" .. id, name = name, value = gain,
                     left = ns.WHITE .. name .. "|r" .. ns.LABEL .. "  " .. (v.z or "") .. "|r",
-                    right = ns.GREEN .. "+" .. m(gain) .. "|r" .. ns.LABEL .. "  vendor " .. m(v.c) .. "|r",
+                    right = ns.GREEN .. "+" .. m(gain) .. "|r" .. ns.LABEL .. "  buy " .. m(v.c) .. ", AH " .. m(p) .. "|r",
                     tip = name .. ": " .. (v.npc and (v.npc .. " in ") or "a vendor in ") .. (v.z or "?") .. " sells it for " .. m(v.c) .. (v.lim and " (limited stock)" or "") .. ".\n"
                         .. "Lowest auction " .. m(p) .. ", " .. m(net(p)) .. " after the cut; " .. (seen or 0) .. " on the auction house.\n"
                         .. "Deposit not counted. Right-click to hide this hint." }
@@ -378,7 +378,7 @@ local function adviseBargains(out, age)
             local name = nameOf(id) or ("item " .. id)
             out.bargains[#out.bargains + 1] = { kind = "bargain", id = id, link = "item:" .. id, name = name, value = sv - e.p,
                 left = ns.WHITE .. name .. "|r",
-                right = ns.GREEN .. "+" .. m(sv - e.p) .. "|r" .. ns.LABEL .. " each  ·  AH " .. m(e.p) .. "|r",
+                right = ns.GREEN .. "+" .. m(sv - e.p) .. "|r" .. ns.LABEL .. "  buy " .. m(e.p) .. ", vendor " .. m(sv) .. "|r",
                 tip = "The cheapest listing was " .. m(e.p) .. " each at your last scan; a vendor pays " .. m(sv) .. ".\n"
                     .. "Buy it and sell it to a vendor. Only that cheapest listing is sure to be below the vendor price, and it may be gone already.\n"
                     .. "Right-click to hide this hint." }
