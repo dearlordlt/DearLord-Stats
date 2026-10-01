@@ -172,6 +172,9 @@ local function toggleButton()
     end
     b.fs:SetFont(FONT, fsize(-2), "")
     b.color = nil
+    -- above the rows: a row takes the mouse for its tooltip, and at the same level it can swallow the click
+    if b.SetFrameLevel and child.GetFrameLevel then b:SetFrameLevel((child:GetFrameLevel() or 0) + 5) end
+    if b.SetHitRectInsets then b:SetHitRectInsets(-6, -6, -4, -4) end
     b:SetActive(false); b:ClearAllPoints(); b:Show()
     return b
 end

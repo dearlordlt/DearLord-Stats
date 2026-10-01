@@ -53,6 +53,8 @@ local function widget(kind, name)
     function M:GetWidth() return self.w end
     function M:GetHeight() return self.h end
     function M:SetAlpha(a) self.alpha = a end
+    function M:SetFrameLevel(l) self.level = l end
+    function M:GetFrameLevel() return self.level or 1 end
     function M:GetTop() return 900 end
     function M:GetLeft() return 300 end
     function M:GetPoint() return "TOP", nil, "TOP", 0, -12 end
@@ -503,6 +505,7 @@ if MODE ~= "bare" then
     reqBefore = C_AuctionHouse.requests
     if tryBtn then tryBtn.scripts.OnClick(tryBtn) end
     scanResult.tryNow = tryBtn ~= nil and C_AuctionHouse.requests - reqBefore == 1
+    scanResult.tryAbove = tryBtn ~= nil and (tryBtn.level or 0) > 2
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
@@ -730,6 +733,7 @@ if MODE ~= "bare" then
     check("scan: feed line announces the result", feedHit)
     check("scan: a second house scans by itself within the first one's 15 minutes, and the rule is learned (" .. tostring(scanResult.rule) .. ")", scanResult.neutralAuto == 1 and scanResult.rule == "key")
     check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
+    check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
     check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "Horde AH 1s 50c | -25%")
     check("search: 'carv' finds the knife with median and max", #scanResult.search == 1 and scanResult.search[1].name == "Carving Knife" and scanResult.search[1].med == 150 and scanResult.search[1].max == 150)
