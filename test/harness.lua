@@ -38,9 +38,13 @@ local function widget(kind, name)
     function M:SetFormattedText(fmt, ...) needFont(self); self.text = string.format(fmt, ...) end
     function M:GetStringWidth() return #((self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) * 6 end
     function M:GetStringHeight() return 14 * (1 + math.floor(self:GetStringWidth() / 420)) end
-    function M:Show() self.shown = true end
+    function M:Show()
+        local was = self.shown
+        self.shown = true
+        if self.kind == "EditBox" and not was and self.scripts.OnTextChanged then self.scripts.OnTextChanged(self, false) end   -- as the client does
+    end
     function M:Hide() self.shown = false end
-    function M:SetShown(v) self.shown = v and true or false end
+    function M:SetShown(v) if v then self:Show() else self.shown = false end end
     function M:IsShown() return self.shown end
     function M:IsMouseOver() return false end
     function M:SetSize(w, h) self.w, self.h = w, h end
@@ -518,7 +522,7 @@ if MODE ~= "bare" then
 end
 
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
-local adv, advAfterHide, advWide, advTip = nil, nil, nil, nil
+local adv, advAfterHide, advWide, advTip, advOpened = nil, nil, nil, nil, false
 if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
@@ -534,6 +538,10 @@ if MODE ~= "bare" then
             GameTooltip.lines = {}; f.scripts.OnEnter(f); advTip = table.concat(GameTooltip.lines, "\n"); f.scripts.OnLeave(f)
         end
     end
+    -- a click on a hint opens that item's price page
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:2506" and rawget(f, "onClick") then f.onClick(); break end end
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and f.left and f.left.text:find("HORNWOOD RECURVE BOW") then advOpened = true end end
+    ns.OpenPanel("economy")
     for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:2506" and rawget(f, "onRight") then f.onRight(); break end end
     advance(3); advAfterHide = ns.Advice(); advAfterHide.flag = (ns.db.adviceHidden or {})["flip:2506"]
     local uw, uh = UIParent.w, UIParent.h
@@ -746,6 +754,7 @@ if MODE ~= "bare" then
     local hide = adv and find(adv.sell, 783)
     check("advisor: sell the Light Hide on the AH, +3s 74c (" .. tostring(hide and strip(hide.right)) .. ")", hide and hide.value == 374 and adv.vendor and adv.vendor.stacks == 1)
     check("advisor: item row tooltip shows the item and the reasoning", advTip and advTip:find("Materials") ~= nil)
+    check("advisor: a click on a hint opens the item's price page", advOpened)
     check("advisor: right-click hides a hint", advAfterHide and not find(advAfterHide.flips, 2506) and advAfterHide.flag)
     check("layout: a 1000px window puts sections side by side (" .. tostring(advWide) .. " rows in later columns)", advWide and advWide > 0)
     check("auction history keeps day:min:median only", not DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items[2140].h:find("%d+:%d+:%d+:%d+") and DearLordAuctionDB.version == 2)

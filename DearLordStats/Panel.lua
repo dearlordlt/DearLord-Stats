@@ -990,7 +990,7 @@ function render.prices()
     if #list == 0 then P(L .. (q == "" and "Nothing scanned yet." or ("Nothing called \"" .. q .. "\" in the last scans.")) .. "|r"); return end
     H((q == "" and "All items" or ("Matching \"" .. q .. "\"")) .. "  ·  " .. #list .. (#list >= 60 and "+" or ""))
     -- one column per auction house, your own first: the lowest buyout per unit at that house's last scan
-    local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 4 }
+    local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 4.8 }
     CELLS(L .. "Item|r", { L .. own .. "|r", L .. "Neutral|r", L .. other .. "|r", L .. "trend|r" }, { widths = widths, small = true, rule = true })
     local function cell(p) return p and (W .. ns.money(p) .. "|r") or (L .. "–|r") end
     for _, it in ipairs(list) do
@@ -1292,8 +1292,11 @@ local function build()
     searchBox.hint = searchBox:CreateFontString(nil, "OVERLAY")
     searchBox.hint:SetFont(FONT, 12, ""); searchBox.hint:SetPoint("LEFT", 0, 0)
     searchBox.hint:SetTextColor(0.5, 0.55, 0.6); searchBox.hint:SetText("Search items  ·  click one for its history")
-    searchBox:SetScript("OnTextChanged", function(self)
+    searchBox:SetScript("OnTextChanged", function(self, userInput)
         self.hint:SetShown(self:GetText() == "")
+        -- only typing starts a new search: the client also fires this when the box is shown, which used to
+        -- throw away the item a click elsewhere (an Economy hint) had just opened
+        if not userInput then return end
         state.priceQuery, state.priceItem, state.offset = self:GetText(), nil, 0
         state.dirty = true
     end)
