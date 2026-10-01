@@ -14,16 +14,21 @@ local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 local MIN_GAIN, MIN_SHARE = 50, 0.15             -- a hint must earn at least 50c and 15% over the alternative
 
 ----------------------------------------------------------------------
--- vendor sell prices: static item data, asked for once and remembered for the session
+-- vendor sell prices: static item data, so once known they are kept in the saved data (a /reload empties the
+-- client's item cache, and bargains must not vanish until the items load again)
 ----------------------------------------------------------------------
 local sellMemo, pending = {}, {}
+local function remember(id, price)
+    sellMemo[id] = price
+    if ns.db then ns.db.sellPrices = ns.db.sellPrices or {}; ns.db.sellPrices[id] = price end
+end
 function ns.SellPrice(id)
     if not id then return nil end
-    local v = sellMemo[id]
-    if v then return v end
+    local v = sellMemo[id] or (ns.db and ns.db.sellPrices and ns.db.sellPrices[id])
+    if v then sellMemo[id] = v; return v end
     if not (C_Item and C_Item.GetItemInfo) then return nil end
     local price = N((select(11, C_Item.GetItemInfo("item:" .. id))))
-    if price then sellMemo[id] = price; return price end
+    if price then remember(id, price); return price end
     if C_Item.RequestLoadItemDataByID and not pending[id] then     -- not cached yet: the client loads it and says so
         pending[id] = true
         pcall(C_Item.RequestLoadItemDataByID, id)
@@ -31,10 +36,15 @@ function ns.SellPrice(id)
     return nil
 end
 local cache, cacheAt, dirty = nil, 0, true
-ns.On("GET_ITEM_INFO_RECEIVED", function(id)
+-- an item asked for has loaded: read its price now (the event alone used to be noted and the price never read)
+local function loaded(id)
     id = N(id)
-    if id and pending[id] then pending[id] = nil; dirty = true end
-end, "adv:iteminfo")
+    if not (id and pending[id]) then return end
+    pending[id] = nil
+    if ns.SellPrice(id) then dirty = true end
+end
+ns.On("GET_ITEM_INFO_RECEIVED", loaded, "adv:iteminfo")
+ns.On("ITEM_DATA_LOAD_RESULT", loaded, "adv:iteminfo")
 
 -- after a scan (and at login) ask for the vendor price of every item of your own house, a few hundred at a time
 local warming = false
@@ -373,7 +383,7 @@ local function adviseBargains(out, age)
     local d = DearLordAuctionDB
     local r = d and d.realms and ns.AuctionKey() and d.realms[ns.AuctionKey()]
     for id, e in pairs(r and r.items or {}) do
-        local sv = sellMemo[id]
+        local sv = sellMemo[id] or (ns.db.sellPrices and ns.db.sellPrices[id])
         if sv and e.p and e.p > 0 and sv - e.p >= 10 and not hidden("bargain", id) then
             local name = nameOf(id) or ("item " .. id)
             out.bargains[#out.bargains + 1] = { kind = "bargain", id = id, link = "item:" .. id, name = name, value = sv - e.p,

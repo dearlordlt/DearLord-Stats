@@ -141,7 +141,7 @@ C_Spell = {
 local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
     [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 },
     [4357] = { "Rough Blasting Powder", 1, 4 }, [4359] = { "Handful of Copper Bolts", 1, 300 }, [2840] = { "Copper Bar", 1, 10 },
-    [2506] = { "Hornwood Recurve Bow", 1, 400 }, [2589] = { "Linen Cloth", 1, 13 } }
+    [2506] = { "Hornwood Recurve Bow", 1, 400 }, [2589] = { "Linen Cloth", 1, 13 }, [5000] = { "Test Pearl", 1, 77 } }
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
 -- the addon's own auction price database, as the Keeper hands it back: a scan from two days ago
 local AH_DAY = math.floor((wall - 1577836800) / 86400)
@@ -173,10 +173,11 @@ C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 
     end }
 C_Item = { GetItemInfo = function(link)
         local id = tonumber(tostring(link):match("[Hh]?item:(%d+)")); local it = ITEMS[id]
-        if not it then return nil end
+        if not it or (world.uncached and world.uncached[id]) then return nil end
         return it[1], link, it[2], 1, 1, "Misc", "Junk", 20, "", 0, it[3]
     end,
     GetItemCount = function(id) return world.bags[id] or 0 end,
+    RequestLoadItemDataByID = function(id) world.requested = world.requested or {}; world.requested[id] = true end,
     GetItemNameByID = function(id) return ({ [2589] = "Linen Cloth", [2835] = "Rough Stone", [2840] = "Copper Bar", [2836] = "Coarse Stone" })[id] end }
 Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, DamageTaken = 7, Deaths = 9, EnemyDamageTaken = 10 },
     DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
@@ -525,7 +526,7 @@ if MODE ~= "bare" then
 end
 
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
-local adv, advAfterHide, advWide, advTip, advOpened = nil, nil, nil, nil, false
+local adv, advAfterHide, advWide, advTip, advOpened, advKept, advLoaded = nil, nil, nil, nil, false, false, false
 if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
@@ -535,6 +536,12 @@ if MODE ~= "bare" then
     fire("MERCHANT_SHOW"); advance(1); world.merchant = nil; world.npc = nil
     ns.AdviceDirty(true); advance(1); advance(3)
     adv = ns.Advice()
+    advKept = ns.db.sellPrices and ns.db.sellPrices[2140] == 350
+    -- an item the client has not loaded yet: asked for, and its price read when it arrives
+    world.uncached = { [5000] = true }
+    local before = ns.SellPrice(5000)
+    world.uncached = nil; fire("ITEM_DATA_LOAD_RESULT", 5000, true)
+    advLoaded = before == nil and world.requested and world.requested[5000] and ns.db.sellPrices[5000] == 77
     ns.OpenPanel("economy"); panelText("Economy / advice")
     for _, f in ipairs(frames) do
         if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:4357" and rawget(f, "tip") then
@@ -759,6 +766,8 @@ if MODE ~= "bare" then
     check("advisor: sell the Light Hide on the AH, +3s 74c (" .. tostring(hide and strip(hide.right)) .. ")", hide and hide.value == 374 and adv.vendor and adv.vendor.stacks == 1)
     check("advisor: item row tooltip shows the item and the reasoning", advTip and advTip:find("Materials") ~= nil)
     check("advisor: a click on a hint opens the item's price page", advOpened)
+    check("advisor: vendor prices are kept in the saved data (bargains survive a /reload)", advKept)
+    check("advisor: an item not loaded yet is asked for and its price read when it arrives", advLoaded)
     check("advisor: right-click hides a hint", advAfterHide and not find(advAfterHide.flips, 2506) and advAfterHide.flag)
     check("layout: a 1000px window puts sections side by side (" .. tostring(advWide) .. " rows in later columns)", advWide and advWide > 0)
     check("auction history keeps day:min:median only", not DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items[2140].h:find("%d+:%d+:%d+:%d+") and DearLordAuctionDB.version == 2)
