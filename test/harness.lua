@@ -141,7 +141,7 @@ C_Spell = {
 local ITEMS = { [4867] = { "Broken Scorpid Leg", 0, 12 }, [2140] = { "Carving Knife", 2, 350 }, [783] = { "Light Hide", 1, 50 },
     [2770] = { "Copper Ore", 1, 5 }, [2835] = { "Rough Stone", 1, 2 }, [9999] = { "Blade of the Test", 3, 4200 },
     [4357] = { "Rough Blasting Powder", 1, 4 }, [4359] = { "Handful of Copper Bolts", 1, 300 }, [2840] = { "Copper Bar", 1, 10 },
-    [2506] = { "Hornwood Recurve Bow", 1, 400 }, [2589] = { "Linen Cloth", 1, 13 }, [5000] = { "Test Pearl", 1, 77 } }
+    [2506] = { "Hornwood Recurve Bow", 1, 400 }, [2589] = { "Linen Cloth", 1, 13 }, [5000] = { "Test Pearl", 1, 77 }, [5001] = { "Patched Wand", 2, 1 }, [5002] = { "Test Gem", 1, 5 } }
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
 -- the addon's own auction price database, as the Keeper hands it back: a scan from two days ago
 local AH_DAY = math.floor((wall - 1577836800) / 86400)
@@ -526,7 +526,7 @@ if MODE ~= "bare" then
 end
 
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
-local adv, advAfterHide, advWide, advTip, advOpened, advKept, advLoaded = nil, nil, nil, nil, false, false, false
+local adv, advAfterHide, advWide, advTip, advOpened, advKept, advLoaded, advPatched, advNewBuild = nil, nil, nil, nil, false, false, false, false, false
 if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
@@ -542,6 +542,12 @@ if MODE ~= "bare" then
     local before = ns.SellPrice(5000)
     world.uncached = nil; fire("ITEM_DATA_LOAD_RESULT", 5000, true)
     advLoaded = before == nil and world.requested and world.requested[5000] and ns.db.sellPrices[5000] == 77
+    -- a patch dropped an item's vendor price: the client's own number beats the saved one
+    ns.db.sellPrices[5001] = 1535
+    advPatched = ns.SellPrice(5001) == 1 and ns.db.sellPrices[5001] == 1
+    -- a new game build: the saved prices start over
+    ns.db.sellPricesBuild = "12345"; ns.SellPrice(5002)
+    advNewBuild = ns.db.sellPricesBuild == "69913" and ns.db.sellPrices[2140] == nil and ns.db.sellPrices[5002] == 5
     ns.OpenPanel("economy"); panelText("Economy / advice")
     for _, f in ipairs(frames) do
         if f.kind == "Frame" and f.shown and rawget(f, "link") == "item:4357" and rawget(f, "tip") then
@@ -768,6 +774,8 @@ if MODE ~= "bare" then
     check("advisor: a click on a hint opens the item's price page", advOpened)
     check("advisor: vendor prices are kept in the saved data (bargains survive a /reload)", advKept)
     check("advisor: an item not loaded yet is asked for and its price read when it arrives", advLoaded)
+    check("advisor: a patched vendor price (1c now, 15s 35c saved) uses the client's number", advPatched)
+    check("advisor: saved vendor prices start over with a new game build", advNewBuild)
     check("advisor: right-click hides a hint", advAfterHide and not find(advAfterHide.flips, 2506) and advAfterHide.flag)
     check("layout: a 1000px window puts sections side by side (" .. tostring(advWide) .. " rows in later columns)", advWide and advWide > 0)
     check("auction history keeps day:min:median only", not DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items[2140].h:find("%d+:%d+:%d+:%d+") and DearLordAuctionDB.version == 2)

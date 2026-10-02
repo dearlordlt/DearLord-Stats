@@ -14,21 +14,36 @@ local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 local MIN_GAIN, MIN_SHARE = 50, 0.15             -- a hint must earn at least 50c and 15% over the alternative
 
 ----------------------------------------------------------------------
--- vendor sell prices: static item data, so once known they are kept in the saved data (a /reload empties the
--- client's item cache, and bargains must not vanish until the items load again)
+-- vendor sell prices. What the client says this session always wins; a saved copy stands in while items are
+-- still loading after a /reload, so bargains do not vanish. Patches do change vendor prices (enchanted wands
+-- dropped to 1c), so the saved copy is thrown away whenever the game build changes.
 ----------------------------------------------------------------------
 local sellMemo, pending = {}, {}
+local function saved()
+    local db = ns.db
+    if not db then return nil end
+    local build = GetBuildInfo and S((select(2, GetBuildInfo()))) or "?"
+    if db.sellPricesBuild ~= build then db.sellPrices, db.sellPricesBuild = {}, build end
+    db.sellPrices = db.sellPrices or {}
+    return db.sellPrices
+end
 local function remember(id, price)
     sellMemo[id] = price
-    if ns.db then ns.db.sellPrices = ns.db.sellPrices or {}; ns.db.sellPrices[id] = price end
+    local sv = saved()
+    if sv then sv[id] = price end
 end
+local function knownSell(id) local sv = saved(); return sellMemo[id] or (sv and sv[id]) end
 function ns.SellPrice(id)
     if not id then return nil end
-    local v = sellMemo[id] or (ns.db and ns.db.sellPrices and ns.db.sellPrices[id])
-    if v then sellMemo[id] = v; return v end
-    if not (C_Item and C_Item.GetItemInfo) then return nil end
-    local price = N((select(11, C_Item.GetItemInfo("item:" .. id))))
+    if sellMemo[id] then return sellMemo[id] end                   -- read from the client this session
+    local price = C_Item and C_Item.GetItemInfo and N((select(11, C_Item.GetItemInfo("item:" .. id))))
     if price then remember(id, price); return price end
+    local sv = saved()
+    if sv and sv[id] then
+        if C_Item and C_Item.RequestLoadItemDataByID and not pending[id] then pending[id] = true; pcall(C_Item.RequestLoadItemDataByID, id) end
+        return sv[id]
+    end
+    if not (C_Item and C_Item.GetItemInfo) then return nil end
     if C_Item.RequestLoadItemDataByID and not pending[id] then     -- not cached yet: the client loads it and says so
         pending[id] = true
         pcall(C_Item.RequestLoadItemDataByID, id)
@@ -71,7 +86,7 @@ function ns.AdviceDirty(scanned)
     dirty = true
     if scanned then warm() end
 end
-ns.OnLogin(function() ns.After(5, warm, "adv:warm") end, "adv:warm")
+ns.OnLogin(function() saved(); ns.After(5, warm, "adv:warm") end, "adv:warm")
 
 ----------------------------------------------------------------------
 -- vendors: what a merchant sells and for how much, remembered account-wide
@@ -383,7 +398,7 @@ local function adviseBargains(out, age)
     local d = DearLordAuctionDB
     local r = d and d.realms and ns.AuctionKey() and d.realms[ns.AuctionKey()]
     for id, e in pairs(r and r.items or {}) do
-        local sv = sellMemo[id] or (ns.db.sellPrices and ns.db.sellPrices[id])
+        local sv = knownSell(id)
         if sv and e.p and e.p > 0 and sv - e.p >= 10 and not hidden("bargain", id) then
             local name = nameOf(id) or ("item " .. id)
             out.bargains[#out.bargains + 1] = { kind = "bargain", id = id, link = "item:" .. id, name = name, value = sv - e.p,
