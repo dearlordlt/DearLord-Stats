@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.8.7"
+ns.version = "2.8.8"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -108,9 +108,35 @@ local function logError(label, err)
     end
 end
 local function handler(err) return (debugstack and (tostring(err) .. "\n" .. debugstack(2, 6, 0))) or tostring(err) end
+-- every piece of the addon's work is timed: anything over 50 ms is noted in the diagnostics (/dls perf),
+-- anything over 200 ms is also said in chat right away, so a freeze can be matched to it (or ruled out)
+local clock = type(debugprofilestop) == "function" and debugprofilestop or nil
+local slowSaid = {}
+function ns.noteSlow(label, ms)
+    local db = ns.db
+    if not db then return end
+    db.diag = db.diag or {}
+    db.diag.slow = db.diag.slow or {}
+    local e = db.diag.slow[label] or { n = 0, max = 0 }
+    e.n, e.last, e.lastMs = e.n + 1, time(), math.floor(ms)
+    if ms > e.max then e.max = math.floor(ms) end
+    db.diag.slow[label] = e
+    if ms >= 200 and db.perfWarn ~= false and (not slowSaid[label] or time() - slowSaid[label] >= 60) then
+        slowSaid[label] = time()
+        ns.say(string.format("slow: %s took %d ms", label, ms))
+    end
+end
+local depth = 0
 function ns.safe(label, fn, ...)
+    local t0 = clock and depth == 0 and clock()
+    depth = depth + 1
     local ok, err = xpcall(fn, handler, ...)
+    depth = depth - 1
     if not ok then logError(label, err) end
+    if t0 then
+        local ms = clock() - t0
+        if ms >= 50 then ns.noteSlow(label, ms) end
+    end
     return ok
 end
 -- xpcall in Lua 5.1 does not forward arguments; wrap when arguments are needed

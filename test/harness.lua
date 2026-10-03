@@ -596,6 +596,7 @@ do
         advance(40); world.combat = true; keys.scripts.OnKeyDown(keys, "W"); census.combat = world.whoSent - sent; world.combat = false
         C_FriendList.SendWho("tauren"); local mine = world.whoSent; advance(20); keys.scripts.OnKeyDown(keys, "W"); census.afterUser = world.whoSent - mine
         census.plan = r.plan["20-20"]
+        census.count = r.count
         census.r = r
         fire("ADDON_ACTION_BLOCKED", "DearLordStats", "C_FriendList.SendWho()"); advance(200)
         local b = world.whoSent; keys.scripts.OnKeyDown(keys, "W"); census.afterBlock = world.whoSent - b
@@ -676,8 +677,17 @@ for _, cmd in ipairs({ "", "", "levels", "summary", "recap", "recap", "nudges", 
 end
 io.write("\n-- summary (this character)\n" .. ns.SummaryText(false) .. "\n")
 
+-- slow work is reported, with a chat line when it is long enough to feel
+printed = {}; ns.noteSlow("test:slow", 312); SlashCmdList["DEARLORDSTATS"]("perf")
+local perfSaid, perfListed = false, false
+for _, l in ipairs(printed) do if l:find("slow: test:slow took 312 ms", 1, true) then perfSaid = true end; if l:find("test:slow: 1 times", 1, true) then perfListed = true end end
+-- a census past its cap is trimmed in one go, at login
+local cr = DearLordCensusDB.realms.ClassicBetaPvE2
+if cr then for i = 1, 12001 do cr.c["Filler" .. i] = "5,1,1,0,0,2,1400," .. (1400 + i % 10) .. ",1" end; cr.count = 12001 + (cr.count or 0) end
+
 -- reload keeps the session, a fresh login starts a new one
 fire("PLAYER_ENTERING_WORLD", false, true); advance(2)
+local censusAfterTrim = cr and cr.count
 local kept = ns.session.combat.fights
 fire("PLAYER_ENTERING_WORLD", true, false); advance(2)
 
@@ -788,12 +798,14 @@ if MODE ~= "bare" then
     check("census: /who walks the levels one at a time (" .. tostring(census.asked and #census.asked) .. " queries)", census.asked and census.asked[1] == "1-1" and has(census.asked, "20-20"))
     check("census: a full answer at level 20 is split by class, then race", census.plan and census.plan.n == 60 and census.plan.kids and has(census.plan.kids, '20-20 c-"Paladin"')
         and census.r.plan['20-20 c-"Paladin"'] and census.r.plan['20-20 c-"Paladin"'].kids and has(census.asked, '20-20 c-"Paladin" r-"Tauren"'))
-    check("census: every character once (60 paladins + 5 hunters + Chuck = " .. tostring(census.r and census.r.count) .. ")", census.r and census.r.count == 66)
+    check("census: every character once (60 paladins + 5 hunters + Chuck = " .. tostring(census.count) .. ")", census.count == 66)
     check("census: the game's own /who window stays shut and listens again afterwards", census.lfgShown == false and census.lfgListening == true)
     check("census: no query right after one, none in combat, none while the player uses /who", census.burst == 1 and census.combat == 0 and census.afterUser == 0)
     check("census: a blocked /who switches it off", census.afterBlock == 0 and ns.db.diag.census.blocked)
     check("census: the Alliance filter hides the Horde characters (" .. tostring(census.allianceText[1]) .. ")", census.allianceText[1] and census.allianceText[1]:find("^0 characters"))
 end
+check("perf: a 312 ms piece of work is said in chat and listed by /dls perf", perfSaid and perfListed)
+check("census: past 12,000 characters it trims to 11,000 in one go (" .. tostring(censusAfterTrim) .. ")", censusAfterTrim == 11000)
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
 check("junk in bags: 4 x 12c", (select(1, ns.JunkInBags())) == 48)
 check("settings page: every control exercised (" .. touched .. ") and values changed", touched >= 23 and settingsChanged)

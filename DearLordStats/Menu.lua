@@ -68,7 +68,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -94,6 +94,17 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "loot" then ns.OpenPanel("loot")
         elseif cmd == "economy" or cmd == "advice" or cmd == "money" then ns.OpenPanel("economy")
         elseif cmd == "census" then ns.OpenPanel("census")
+        elseif cmd == "perf" then
+            if arg == "off" or arg == "on" then db.perfWarn = arg == "on"; ns.say("slow-work warnings " .. arg); return end
+            local list = {}
+            for label, e in pairs((db.diag and db.diag.slow) or {}) do list[#list + 1] = { label = label, e = e } end
+            table.sort(list, function(a, b) return a.e.max > b.e.max end)
+            if #list == 0 then ns.say("nothing in this addon has taken 50 ms or more") end
+            for i = 1, math.min(8, #list) do
+                local e = list[i].e
+                print(string.format("   %s: %d times over 50 ms, slowest %d ms, last %d ms %s", list[i].label, e.n, e.max, e.lastMs or 0, e.last and date("%H:%M:%S", e.last) or ""))
+            end
+            if collectgarbage then print(string.format("   Lua memory (all addons): %.1f MB", collectgarbage("count") / 1024)) end
         elseif cmd == "prices" or cmd == "price" or cmd == "ah" then ns.OpenPanel("prices", arg ~= "" and arg or nil)
         elseif cmd == "resetloot" then ns.ResetLoot()
         elseif cmd == "scan" then

@@ -17,7 +17,8 @@
 local ADDON, ns = ...
 local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 
-local MAX_CHARS = 12000                   -- beyond this the characters seen longest ago make room
+local MAX_CHARS, PRUNE_TO = 12000, 11000  -- beyond 12,000 the characters seen longest ago make room, down to 11,000
+                                          -- in one go (sorting them all on every /who answer was a hitch)
 local WHO_EVERY, WHO_MAX_WAIT, WHO_FULL = 15, 10, 50
 local FACTIONS = { "Alliance", "Horde", "Neutral" }
 local FACTION_ID = { Alliance = 1, Horde = 2, Neutral = 3 }
@@ -110,8 +111,8 @@ local function prune(r)
     local list = {}
     for name, s in pairs(r.c) do local _, _, _, _, _, _, _, last = decode(s); list[#list + 1] = { name, last or 0 } end
     table.sort(list, function(a, b) return a[2] < b[2] end)
-    for i = 1, #list - MAX_CHARS do r.c[list[i][1]] = nil end
-    r.count = math.min(#list, MAX_CHARS)
+    for i = 1, #list - PRUNE_TO do r.c[list[i][1]] = nil end
+    r.count = math.min(#list, PRUNE_TO)
     version = version + 1
 end
 
