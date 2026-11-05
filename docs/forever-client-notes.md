@@ -1,7 +1,8 @@
-# WoW: Forever beta, notes for addon authors
+# WoW: Forever, notes for addon authors
 
-Observed on build 1.60.1.69913 (interface 16001), September 2026, with a probe addon and an
-`strace` of the client during `/reload`. Things may change between beta builds.
+Observed on the beta, builds 1.60.1.69913 to 70245 (interface 16001), September and October 2026,
+with a probe addon and an `strace` of the client during `/reload`. The launch client is build 70790,
+same interface number; these notes have not all been checked again on it.
 
 ## It is the modern engine
 
@@ -52,19 +53,11 @@ across `/reload`.
   `WTF/Account/<account>/<realm id>/<First-Family>/`, while `AddOns.txt` lands under
   `<realm name>/<First>/`.
 
-## Saved variables are written and never loaded (build 69913)
+## Saved variables were not loaded on the beta
 
-At logout the client writes account-wide and per-character saved variables correctly. At load it
-gives addons nothing: the global is nil from `ADDON_LOADED` through `PLAYER_LOGOUT`.
-`SavedVariablesMachine` files are not even written. The client does `stat` the per-character and
-machine-wide files during loading, which is easy to mistake for loading them.
-
-What does persist:
-
-- values of console variables created with `C_CVar.RegisterCVar`, across `/reload` (process memory;
-  16 KB per value worked; they are not written to `Config.wtf`)
-- macros (server side), which is what the community addon WickKeeper uses
-- addon code files, which is why generating a Lua file from the saved files works for restarts
+Beta build 69913 wrote saved variables at logout and gave addons nothing back at load. The launch
+client is reported to have fixed this, so the workaround addon (0DearLordKeeper) was removed from
+this repository; it is in the git history.
 
 ## The auction house is per faction, and Auctionator does not know
 
@@ -72,10 +65,7 @@ An auction posted on the Horde AH is not found on the Alliance AH (checked in th
 2026; stock and prices differ too). Auctionator (build 339) detects Forever as its own game type and
 uses its modern-AH code, which keeps one price database per realm, keyed
 `GetNormalizedRealmName()` with no faction. A scan on either side overwrites the other side's
-prices. The Keeper's `Fixes.lua` wraps `Auctionator.Variables.GetConnectedRealmRoot` at
-Auctionator's `ADDON_LOADED` (the Keeper registered for the event first, so its handler runs before
-Auctionator's own initialisation) and appends the faction, the way Auctionator does on Classic.
-Prices scanned before the fix go to the first faction that logs in afterwards.
+prices. DearLord Stats keeps its own scan per realm and faction.
 
 ## Auction house API (as DearLord Stats uses it)
 
@@ -91,3 +81,10 @@ Isle, report no faction (or Neutral), so they are kept under `<Realm>-Neutral`.
 `quantityMax`. `GetAllRecipeIDs` also returns modern recipes the character has not learned, so the
 `learned` flag has to be checked. The item vendor price is position 11 of `C_Item.GetItemInfo`, and
 is nil until the item is cached.
+
+## /who
+
+`C_FriendList.SendWho` only works from a key press or click, and a hook on a player's own key press
+counts. An answer holds at most 50 names. The client shows answers in its own `LFGWhoListFrame`, as
+well as `FriendsFrame`, and opens it unless the frame stops listening to `WHO_LIST_UPDATE` while the
+query runs. On the beta about 2,750 queries, one per 15 seconds, went through without being blocked.

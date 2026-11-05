@@ -9,7 +9,7 @@
 --             then by race, then by zone, and whatever was checked longest ago goes next.
 -- A character seen again moves up to its new level; its guild and zone follow the latest sighting.
 --
--- Saved in its own variable, compact (about 25 bytes a character) so the Keeper can carry it:
+-- Saved in its own variable, compact (about 25 bytes a character):
 --   DearLordCensusDB = { version = 1, realms = { ["Realm"] = {
 --       c = { ["Name"] = "level,class,race,guild,zone,faction,firstDay,lastDay,src" },   -- numbers index the lists
 --       k = { "PALADIN", ... }, r = { "Human", ... }, g = { "Lifers", ... }, z = { "Elwynn Forest", ... },

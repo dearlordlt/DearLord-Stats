@@ -11,7 +11,7 @@
 --                                   k = <most common stack size, when not 1>,
 --                                   h = "day:min:median day:min:median" (newest first) } } } } }
 -- (2.6 and older kept a third number, the highest buyout: outlier listings made it useless, and it
---  pushed the variable past the Keeper's size limit, so it is dropped)
+--  only took up room, so it is dropped)
 local ADDON, ns = ...
 local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 

@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.8.8"
+ns.version = "2.9.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -505,7 +505,7 @@ end, "core:active")
 
 ----------------------------------------------------------------------
 -- diagnostics: compact dumps of real API answers, kept in DearLordStatsDB.diag so
--- behaviour on this beta client can be checked from disk without another probe
+-- behaviour on this client can be checked from disk without another probe
 ----------------------------------------------------------------------
 function ns.dump(v, depth, budget)
     depth, budget = depth or 0, budget or { n = 0 }

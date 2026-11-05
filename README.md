@@ -1,8 +1,6 @@
 # DearLord Stats
 
-A quiet HUD and report addon for the **World of Warcraft: Forever** beta (interface 16001), plus
-**0DearLordKeeper**, a workaround for the beta bug where addon saved variables are written but never
-loaded.
+A quiet HUD and report addon for **World of Warcraft: Forever** (interface 16001).
 
 Built for trying out classes and professions while levelling: it answers "how does this class
 actually feel" rather than "how fast can I go".
@@ -11,10 +9,8 @@ actually feel" rather than "how fast can I go".
 
 | Folder | What it is |
 | --- | --- |
-| `DearLordStats/` | The addon. Drop into `Interface/AddOns/`. |
-| `0DearLordKeeper/` | Makes addon settings survive `/reload` and game restarts on beta build 69913. Works for every addon, not only this one. |
-| `tools/` | Companion scripts for the Keeper (Linux). |
-| `test/` | A simulated Forever client, so the addons can be tested with plain `lua5.1`. |
+| `DearLordStats/` | The addon. Copy it to `World of Warcraft/_forever_/Interface/AddOns/`, then start the game. |
+| `test/` | A simulated Forever client, so the addon can be tested with plain `lua5.1`. |
 | `docs/` | Notes on what the Forever client does and does not allow addons to do. |
 
 ## DearLord Stats
@@ -100,57 +96,11 @@ Combat numbers come from the game's built-in damage meter (`C_DamageMeter`), rea
 after each fight, because the combat log is forbidden to addons on this client. See
 `docs/forever-client-notes.md`.
 
-## 0DearLordKeeper: settings that survive on the beta
-
-Beta build 69913 writes every addon's saved variables at logout and hands nothing back at load
-(community report: ClassicWoWCommunity/forever-bugs#34). Two things do survive, and the Keeper uses
-both:
-
-1. **Console variables registered by an addon stay in the game's memory across `/reload`.** At logout
-   the Keeper serialises every declared saved variable into them; at login it puts them back before
-   any other addon starts.
-2. **Addon code files load normally, and the saved files on disk are written correctly.** The script
-   `tools/wow-keeper-sync` turns those saved files into `0DearLordKeeper/Restore.lua`, which restores
-   everything after a full game restart. It also writes `Declared.lua`, the list of variables each
-   installed addon declares (the client does not expose that to addons).
-
-When Blizzard fixes the client, its own loading runs later and simply wins; then delete the Keeper.
-
-The folder starts with a digit on purpose: on this client a leading `!` does **not** sort first, and
-the Keeper must load before everything else.
-
-### Setup (Linux)
-
-```bash
-mkdir -p ~/.config/wow-keeper
-echo "/path/to/World of Warcraft/_classic_beta_" > ~/.config/wow-keeper/wow-dir
-cp -r 0DearLordKeeper DearLordStats "/path/to/World of Warcraft/_classic_beta_/Interface/AddOns/"
-tools/wow-keeper-sync          # generates Declared.lua and Restore.lua inside the installed Keeper
-tools/install-watcher.sh       # optional: re-run the sync automatically whenever the game saves
-```
-
-Start the game (a full start, since these are new addon folders). `/keeper` shows what was handed
-back. The sync script keeps rolling snapshots of your saved files in
-`~/.local/share/wow-keeper/history/` in case a bad session ever saves defaults over good data. It warns
-when a saved file shrank to a fraction of its size since the newest snapshot, and with the game closed
-`wow-keeper-sync --restore <snapshot> <Addon>` puts the shrunken variables back while keeping the
-newer ones (`--snapshots` lists what there is).
-
-`0DearLordKeeper/Fixes.lua` also carries tiny fixes for other addons on this client, applied right
-after that addon loads. Currently: Auctionator keeps one price database per realm on Forever, but the
-Horde and Alliance auction houses are separate, so the fix gives each faction its own database
-(kept for anyone still running Auctionator; DearLord Stats has its own scanner now).
-`/keeper` lists which fixes were applied.
-
-On Windows the in-memory layer works as is (settings survive `/reload`); the restart layer needs the
-sync script run by hand or a port of the watcher.
-
 ## Development
 
 ```bash
 lua5.1 test/harness.lua DearLordStats             # simulated play-through, full client
 MODE=bare lua5.1 test/harness.lua DearLordStats   # hostile client: helpful APIs missing, health never readable
-lua5.1 test/keeper_test.lua 0DearLordKeeper       # restart, reload, memory-only and fixed-client scenarios
 ./deploy.sh                                       # test, back up, install
 ```
 
