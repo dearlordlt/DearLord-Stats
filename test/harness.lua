@@ -130,9 +130,11 @@ LOOT_ITEM_SELF = "You receive loot: %s"
 
 local SPELLS = { [6603] = "Attack", [75] = "Auto Shot", [3044] = "Arcane Shot", [1978] = "Serpent Sting", [2973] = "Raptor Strike",
     [13163] = "Aspect of the Monkey", [1494] = "Track Beasts", [5116] = "Concussive Shot", [2575] = "Mining", [17253] = "Bite", [16827] = "Claw" }
+local CAST_TIME = { [19434] = 3000 }        -- Aimed Shot: a real cast; everything else is instant
+SPELLS[19434] = "Aimed Shot"
 C_Spell = {
     GetSpellName = function(id) return SPELLS[id] end,
-    GetSpellInfo = function(id) return SPELLS[id] and { name = SPELLS[id] } or nil end,
+    GetSpellInfo = function(id) return SPELLS[id] and { name = SPELLS[id], castTime = CAST_TIME[id] or 0 } or nil end,
     GetSpellCooldown = function(id)
         if id ~= 29515 then return nil end
         return { startTime = hide(0), duration = hide(0), isEnabled = true, modRate = 1 }
@@ -612,6 +614,17 @@ do
     ns.db.censusFilter = nil
 end
 
+-- spell lag: an instant spell answers in 250 ms (one clock step); a 3 s cast whose "started" answer never comes must not read as 3 s of lag
+local lagBefore = #ns.lag.samples
+advance(5)
+fire("UNIT_SPELLCAST_SENT", "player", "Mob", "Lag-1", 3044); advance(0.25); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Lag-1", 3044)
+advance(5)
+fire("UNIT_SPELLCAST_SENT", "player", "Mob", "Lag-2", 19434); advance(3); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Lag-2", 19434)
+advance(5)
+fire("UNIT_SPELLCAST_SENT", "player", "Mob", "Lag-3", 19434); advance(0.25); fire("UNIT_SPELLCAST_START", "player", "Lag-3", 19434); advance(3); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Lag-3", 19434)
+local lagNew = {}
+for i = lagBefore + 1, #ns.lag.samples do lagNew[#lagNew + 1] = ns.lag.samples[i].ms end
+
 -- every tab and scope of the report, plus menu, tooltips, clicks
 for _, key in ipairs({ "stats", "xp" }) do
     local f = ns.huds[key]
@@ -804,6 +817,8 @@ if MODE ~= "bare" then
     check("census: a blocked /who switches it off", census.afterBlock == 0 and ns.db.diag.census.blocked)
     check("census: the Alliance filter hides the Horde characters (" .. tostring(census.allianceText[1]) .. ")", census.allianceText[1] and census.allianceText[1]:find("^0 characters"))
 end
+check("lag: instant spell 250 ms, a cast counted at its start, a cast without its start skipped (" .. table.concat(lagNew, ",") .. ")",
+    #lagNew == 2 and lagNew[1] == 250 and lagNew[2] == 250 and ns.db.diag.lag.castSkipped == 1)
 check("perf: a 312 ms piece of work is said in chat and listed by /dls perf", perfSaid and perfListed)
 check("census: past 12,000 characters it trims to 11,000 in one go (" .. tostring(censusAfterTrim) .. ")", censusAfterTrim == 11000)
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)

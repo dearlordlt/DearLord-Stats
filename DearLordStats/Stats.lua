@@ -40,29 +40,46 @@ local function busyCasting()
     return false
 end
 
-ns.On("UNIT_SPELLCAST_SENT", function(unit, _, castGUID)
+-- a spell with a cast time: its "cast started" answer is the lag; its "succeeded" comes a whole cast later
+local function castTime(spellID)
+    local info = spellID and C_Spell and C_Spell.GetSpellInfo and ns.T(C_Spell.GetSpellInfo(spellID))
+    return info and ns.N(info.castTime) or 0
+end
+local function lagDiag(key)
+    local d = ns.db and ns.db.diag
+    if not d then return end
+    d.lag = d.lag or {}
+    d.lag[key] = (d.lag[key] or 0) + 1
+end
+
+ns.On("UNIT_SPELLCAST_SENT", function(unit, _, castGUID, spellID)
     if unit ~= "player" then return end
     castGUID = ns.S(castGUID)
     if not castGUID or busyCasting() or gcdRunning() then return end
     local now = GetTime()
-    for guid, t in pairs(lag.pending) do if now - t > 5 then lag.pending[guid] = nil end end
-    lag.pending[castGUID] = now
+    for guid, p in pairs(lag.pending) do if now - p.t > 5 then lag.pending[guid] = nil end end
+    lag.pending[castGUID] = { t = now, cast = castTime(ns.N(spellID)) > 0 }
 end, "lag:sent")
 
-local function answered(unit, castGUID)
-    if unit ~= "player" then return end
-    castGUID = ns.S(castGUID)
-    local t = castGUID and lag.pending[castGUID]
-    lastCastAnswered = GetTime()
-    if not t then return end
-    lag.pending[castGUID] = nil
-    local ms = math.floor((GetTime() - t) * 1000 + 0.5)
-    if ms < 1 or ms > 5000 then return end
-    table.insert(lag.samples, { ms = ms, at = GetTime() })
-    if #lag.samples > 40 then table.remove(lag.samples, 1) end
+local function answer(kind)
+    return function(unit, castGUID)
+        if unit ~= "player" then return end
+        castGUID = ns.S(castGUID)
+        local p = castGUID and lag.pending[castGUID]
+        lastCastAnswered = GetTime()
+        if not p then return end
+        lag.pending[castGUID] = nil
+        if kind == "succeeded" and p.cast then lagDiag("castSkipped"); return end   -- its start answer was missed
+        lagDiag(kind)
+        local ms = math.floor((GetTime() - p.t) * 1000 + 0.5)
+        if ms < 1 or ms > 5000 then return end
+        table.insert(lag.samples, { ms = ms, at = GetTime() })
+        if #lag.samples > 40 then table.remove(lag.samples, 1) end
+    end
 end
-ns.On("UNIT_SPELLCAST_START", answered, "lag:start")
-ns.On("UNIT_SPELLCAST_SUCCEEDED", answered, "lag:succeeded")
+ns.On("UNIT_SPELLCAST_START", answer("start"), "lag:start")
+ns.On("UNIT_SPELLCAST_CHANNEL_START", answer("channel"), "lag:channel")
+ns.On("UNIT_SPELLCAST_SUCCEEDED", answer("succeeded"), "lag:succeeded")
 
 -- median of up to `count` newest samples no older than `maxAge` seconds
 local function lagMedian(count, maxAge)
