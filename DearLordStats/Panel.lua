@@ -734,6 +734,8 @@ local function scanStatusRow()
     local status
     if st.state ~= "idle" then
         status = W .. (st.state == "requested" and "waiting for the list" or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
+    elseif st.silent and st.ahOpen then
+        status = ns.AMBER .. "no answer from the server|r" .. L .. (st.nextIn > 0 and (" · ready in " .. ns.shortTime(st.nextIn)) or "") .. "|r"
     elseif not st.ahOpen then
         status = L .. "open the auction house to scan" .. (st.nextIn > 0 and (" · ready in " .. ns.shortTime(st.nextIn)) or "") .. "|r"
     elseif st.nextIn > 0 then

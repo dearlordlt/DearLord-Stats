@@ -512,6 +512,18 @@ if MODE ~= "bare" then
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
+    world.npc, world.npcFaction = true, nil; fire("AUCTION_HOUSE_SHOW"); advance(2)
+    -- a request the server never answers: after a minute the row stops saying "waiting", and a list that
+    -- arrives later is still taken
+    SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1)
+    local wasWaiting = ns.AuctionStatus().state == "requested"
+    advance(62)
+    local st = ns.AuctionStatus()
+    scanResult.gaveUp = wasWaiting and st.state == "idle" and st.silent == true
+    local before = DearLordAuctionDB.lastRead
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    scanResult.lateTaken = DearLordAuctionDB.lastRead ~= before and DearLordAuctionDB.lastRead == DearLordAuctionDB.lastRequest
+    fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
     -- the price browser: trend, search, history
     scanResult.trend = ns.AuctionTrend(2140)
     scanResult.search = ns.AuctionSearch("carv")
@@ -769,6 +781,7 @@ if MODE ~= "bare" then
     check("scan: feed line announces the result", feedHit)
     check("scan: a second house scans by itself within the first one's 15 minutes, and the rule is learned (" .. tostring(scanResult.rule) .. ")", scanResult.neutralAuto == 1 and scanResult.rule == "key")
     check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
+    check("scan: a minute without the list stops the wait, and a list arriving later is still taken", scanResult.gaveUp and scanResult.lateTaken)
     check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
     check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "Horde AH 1s 50c | -25%")

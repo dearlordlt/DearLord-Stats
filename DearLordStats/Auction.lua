@@ -323,6 +323,17 @@ local function start()
         local dg = diag(); dg.slow = (dg.slow or 0) + 1; dg.slowAt = time()
         ns.Feed(ns.LABEL .. "Auction scan|r  no answer from the server yet, still waiting", { tab = "prices", key = "ahscan", hold = 8 })
     end, "ah:timeout")
+    -- a minute of silence: stop showing "waiting" and offer a new try. A list that still comes is taken anyway
+    -- (REPLICATE_ITEM_LIST_UPDATE accepts a late answer while the request is unread).
+    local asked = time()
+    ns.After(60, function()
+        if scan.state ~= "requested" or scan.requestedAt ~= asked then return end
+        local dg = diag(); dg.silent = (dg.silent or 0) + 1; dg.silentAt = time()
+        if scan.cross then learn("account") end
+        scan = { state = "idle", silent = asked }
+        ns.Feed(ns.LABEL .. "Auction scan|r  the server did not send the list; try again in a while", { tab = "prices", key = "ahscan", hold = 10 })
+        if ns.PanelDirty then ns.PanelDirty() end
+    end, "ah:silent")
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
@@ -358,7 +369,8 @@ function ns.AuctionStatus()
         table.sort(realms, function(a, b) return a.faction < b.faction end)
     end
     return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(), openKey = ahKey,
-        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle }
+        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle,
+        silent = scan.silent ~= nil and d ~= nil and d.lastRead ~= d.lastRequest }
 end
 
 ns.On("AUCTION_HOUSE_SHOW", function()
