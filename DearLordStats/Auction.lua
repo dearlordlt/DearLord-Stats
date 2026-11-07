@@ -20,6 +20,7 @@ local DAY0 = 1577836800                                      -- 2020-01-01: day 
 local CHUNK, HISTORY_MAX, HISTORY_DAYS, KEEP_DAYS, THROTTLE = 500, 8, 28, 30, 900
 
 local ahOpen = false
+local lastTraffic = 0                                        -- last time any auction search answered (ours or not)
 local ahKey                                                  -- database key of the auction house that is open
 local scan = { state = "idle" }
 local key                                                    -- "Realm-Faction" of this character
@@ -345,12 +346,18 @@ function ns.AuctionScan(force)
     local wait = waitFor(ahKey)
     if wait > 0 and not force then return false, "throttled", wait end
     local ready = C_AuctionHouse.IsThrottledMessageSystemReady
-    if type(ready) == "function" and B(ready()) == false then
+    local busy = type(ready) == "function" and B(ready()) == false
+    -- another addon (Auctionator pricing your bags) or the game itself is still searching: a full-list request
+    -- sent into that traffic has been seen to go unanswered, so wait for 3 quiet seconds first
+    local quiet = time() - lastTraffic >= 3
+    if busy or (not quiet and not force) then
         scan.retries = (scan.retries or 0) + 1
-        if scan.retries <= 5 then ns.After(1, function() ns.AuctionScan(force) end, "ah:retry"); return true end
+        if scan.retries <= 15 then ns.After(1, function() ns.AuctionScan(force) end, "ah:retry"); return true end
         scan.retries = nil
-        return false, "busy"
+        if busy then return false, "busy" end
     end
+    local dg = diag(); dg.startWaits = scan.retries or 0; dg.startReady = busy and "no" or "yes"
+    scan.retries = nil
     start()
     return true
 end
@@ -377,9 +384,13 @@ ns.On("AUCTION_HOUSE_SHOW", function()
     ahOpen = true
     ahKey = openKey()
     diag().api = diag().api or { replicate = api() and "yes" or "no", ready = type(C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady) == "function" and "yes" or "no" }
-    if ns.db and ns.db.ahAutoScan then ns.After(1, function() ns.AuctionScan() end, "ah:auto") end
+    if ns.db and ns.db.ahAutoScan then ns.After(5, function() ns.AuctionScan() end, "ah:auto") end
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:show")
+for _, ev in ipairs({ "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
+    "ITEM_SEARCH_RESULTS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_ITEM_LIST_UPDATE" }) do
+    ns.On(ev, function() lastTraffic = time() end, "ah:traffic")
+end
 ns.On("AUCTION_HOUSE_CLOSED", function()
     ahOpen = false; ahKey = nil
     if scan.state == "requested" then
