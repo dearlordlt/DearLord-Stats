@@ -31,7 +31,7 @@ local CONTROLS = {
 
     { header = "Auction house" },
     { type = "check", key = "ahTooltip", label = "Auction price in item tooltips" },
-    { type = "check", key = "ahAutoScan", label = "Scan prices when the auction house opens" },
+    { type = "check", key = "ahAutoScan", label = "Scan automatically on your first key press at the auction house" },
     { type = "check", key = "ahTooltipNeutral", label = "Also the goblin (neutral) auction house price, when scanned" },
     { type = "choice", key = "ahCompare", label = "Other faction's price", options = function() return ns.AH_MODIFIERS end },
     { type = "button", label = "Show hidden economy hints again", action = function() ns.db.adviceHidden = nil; if ns.AdviceDirty then ns.AdviceDirty() end; ns.say("hidden hints restored") end },

@@ -57,9 +57,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   - **Session**: looted coin, vendor value (and how much of it is junk), worth with the auction house,
     per hour, drops by quality, the most valuable stacks, notable drops. Has its own reset.
   - **History**: one line per earlier loot session, with the total and the average per hour.
-- **Auction prices**: the addon scans the auction house itself: when you open it, the scan goes
-  out with your next key press, or click **Scan prices** under the auction house window, or type
-  `/dls scan` (once every 15 minutes for the whole account, the game's limit, shared with other
+- **Auction prices**: the addon scans the auction house itself: click **Scan prices** under the
+  auction house window (it shows the progress; keep the window open until it is done, about 10
+  seconds), or type `/dls scan`. Settings can make it start on your first key press at the auction
+  house instead (once every 15 minutes for the whole account, the game's limit, shared with other
   addons: an Auctionator Full Scan counts, and the list it brings in is read here too) and remembers the lowest and median buyout per item and the
   stack size most sellers use, per realm and faction (Horde and Alliance auction houses are separate on
   Forever; goblin houses are neutral). The price shows in item tooltips as `Horde AH 9s 31c` plus

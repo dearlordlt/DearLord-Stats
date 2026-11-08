@@ -411,7 +411,8 @@ function ns.AuctionButton()
         ns.Every(1, function() if ahButton:IsShown() then ns.AuctionButton() end end, "ah:button")
     end
     local wait = waitFor()
-    local label = (scan.state == "requested" and "Waiting for list") or (scan.state == "collecting" and "Scanning...")
+    local label = (scan.state == "requested" and "Waiting for list...")
+        or (scan.state == "collecting" and string.format("Reading %d%%", math.floor((scan.i or 0) / math.max(1, scan.n or 1) * 100)))
         or (wait > 0 and ("Scan (" .. ns.shortTime(wait) .. ")")) or "Scan prices"
     if ahButton.SetText then ahButton:SetText(label) end
     ahButton.label = label

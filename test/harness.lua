@@ -470,6 +470,8 @@ local lootView = ns.LootView()
 local tipLines, scanResult, tipStack, tipDup, tipOff = {}, {}, nil, nil, nil
 if MODE ~= "bare" then
     local hook = TooltipDataProcessor.calls[0]
+    scanResult.manualByDefault = ns.db.ahAutoScan == false
+    ns.db.ahAutoScan = true                                      -- the automatic mode is tested below
     ns.db.ahCompare = "alt"
     GameTooltip.lines = {}; hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipLines = { unpack(GameTooltip.lines) }
     hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipDup = #GameTooltip.lines
@@ -800,7 +802,8 @@ if MODE ~= "bare" then
     check("scan: within the account's 15 minutes a second house asks nothing, but reads another addon's list", scanResult.neutralAsked == 0 and scanResult.foreign == 1)
     check("scan: Auctionator's last Full Scan counts toward the 15 minutes (" .. tostring(scanResult.auctionatorWait) .. " s)", scanResult.auctionatorWait and scanResult.auctionatorWait >= 770 and scanResult.auctionatorWait <= 790)
     check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
-    check("scan: the automatic scan waits for a key press (not Escape) instead of a timer", scanResult.heldBack)
+    check("scan: manual by default (a click on Scan prices)", scanResult.manualByDefault)
+    check("scan: the automatic scan, when switched on, waits for a key press (not Escape) instead of a timer", scanResult.heldBack)
     check("scan: the button on the auction house window sends a request", scanResult.ahButton)
     check("scan: a minute without the list stops the wait, and a list arriving later is still taken", scanResult.gaveUp and scanResult.lateTaken)
     check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
