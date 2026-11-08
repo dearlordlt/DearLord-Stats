@@ -20,7 +20,7 @@ local DAY0 = 1577836800                                      -- 2020-01-01: day 
 local CHUNK, HISTORY_MAX, HISTORY_DAYS, KEEP_DAYS, THROTTLE = 500, 8, 28, 30, 900
 
 local ahOpen = false
-local lastTraffic = 0                                        -- last time any auction search answered (ours or not)
+local armed = false                                          -- an automatic scan is due: sent on the next key press
 local ahKey                                                  -- database key of the auction house that is open
 local scan = { state = "idle" }
 local key                                                    -- "Realm-Faction" of this character
@@ -345,21 +345,22 @@ function ns.AuctionScan(force)
     if scan.state ~= "idle" then return false, "busy" end
     local wait = waitFor(ahKey)
     if wait > 0 and not force then return false, "throttled", wait end
+    -- straight away, inside the key press or click that asked for it: on the live client a full-list request
+    -- sent from a timer went unanswered, while Auctionator's (sent from its button click) was answered
     local ready = C_AuctionHouse.IsThrottledMessageSystemReady
-    local busy = type(ready) == "function" and B(ready()) == false
-    -- another addon (Auctionator pricing your bags) or the game itself is still searching: a full-list request
-    -- sent into that traffic has been seen to go unanswered, so wait for 3 quiet seconds first
-    local quiet = time() - lastTraffic >= 3
-    if busy or (not quiet and not force) then
-        scan.retries = (scan.retries or 0) + 1
-        if scan.retries <= 15 then ns.After(1, function() ns.AuctionScan(force) end, "ah:retry"); return true end
-        scan.retries = nil
-        if busy then return false, "busy" end
-    end
-    local dg = diag(); dg.startWaits = scan.retries or 0; dg.startReady = busy and "no" or "yes"
-    scan.retries = nil
+    local dg = diag(); dg.startReady = (type(ready) == "function" and B(ready()) == false) and "no" or "yes"
+    armed = false
     start()
     return true
+end
+
+-- the automatic scan: due when the auction house opens, sent on the player's next key press (Escape closes
+-- the auction house, so not that one) or a click on the button on the auction house window
+function ns.AuctionOnKey(key)
+    if not armed or not ahOpen or scan.state ~= "idle" then return end
+    key = S(key)
+    if key == "ESCAPE" then return end
+    ns.safe("ah:auto", function() ns.AuctionScan() end)
 end
 
 function ns.AuctionStatus()
@@ -376,7 +377,7 @@ function ns.AuctionStatus()
         table.sort(realms, function(a, b) return a.faction < b.faction end)
     end
     return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(), openKey = ahKey,
-        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle,
+        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle, armed = armed and ahOpen,
         silent = scan.silent ~= nil and d ~= nil and d.lastRead ~= d.lastRequest }
 end
 
@@ -384,12 +385,41 @@ ns.On("AUCTION_HOUSE_SHOW", function()
     ahOpen = true
     ahKey = openKey()
     diag().api = diag().api or { replicate = api() and "yes" or "no", ready = type(C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady) == "function" and "yes" or "no" }
-    if ns.db and ns.db.ahAutoScan then ns.After(5, function() ns.AuctionScan() end, "ah:auto") end
+    armed = (ns.db and ns.db.ahAutoScan and api() and waitFor(ahKey) <= 0) or false
+    ns.AuctionButton()
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:show")
-for _, ev in ipairs({ "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
-    "ITEM_SEARCH_RESULTS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_ITEM_LIST_UPDATE" }) do
-    ns.On(ev, function() lastTraffic = time() end, "ah:traffic")
+
+-- a button on the auction house window itself, like Auctionator's Full Scan: a click is the surest way to ask
+local ahButton
+function ns.AuctionButton()
+    local host = AuctionHouseFrame or AuctionFrame
+    if not (host and api()) then return end
+    if not ahButton then
+        ahButton = CreateFrame("Button", "DearLordStatsScanButton", host, "UIPanelButtonTemplate")
+        ahButton:SetSize(150, 22)
+        ahButton:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", -8, -2)
+        ahButton:SetScript("OnClick", function()
+            ns.safe("ah:button", function()
+                local ok, why = ns.AuctionScan(true)
+                if not ok and why == "busy" then ns.say("a scan is already running") end
+                ns.AuctionButton()
+            end)
+        end)
+        ahButton:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:AddLine("DearLord Stats: scan prices")
+            GameTooltip:AddLine("Reads every auction once. The game allows one scan per 15 minutes for the account; a click before that is sent anyway and may get no answer.", 0.8, 0.8, 0.8, true)
+            GameTooltip:Show()
+        end)
+        ahButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        ns.Every(1, function() if ahButton:IsShown() then ns.AuctionButton() end end, "ah:button")
+    end
+    local wait = waitFor(ahKey or ns.AuctionKey())
+    local label = (scan.state == "requested" and "Waiting for list") or (scan.state == "collecting" and "Scanning...")
+        or (wait > 0 and ("Scan (" .. ns.shortTime(wait) .. ")")) or "Scan prices"
+    if ahButton.SetText then ahButton:SetText(label) end
+    ahButton.label = label
 end
 ns.On("AUCTION_HOUSE_CLOSED", function()
     ahOpen = false; ahKey = nil

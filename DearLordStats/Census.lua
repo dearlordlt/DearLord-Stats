@@ -345,7 +345,10 @@ ns.On("ADDON_ACTION_FORBIDDEN", blocked, "census:blocked")
 -- ride along on the player's own key presses and clicks (the only moments /who is allowed)
 local keys = CreateFrame("Frame", "DearLordStatsCensusKeys", UIParent)
 keys:SetSize(1, 1); keys:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
-keys:SetScript("OnKeyDown", function() ns.CensusTry() end)
+keys:SetScript("OnKeyDown", function(_, key)
+    ns.CensusTry()
+    if ns.AuctionOnKey then ns.AuctionOnKey(key) end           -- a due auction scan rides on the same key press
+end)
 ns.OnLogin(function()
     if keys.EnableKeyboard and not InCombatLockdown() then
         keys:EnableKeyboard(true)

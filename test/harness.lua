@@ -295,6 +295,7 @@ C_FriendList = {
     GetWhoInfo = function(i) return (world.whoResults or {})[i] end,
     SetWhoToUi = function() end }
 FriendsFrame = CreateFrame("Frame", "FriendsFrame")
+AuctionHouseFrame = CreateFrame("Frame", "AuctionHouseFrame")
 -- this client's own /who list ("Looking For Group"): it pops up on every answer it hears
 LFGWhoFrame = CreateFrame("Frame", "LFGWhoFrame"); LFGWhoFrame.shown = false
 LFGWhoFrame:RegisterEvent("WHO_LIST_UPDATE")
@@ -480,10 +481,12 @@ if MODE ~= "bare" then
     ns.db.ahCompare = "always"; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 23 }); scanResult.tipAlways = { unpack(GameTooltip.lines) }; ns.db.ahCompare = "alt"
     fire("MODIFIER_STATE_CHANGED", "LALT", 1)
     scanResult.unknownAndForbidden = tipUnknown == 0 and tipForbidden == 0
-    fire("AUCTION_HOUSE_SHOW"); advance(4)
-    fire("COMMODITY_SEARCH_RESULTS_UPDATED"); advance(2)          -- another addon pricing the bags as the scan is due
-    scanResult.heldBack = C_AuctionHouse.requests == 0
-    advance(5)                                                     -- 3 quiet seconds later the request goes out
+    -- the automatic scan is sent on the next key press (the game ignores a full-list request from a timer), not Escape
+    local keys = DearLordStatsCensusKeys
+    fire("AUCTION_HOUSE_SHOW"); advance(6)
+    keys.scripts.OnKeyDown(keys, "ESCAPE")
+    scanResult.heldBack = C_AuctionHouse.requests == 0 and ns.AuctionStatus().armed == true
+    keys.scripts.OnKeyDown(keys, "W"); advance(1)
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     scanResult.requests = C_AuctionHouse.requests
     scanResult.stone = ns.AuctionPrice("|Hitem:2835::|h[Rough Stone]|h")
@@ -492,7 +495,7 @@ if MODE ~= "bare" then
     local feedBefore, lateBefore = #feedLog, ns.db.diag.ah.late or 0
     for _ = 1, 3 do fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2) end
     scanResult.rereads = (#feedLog - feedBefore) + ((ns.db.diag.ah.late or 0) - lateBefore)
-    fire("AUCTION_HOUSE_CLOSED"); fire("AUCTION_HOUSE_SHOW"); advance(7)
+    fire("AUCTION_HOUSE_CLOSED"); fire("AUCTION_HOUSE_SHOW"); advance(7); keys.scripts.OnKeyDown(keys, "W")
     scanResult.requestsAfterSecondOpen = C_AuctionHouse.requests
     printed = {}; SlashCmdList["DEARLORDSTATS"]("scan"); scanResult.throttleMsg = printed[1] or ""
     SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2); scanResult.requestsAfterForce = C_AuctionHouse.requests
@@ -501,7 +504,7 @@ if MODE ~= "bare" then
     world.npc, world.npcFaction = true, nil
     -- minutes after the Horde scan: the goblin house has its own 15 minutes, so the scan runs by itself
     local reqBefore = C_AuctionHouse.requests
-    fire("AUCTION_HOUSE_SHOW"); advance(6); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    fire("AUCTION_HOUSE_SHOW"); advance(6); keys.scripts.OnKeyDown(keys, "W"); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     scanResult.neutralAuto = C_AuctionHouse.requests - reqBefore
     scanResult.rule = DearLordAuctionDB.throttle
     scanResult.neutral = DearLordAuctionDB.realms["ClassicBetaPvE2-Neutral"]
@@ -512,6 +515,12 @@ if MODE ~= "bare" then
     if tryBtn then tryBtn.scripts.OnClick(tryBtn) end
     scanResult.tryNow = tryBtn ~= nil and C_AuctionHouse.requests - reqBefore == 1
     scanResult.tryAbove = tryBtn ~= nil and (tryBtn.level or 0) > 2
+    -- the button on the auction house window itself
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    local ahBtn = DearLordStatsScanButton
+    reqBefore = C_AuctionHouse.requests
+    if ahBtn then ahBtn.scripts.OnClick(ahBtn) end
+    scanResult.ahButton = ahBtn ~= nil and C_AuctionHouse.requests - reqBefore == 1
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
@@ -784,7 +793,8 @@ if MODE ~= "bare" then
     check("scan: feed line announces the result", feedHit)
     check("scan: a second house scans by itself within the first one's 15 minutes, and the rule is learned (" .. tostring(scanResult.rule) .. ")", scanResult.neutralAuto == 1 and scanResult.rule == "key")
     check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
-    check("scan: the automatic scan waits until other auction searches have gone quiet", scanResult.heldBack)
+    check("scan: the automatic scan waits for a key press (not Escape) instead of a timer", scanResult.heldBack)
+    check("scan: the button on the auction house window sends a request", scanResult.ahButton)
     check("scan: a minute without the list stops the wait, and a list arriving later is still taken", scanResult.gaveUp and scanResult.lateTaken)
     check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)

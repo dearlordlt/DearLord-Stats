@@ -70,7 +70,10 @@ prices. DearLord Stats keeps its own scan per realm and faction.
 ## Auction house API (as DearLord Stats uses it)
 
 `C_AuctionHouse.ReplicateItems()` works while the auction house window is open, once every 15
-minutes per account. The answer comes as `REPLICATE_ITEM_LIST_UPDATE`; the list has been seen to
+minutes per account. On the launch client (build 70790) a request sent from a timer a few seconds
+after the window opened went unanswered again and again, while Auctionator's, sent straight from its
+button click, was answered; so DearLord Stats only asks from a key press or click, like `/who`. Not
+proven to be a hardware-event rule, but that is what it looks like. The answer comes as `REPLICATE_ITEM_LIST_UPDATE`; the list has been seen to
 arrive well after 30 seconds, so the addon keeps listening until the window closes.
 `GetReplicateItemInfo(i)` is 0-based and returns 18 values: count at 3, buyout at 10 and item id at
 17. Buyouts are plain numbers, not secret values. A full Horde scan was about 60,000 auctions, read
