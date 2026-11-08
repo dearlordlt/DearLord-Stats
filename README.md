@@ -29,7 +29,7 @@ opens the matching report tab, right-click dismisses.
 The report (`/dls`, or click either text block; resizable, Escape closes):
 
 - **Combat**: time per kill, dps with pet share, time in combat, rest between pulls, health pool lost
-  per fight, close calls, out-of-resource fights, deaths. By session, by level, or for the character,
+  per fight, close calls, out-of-resource fights, deaths. By session, by level (a button for every level: the current one, the last one, any older one), or in total,
   and split by pull size, by level, by mob level relative to yours, by zone, plus toughest opponents.
 - **Abilities**: where your damage comes from (pet abilities listed separately), spells you learned
   that are on no action bar.
@@ -87,7 +87,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   game ever blocks the background `/who`, the addon says so once and keeps counting the players you
   see. Both parts can be switched off in Settings.
 - **Journal**: `/dls note some thought`, stamped with level and zone.
-- **Summary**: paste-ready plain text for one character or all of them.
+- **Summary**: one page per character: name and class, tiles for played time, xp/hour, kills, quests,
+  deaths and gold, time per level as bars, combat and safety, per-level and pull-size tables, where the
+  damage comes from, professions, money and loot, highlights (toughest opponent, busiest zone, last
+  death). All characters: totals and a roster. Copy text: the same as paste-ready plain text.
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 

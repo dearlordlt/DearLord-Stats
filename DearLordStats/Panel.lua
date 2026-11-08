@@ -24,9 +24,9 @@ local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = 
     { key = "professions", text = "Professions" }, { key = "economy", text = "Economy" }, { key = "prices", text = "Prices" }, { key = "census", text = "Census" }, { key = "journal", text = "Journal" },
     { key = "summary", text = "Summary" }, { key = "settings", text = "Settings" } }
 local SCOPES = {
-    combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
-    abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Character" } },
-    summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" } },
+    combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Total" } },
+    abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Total" } },
+    summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" }, { key = "text", text = "Copy text" } },
     economy = { { key = "advice", text = "Advice" }, { key = "session", text = "Session" }, { key = "history", text = "History" } },
     census = { { key = "classes", text = "Classes" }, { key = "races", text = "Races" }, { key = "places", text = "Guilds & zones" } },
 }
@@ -358,14 +358,18 @@ end
 
 -- a row of small switches: groups of { options = { {key, text} }, current = key, pick = function(key) }
 local function CHIPS(groups)
+    local rowH = fsize(-2) + 10
     local r = getRow()
-    place(r, fsize(-2) + 10)
-    local x = 4
+    place(r, rowH)
+    local x, limit = 4, colWidth() - 4
     for gi, grp in ipairs(groups) do
         if gi > 1 then x = x + 14 end
         for _, o in ipairs(grp.options) do
             local b = toggleButton()
             b:SetLabel(o.text)
+            if x > 4 and x + b:GetWidth() > limit then          -- no room left on this line: carry on below
+                r = getRow(); place(r, rowH); x = 4
+            end
             b:SetActive(grp.current == o.key)
             b:SetPoint("LEFT", r, "LEFT", x, 0)
             b.onToggle = function() grp.pick(o.key) end
@@ -410,11 +414,61 @@ local function HIST(values)
         t:Show()
         if (n - i) % every == 0 or v[3] then
             label(L .. v[1] .. "|r", cx, 1)
-            if v[2] > 0 and slot >= fsize(-2) * 2.2 then label(W .. ns.shortNumber(v[2]) .. "|r", cx, labelH + h + 1) end
+            if v[2] > 0 and slot >= fsize(-2) * 2.2 then label(W .. (v[4] or ns.shortNumber(v[2])) .. "|r", cx, labelH + h + 1) end
         end
     end
     place(r, height)
     return r
+end
+
+-- a big name line: left in a large font, a dimmed line under it
+local function TITLE(text, sub)
+    local r = getRow()
+    r.left:SetFont(FONT, fsize(8), ""); r.right:SetFont(FONT, fsize(-1), "")
+    r.left:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -2)
+    r.left:SetText(text or "")
+    r.right:SetJustifyH("LEFT")
+    r.right:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -(fsize(8) + 6))
+    r.right:SetText(sub or "")
+    place(r, fsize(8) + fsize(-1) + 14)
+    r.right:SetJustifyH("RIGHT")
+    return r
+end
+
+-- a strip of number tiles: items = { {value, label, tip} }; wraps to more rows on a narrow window
+local function TILES(items)
+    local w = colWidth()
+    local perRow = math.max(1, math.min(#items, math.floor(w / (fsize() * 7.2))))
+    local valueSize, labelSize = fsize(5), fsize(-2)
+    local h = valueSize + labelSize + 20
+    for first = 1, #items, perRow do
+        local r = getRow()
+        r.chart = r.chart or { bars = {}, labels = {}, lines = {} }
+        local ch, nb, nl = r.chart, 0, 0
+        local slot = w / perRow
+        local function text(s, size, x, y, width)
+            nl = nl + 1
+            local l = ch.labels[nl]
+            if not l then l = r:CreateFontString(nil, "OVERLAY"); l:SetWordWrap(false); ch.labels[nl] = l end
+            l:SetFont(FONT, size, ""); l:SetJustifyH("LEFT")
+            l:ClearAllPoints(); l:SetPoint("TOPLEFT", r, "TOPLEFT", x, -y); l:SetWidth(width); l:SetText(s); l:Show()
+        end
+        for i = first, math.min(#items, first + perRow - 1) do
+            local it = items[i]
+            local x = (i - first) * slot
+            nb = nb + 1
+            local t = ch.bars[nb]
+            if not t then t = r:CreateTexture(nil, "BACKGROUND"); ch.bars[nb] = t end
+            t:ClearAllPoints(); t:SetColorTexture(1, 1, 1, 0.045)
+            t:SetPoint("TOPLEFT", r, "TOPLEFT", x + 2, -2); t:SetSize(math.max(1, slot - 6), h - 6); t:Show()
+            text(W .. tostring(it[1]) .. "|r", valueSize, x + 10, 7, slot - 16)
+            text(L .. it[2] .. "|r", labelSize, x + 10, 9 + valueSize, slot - 16)
+        end
+        local tips = {}
+        for i = first, math.min(#items, first + perRow - 1) do if items[i][3] then tips[#tips + 1] = items[i][2] .. ": " .. items[i][3] end end
+        if #tips > 0 then r.tip = table.concat(tips, "\n"); r:EnableMouse(true) end
+        place(r, h)
+    end
 end
 
 -- side-by-side sections when the window is wide: COLUMNS(max) starts a flow, each SECTION(fn) is drawn into
@@ -469,21 +523,21 @@ local function aggregateFor(scope)
     elseif scope == "level" then return ns.LevelAggregate(ns.char, viewLevel()) or ns.newAggregate() end
     return ns.session.combat
 end
-local function stepLevel(delta)
-    local levels = {}
-    for lvl in pairs(ns.char.byLevel) do levels[#levels + 1] = lvl end
-    table.sort(levels)
-    if #levels == 0 then return end
-    local cur, idx = viewLevel(), #levels
-    for i, lvl in ipairs(levels) do if lvl == cur then idx = i end end
-    state.level = levels[math.max(1, math.min(#levels, idx + delta))]
-    state.offset = 0
-    renderNow()
-end
+-- every level with fights, newest first: the current one, the one before it, and any older one, one click each
 local function levelStepper()
-    KV(L .. "Looking at|r  " .. W .. "level " .. viewLevel() .. "|r", L .. "click: earlier level   right-click: later|r",
-        { onClick = function() stepLevel(-1) end, onRight = function() stepLevel(1) end,
-          tip = "Only fights fought at this level. Levels fill in from now on; older fights are only in the Character view." })
+    local cur = ns.curLevel
+    local seen, levels = {}, {}
+    for lvl, a in pairs(ns.char.byLevel or {}) do if (a.fights or 0) > 0 then seen[lvl] = true end end
+    if cur then seen[cur] = true end
+    for lvl in pairs(seen) do levels[#levels + 1] = lvl end
+    table.sort(levels, function(a, b) return a > b end)
+    local prev
+    for _, lvl in ipairs(levels) do if cur and lvl < cur then prev = lvl; break end end
+    local options = {}
+    for _, lvl in ipairs(levels) do
+        options[#options + 1] = { key = lvl, text = tostring(lvl) .. (lvl == cur and " now" or (lvl == prev and " last" or "")) }
+    end
+    CHIPS({ { options = options, current = viewLevel(), pick = function(lvl) state.level, state.offset = lvl, 0; renderNow() end } })
 end
 local function sliceLine(z)
     local parts = { z.fights .. (z.fights == 1 and " fight" or " fights") }
@@ -1134,7 +1188,186 @@ function render.journal()
     end
 end
 
-function render.summary() end      -- handled by the edit box below
+-- one character's numbers, summed over its levels
+local function charTotals(c)
+    local t = { seconds = 0, xp = 0, kills = 0, quests = 0, money = 0, levels = 0 }
+    for _, r in pairs(c.levels or {}) do
+        t.seconds, t.xp, t.kills, t.quests, t.money = t.seconds + (r.seconds or 0), t.xp + (r.xp or 0), t.kills + (r.kills or 0),
+            t.quests + (r.quests or 0), t.money + (r.money or 0)
+        t.levels = t.levels + 1
+    end
+    t.xph = t.seconds >= 60 and t.xp / t.seconds * 3600 or nil
+    return t
+end
+local function nameOf(key) return key and key:match("^(.-)%-") or key or "?" end
+
+local function summaryOne()
+    local c, key = ns.char, ns.charKey
+    local t = charTotals(c)
+    local v = ns.CombatView(c.combat or ns.newAggregate())
+    local realm = key and key:match("%-(.*)$")
+    TITLE(classHex(c.classFile or "") .. nameOf(key) .. "|r",
+        L .. (c.race or "") .. " " .. (c.class or "") .. "  ·  level " .. tostring(c.level or ns.curLevel or "?") .. (realm and ("  ·  " .. realm) or "") .. "|r")
+    GAP(4)
+    TILES({
+        { t.seconds > 0 and ns.shortTime(t.seconds) or "-", "played", "time in game since the addon was installed, AFK not counted" },
+        { t.xph and ns.shortNumber(t.xph) or "-", "xp / hour" },
+        { comma(t.kills), "kills" },
+        { comma(t.quests), "quests" },
+        { tostring(v.deaths or 0), "deaths" },
+        { m(t.money), "gold, net", "money gained minus money spent, over every level" },
+    })
+    COLUMNS(2)
+    -- levelling: time per level as bars
+    local levels = {}
+    for lvl, r in pairs(c.levels or {}) do if (r.seconds or 0) > 0 then levels[#levels + 1] = lvl end end
+    table.sort(levels)
+    if #levels > 0 then
+        SECTION(function()
+            H("Levelling")
+            if #levels >= 2 then
+                local values, fastest, total, full = {}, nil, 0, 0
+                for _, lvl in ipairs(levels) do
+                    local r = c.levels[lvl]
+                    values[#values + 1] = { tostring(lvl), r.seconds, lvl == ns.curLevel, ns.shortTime(r.seconds) }
+                    if lvl ~= ns.curLevel and not r.partial then
+                        total, full = total + r.seconds, full + 1
+                        if not fastest or r.seconds < c.levels[fastest].seconds then fastest = lvl end
+                    end
+                end
+                HIST(values)
+                if fastest then KV(L .. "Fastest level|r", W .. "L" .. fastest .. "|r" .. L .. "  " .. ns.shortTime(c.levels[fastest].seconds) .. "|r") end
+                if full > 0 then KV(L .. "Average level|r", W .. ns.shortTime(total / full) .. "|r") end
+            end
+            local cur = ns.curLevel and c.levels[ns.curLevel]
+            if cur then KV(L .. "Level " .. ns.curLevel .. " so far|r", W .. ns.shortTime(cur.seconds) .. "|r" .. L .. "  ·  " .. cur.kills .. " kills, " .. cur.quests .. " quests|r") end
+        end)
+    end
+    if v.fights > 0 then
+        SECTION(function()
+            H("Combat")
+            KV(L .. "Fights|r", W .. comma(v.fights) .. "|r" .. L .. "  (" .. comma(v.kills) .. " kills)|r")
+            if v.ttk then KV(L .. "Time per kill|r", W .. ns.seconds(v.ttk) .. "|r") end
+            if v.dps then KV(L .. "Damage per second|r", W .. string.format("%.1f", v.dps) .. "|r" .. (v.petShare and (L .. "  pet " .. pctText(v.petShare) .. "|r") or "")) end
+            if v.combatShare then KV(L .. "In combat|r", W .. pctText(v.combatShare) .. "|r" .. L .. " of played time|r") end
+            if v.rest then KV(L .. "Rest between pulls|r", W .. ns.seconds(v.rest) .. "|r") end
+            H("Safety")
+            if v.takenPct then KV(L .. "A fight costs|r", W .. pctText(v.takenPct) .. "|r" .. L .. " of your health|r") end
+            KV(L .. "Close calls|r", (v.close > 0 and ns.AMBER or W) .. v.close .. "|r" .. (v.oomFights > 0 and (L .. "  ·  ran dry " .. v.oomFights .. "x|r") or ""))
+            KV(L .. "Deaths|r", (v.deaths > 0 and ns.RED or W) .. v.deaths .. "|r" .. (v.deathsPerHour and (L .. string.format("  ·  %.1f per hour", v.deathsPerHour) .. "|r") or ""))
+        end)
+        local byLevel = {}
+        for lvl, a in pairs(c.byLevel or {}) do if a.fights >= 3 then byLevel[#byLevel + 1] = lvl end end
+        table.sort(byLevel, function(a, b) return a > b end)
+        if #byLevel > 0 then
+            SECTION(function()
+                local show = HX("By level", "summary:levels", #byLevel, 6, "newest")
+                local widths = { fsize() * 4, fsize() * 4.4, fsize() * 4.4, fsize() * 4.4 }
+                CELLS(L .. "Level|r", { L .. "fights|r", L .. "per kill|r", L .. "dps|r", L .. "health|r" }, { widths = widths, small = true, rule = true })
+                for i = 1, show do
+                    local lv = ns.CombatView(ns.LevelAggregate(c, byLevel[i]))
+                    CELLS(W .. byLevel[i] .. "|r", { L .. lv.fights .. "|r", W .. (lv.ttk and ns.seconds(lv.ttk) or "-") .. "|r",
+                        W .. (lv.dps and string.format("%.1f", lv.dps) or "-") .. "|r", L .. (lv.takenPct and pctText(lv.takenPct) or "-") .. "|r" }, { widths = widths })
+                end
+                local label = { "1 mob", "2 mobs", "3+ mobs" }
+                H("By pull size")
+                CELLS(L .. "Pull|r", { L .. "fights|r", L .. "per kill|r", L .. "health|r", L .. "deaths|r" }, { widths = widths, small = true, rule = true })
+                for b = 1, 3 do
+                    local z = v.size[b]
+                    if z then CELLS(W .. label[b] .. "|r", { L .. z.fights .. "|r", W .. (z.ttk and ns.seconds(z.ttk) or "-") .. "|r",
+                        L .. (z.takenPct and pctText(z.takenPct) or "-") .. "|r", (z.deaths > 0 and ns.RED or L) .. z.deaths .. "|r" }, { widths = widths }) end
+                end
+            end)
+        end
+        local abilities = ns.AbilityView(c.combat)
+        if #abilities > 0 then
+            SECTION(function()
+                H("Where the damage comes from")
+                for i = 1, math.min(6, #abilities) do
+                    local a = abilities[i]
+                    KV(W .. a.name .. "|r", W .. pctText(a.share) .. "|r" .. L .. "  " .. ns.shortNumber(a.dmg) .. "|r", { bar = a.share })
+                end
+            end)
+        end
+    end
+    local profs = {}
+    for pname, p in pairs(c.prof or {}) do profs[#profs + 1] = { name = pname, rank = p.rank or 0, max = p.max or 0, primary = p.primary } end
+    table.sort(profs, function(a, b) if (a.primary and 1 or 0) ~= (b.primary and 1 or 0) then return a.primary end return a.rank > b.rank end)
+    if #profs > 0 then
+        SECTION(function()
+            H("Professions")
+            for _, p in ipairs(profs) do
+                KV(W .. p.name .. "|r", W .. p.rank .. "|r" .. L .. " / " .. p.max .. "|r", { bar = p.max > 0 and p.rank / p.max or 0, barColor = { 0.55, 0.85, 0.55, 0.22 } })
+            end
+        end)
+    end
+    SECTION(function()
+        H("Money and loot")
+        local s = ns.session
+        KV(L .. "This session|r", W .. ns.money(s.earned or 0) .. "|r" .. L .. " in  ·  " .. ns.strip(ns.money(s.spent or 0)) .. " out|r")
+        local loot = s.loot
+        if loot and (loot.items > 0 or loot.coin > 0) then
+            KV(L .. "Looted this session|r", W .. ns.money(loot.coin + loot.vendor) .. "|r" .. L .. "  ·  " .. loot.items .. " items|r",
+                { tip = "Coin plus what a vendor pays for the items." })
+        end
+        local hist, n, value, best = ns.db.lootHistory or {}, 0, 0, nil
+        for _, h in ipairs(hist) do
+            if h.char == key then
+                n, value = n + 1, value + (h.coin or 0) + (h.vendor or 0)
+                if h.best and (not best or (h.best.q or 0) > (best.q or 0)) then best = h.best end
+            end
+        end
+        if n > 0 then KV(L .. "Earlier sessions|r", W .. ns.money(value) .. "|r" .. L .. "  ·  " .. n .. (n == 1 and " session|r" or " sessions|r")) end
+        if best then KV(L .. "Best drop|r", ns.QualityColor(best.q or 1) .. best.name .. "|r") end
+    end)
+    SECTION(function()
+        H("Highlights")
+        local tough = ns.ToughestMobs and ns.ToughestMobs(1)[1]
+        if tough then KV(L .. "Toughest opponent|r", W .. tough.name .. "|r" .. L .. "  costs " .. pctText(tough.cost) .. " health|r") end
+        local zone, zf = nil, 0
+        for z, a in pairs(c.byZone or {}) do if a.fights > zf then zone, zf = z, a.fights end end
+        if zone then KV(L .. "Most fights in|r", W .. zone .. "|r" .. L .. "  ·  " .. zf .. " fights|r") end
+        local lastDeath = c.deathLog and c.deathLog[#c.deathLog]
+        if lastDeath then KV(L .. "Last death|r", W .. (lastDeath.zone or "?") .. "|r" .. L .. "  ·  level " .. tostring(lastDeath.level or "?") .. ", " .. ago(lastDeath.t) .. "|r") end
+        KV(L .. "Notes|r", W .. #(c.journal or {}) .. "|r", { tip = "Notes from the Journal tab; they are part of the copied text." })
+    end)
+    ENDCOLUMNS()
+end
+
+local function summaryAll()
+    local keys = {}
+    for k, c in pairs(ns.db.chars) do if c.class then keys[#keys + 1] = k end end
+    table.sort(keys, function(a, b) return (ns.db.chars[a].lastSeen or 0) > (ns.db.chars[b].lastSeen or 0) end)
+    local sum = { seconds = 0, kills = 0, quests = 0, money = 0 }
+    local rows = {}
+    for _, k in ipairs(keys) do
+        local c = ns.db.chars[k]
+        local t = charTotals(c)
+        sum.seconds, sum.kills, sum.quests, sum.money = sum.seconds + t.seconds, sum.kills + t.kills, sum.quests + t.quests, sum.money + t.money
+        rows[#rows + 1] = { key = k, c = c, t = t, v = ns.CombatView(c.combat or ns.newAggregate()) }
+    end
+    TITLE(W .. "All characters|r", L .. #keys .. (#keys == 1 and " character" or " characters") .. ", newest first|r")
+    GAP(4)
+    TILES({ { tostring(#keys), "characters" }, { ns.shortTime(sum.seconds), "played" }, { comma(sum.kills), "kills" },
+        { comma(sum.quests), "quests" }, { m(sum.money), "gold, net" } })
+    H("Roster")
+    local widths = { fsize() * 3, fsize() * 4.6, fsize() * 4.4, fsize() * 3.6, fsize() * 3.4 }
+    CELLS(L .. "Character|r", { L .. "lvl|r", L .. "played|r", L .. "kills|r", L .. "dps|r", L .. "deaths|r" }, { widths = widths, small = true, rule = true })
+    for _, row in ipairs(rows) do
+        local c, t, v = row.c, row.t, row.v
+        local profs = {}
+        for pname, p in pairs(c.prof or {}) do profs[#profs + 1] = pname .. " " .. (p.rank or 0) end
+        table.sort(profs)
+        CELLS(classHex(c.classFile or "") .. nameOf(row.key) .. "|r" .. L .. "  " .. (c.race or "") .. " " .. (c.class or "") .. "|r",
+            { W .. tostring(c.level or "?") .. "|r", L .. (t.seconds > 0 and ns.shortTime(t.seconds) or "-") .. "|r", L .. comma(t.kills) .. "|r",
+              L .. (v.dps and string.format("%.1f", v.dps) or "-") .. "|r", ((v.deaths or 0) > 0 and ns.RED or L) .. (v.deaths or 0) .. "|r" },
+            { widths = widths, tip = (#profs > 0 and ("Professions: " .. table.concat(profs, ", ") .. "\n") or "") .. "Last played " .. ago(c.lastSeen) .. "." })
+    end
+end
+
+function render.summary(scope)
+    if scope == "all" then summaryAll() else summaryOne() end
+end
 
 ----------------------------------------------------------------------
 -- frame construction
@@ -1401,7 +1634,7 @@ local FOOT = {
     prices = "",                                   -- the search box sits where the footer would be
     census = "Every character counted once. Filters: faction, level range, and how recently they were seen.",
     settings = "Changes apply immediately. Drag a slider or use the mouse wheel on any row.",
-    summary = "Select all, then Ctrl+C. Plain text, ready for Discord or beta feedback.",
+    summary = "Copy text: the same, as plain text for Discord or a forum post. Select all, then Ctrl+C.",
 }
 
 renderNow = function()
@@ -1459,7 +1692,8 @@ renderNow = function()
     panel.who:SetPoint("RIGHT", scopes and scopeButtons[1] or panel.fit, "LEFT", -14, 0)
     panel.who:SetText(L .. (ns.charKey and ns.charKey:match("^(.-)%-") or "") .. "  ·  level " .. tostring(ns.curLevel or "?") .. "  ·  " .. (ns.char.class or "") .. "|r")
 
-    local isSummary, isJournal, isSettings = state.tab == "summary", state.tab == "journal", state.tab == "settings"
+    local isSummary, isJournal, isSettings = state.tab == "summary" and state.scope.summary == "text", state.tab == "journal", state.tab == "settings"
+    if state.tab == "summary" and state.scope.summary ~= "text" then state.summaryAll = state.scope.summary == "all" end
     summaryBox:SetShown(isSummary); selectAll:SetShown(isSummary)
     summaryBox:SetFont(FONT, fsize(), "")
     if isSettings and not settingsPage then
@@ -1473,7 +1707,7 @@ renderNow = function()
     if isSettings then
         cursor = settingsPage:Layout(innerWidth()) + 8
     elseif isSummary then
-        local text = ns.SummaryText(state.scope.summary == "all")
+        local text = ns.SummaryText(state.summaryAll)
         summaryBox.original = text
         summaryBox:SetText(text)
         cursor = (summaryBox:GetHeight() or 200) + 8
@@ -1527,7 +1761,7 @@ local sinceRender = 0
 ns.Every(0.5, function(dt)
     if not panel or not panel:IsShown() then return end
     sinceRender = sinceRender + dt
-    if state.tab == "summary" and summaryBox:HasFocus() then return end       -- do not disturb a selection
+    if state.tab == "summary" and state.scope.summary == "text" and summaryBox:HasFocus() then return end       -- do not disturb a selection
     if settingsPage and settingsPage.dragging then return end                  -- nor a slider being dragged
     local drawn = (panel.GetRight and panel.GetLeft and panel:GetRight() and panel:GetLeft()) and (panel:GetRight() - panel:GetLeft()) or nil
     local stale = panel.renderedWidth and (math.abs(panel.renderedWidth - panel:GetWidth()) > 0.5 or (drawn and drawn > 1 and math.abs(panel.renderedWidth - drawn) > 0.5))

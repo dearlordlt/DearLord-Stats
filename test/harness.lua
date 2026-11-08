@@ -669,8 +669,11 @@ for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "character
 panelText("Combat / character")
 for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "level" and f.scripts.OnClick then f.scripts.OnClick(f) end end
 panelText("Combat / level")
-for _, f in ipairs(frames) do if rawget(f, "onClick") and f.shown then f.onClick(); break end end
-panelText("Combat / level after stepping back")
+local chips = {}
+for _, f in ipairs(frames) do if f.kind == "Button" and f.shown and rawget(f, "chipKey") then chips[#chips + 1] = strip(f.fs.text) end end
+for _, f in ipairs(frames) do if f.kind == "Button" and f.shown and rawget(f, "chipKey") == 7 then f.scripts.OnClick(f); break end end
+panelText("Combat / level after picking the previous level")
+local levelLabel; for _, f in ipairs(frames) do if f.kind == "Button" and f.shown and f.scopeKey == "level" then levelLabel = strip(f.fs.text) end end
 ns.OpenPanel("abilities"); panelText("Abilities (level view carried over)")
 ns.OpenPanel("professions"); panelText("Professions")
 ns.OpenPanel("economy"); panelText("Economy / advice (every mode)")
@@ -697,7 +700,18 @@ advance(3); panelText("Settings (labels only)")
 for _, f in ipairs(frames) do local c = rawget(f, "control"); if c and c.label == "Reset every setting to its default" then f.scripts.OnClick(f, "LeftButton") end end
 local afterReset = ns.db.font == "friz" and ns.db.fontSize == 13 and ns.db.showXP == true and ns.db.alpha == 1
 ns.OpenPanel("journal"); panelText("Journal")
-ns.OpenPanel("summary"); advance(3)
+ns.OpenPanel("summary"); advance(3); panelText("Summary / current")
+local summaryTitle, summaryTiles = false, 0
+for _, f in ipairs(frames) do
+    if f.kind == "Frame" and f.shown and f.left and strip(f.left.text) == "Tess Ter" then summaryTitle = true end
+    local ch = rawget(f, "chart")
+    if f.kind == "Frame" and f.shown and ch then for _, l in ipairs(ch.labels) do if l.shown and strip(l.text) == "kills" then summaryTiles = summaryTiles + 1 end end end
+end
+for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "all" and f.scripts.OnClick then f.scripts.OnClick(f) end end
+panelText("Summary / all characters")
+for _, f in ipairs(frames) do if f.kind == "Button" and f.scopeKey == "text" and f.scripts.OnClick then f.scripts.OnClick(f) end end
+local summaryBoxText = ""
+for _, f in ipairs(frames) do if f.kind == "EditBox" and f.shown and rawget(f, "original") then summaryBoxText = f.original end end
 -- resize the report: drag the corner wider/taller, then double-click to fit the content
 ns.OpenPanel("professions")
 local pf = DearLordStatsPanel
@@ -856,6 +870,9 @@ if MODE ~= "bare" then
 end
 check("lag: instant spell 250 ms, a cast counted at its start, a cast without its start skipped (" .. table.concat(lagNew, ",") .. ")",
     #lagNew == 2 and lagNew[1] == 250 and lagNew[2] == 250 and ns.db.diag.lag.castSkipped == 1)
+check("summary: the current view has a title and stat tiles; Copy text still gives the plain text", summaryTitle and summaryTiles >= 1 and summaryBoxText:find("Combat:") ~= nil)
+check("level view: buttons for each level, newest first, now/last marked (" .. table.concat(chips, ", ") .. "); a click shows that level (" .. tostring(levelLabel) .. ")",
+    chips[1] == "8 now" and chips[2] == "7 last" and levelLabel == "Level 7")
 check("perf: a 312 ms piece of work is said in chat and listed by /dls perf", perfSaid and perfListed)
 check("census: past 12,000 characters it trims to 11,000 in one go (" .. tostring(censusAfterTrim) .. ")", censusAfterTrim == 11000)
 check("loot reset filed the session under history", ns.db.lootHistory and #ns.db.lootHistory >= 1 and ns.db.lootHistory[1].items == 9)
