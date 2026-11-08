@@ -161,24 +161,17 @@ end
 local function api() return C_AuctionHouse and type(C_AuctionHouse.ReplicateItems) == "function"
     and type(C_AuctionHouse.GetNumReplicateItems) == "function" and type(C_AuctionHouse.GetReplicateItemInfo) == "function" end
 
--- the game allows one full scan per 15 minutes. Whether that is per account or per character/faction is
--- not documented, so it is learned: the first scan at one house within 15 minutes of another house's scan
--- either works (each house has its own 15 minutes) or gets no answer (one 15 minutes for the account).
-local function waitFor(k)
+-- the game allows one full scan per 15 minutes for the whole account, whichever addon asks: at launch a
+-- request two minutes after Auctionator's Full Scan went unanswered. Auctionator's last scan counts too.
+local function auctionatorLast()
+    local A = Auctionator
+    local st = type(A) == "table" and type(A.SavedState) == "table" and A.SavedState or nil
+    return st and N(st.TimeOfLastReplicateScan) or 0
+end
+local function waitFor()
     local d = db()
     if not d then return 0 end
-    local account = THROTTLE - (time() - (d.lastRequest or 0))
-    if d.throttle == "account" then return math.max(0, account) end
-    local own = THROTTLE - (time() - ((d.lastByKey or {})[k or ""] or 0))
-    return math.max(0, own)
-end
-local function learn(rule)
-    local d = db()
-    if not d or d.throttle == rule then return end
-    d.throttle = rule
-    diag().throttle = rule
-    ns.Feed(ns.LABEL .. "Auction scan|r  " .. (rule == "key" and "each auction house has its own 15 minutes" or "the server allows one scan per 15 minutes for the whole account"),
-        { tab = "prices", key = "ahrule", hold = 10 })
+    return math.max(0, THROTTLE - (time() - math.max(d.lastRequest or 0, auctionatorLast())))
 end
 
 local function abort(why)
@@ -239,8 +232,7 @@ local function commit()
         if (e.d or 0) < today - KEEP_DAYS then items[id] = nil else n = n + 1 end
     end
     r.scanned, r.day, r.auctions, r.count = time(), today, scan.n, n
-    if db() then db().lastRead = scan.requestedAt end
-    if scan.cross then learn("key") end
+    if db() then db().lastRead = db().lastRequest end          -- whoever asked, a list arrived: our request is answered or spent
     local d = diag(); d.lastScan = { at = time(), rows = scan.n, items = n, secs = time() - (scan.requestedAt or time()) }
     ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "prices", key = "ahscan", hold = 10 })
     scan = { state = "idle" }
@@ -293,12 +285,17 @@ end
 ns.On("REPLICATE_ITEM_LIST_UPDATE", function()
     local d = diag(); d.updates = (d.updates or 0) + 1
     local n = N(C_AuctionHouse.GetNumReplicateItems()) or 0
-    -- the list stays in the client and the event fires again whenever item data loads: a request is read once
-    if scan.state == "idle" and ahOpen and ahKey and n > 0 and db() and time() - (db().lastRequest or 0) < THROTTLE
-        and db().lastRead ~= db().lastRequest then
-        -- the answer to a request this addon gave up on (or one from before a /reload): the throttle is spent, so take it
-        scan = { state = "requested", requestedAt = db().lastRequest, key = ahKey, late = true }
-        d.late = (d.late or 0) + 1
+    -- a list nobody here is waiting for: the late answer to a request this addon gave up on, or another addon's
+    -- full scan (Auctionator). Take it unless this house was read in the last 15 minutes: the list stays in the
+    -- client and the event fires again whenever item data loads, and must not be read over and over.
+    if scan.state == "idle" and ahOpen and ahKey and n > 0 and db() then
+        local house = realmData(false, ahKey)
+        local recent = house and house.scanned and time() - house.scanned < THROTTLE
+        local unread = time() - (db().lastRequest or 0) < THROTTLE and db().lastRead ~= db().lastRequest
+        if unread or not recent then
+            scan = { state = "requested", requestedAt = unread and db().lastRequest or time(), key = ahKey, late = unread, foreign = not unread }
+            if unread then d.late = (d.late or 0) + 1 else d.foreign = (d.foreign or 0) + 1 end
+        end
     end
     if scan.state ~= "requested" then return end
     d.firstUpdate = { rows = n, secs = time() - (scan.requestedAt or time()) }
@@ -310,11 +307,10 @@ end, "ah:replicate")
 local function start()
     local d = db(); if not d then return end
     local k = ahKey or ns.AuctionKey()
-    local cross = d.throttle == nil and time() - (d.lastRequest or 0) < THROTTLE and d.lastRequestKey ~= k
     d.lastRequest, d.lastRequestKey = time(), k               -- the throttle is spent whether or not the answer comes
     d.lastByKey = d.lastByKey or {}
     d.lastByKey[k] = time()
-    scan = { state = "requested", requestedAt = time(), key = k, cross = cross }
+    scan = { state = "requested", requestedAt = time(), key = k }
     local ok, err = pcall(C_AuctionHouse.ReplicateItems)
     if not ok then diag().error = tostring(err); abort("refused: " .. tostring(err)); return end
     -- no answer in 30 s: say so, but keep listening. The 15-minute throttle is spent either way, and the list
@@ -330,7 +326,6 @@ local function start()
     ns.After(60, function()
         if scan.state ~= "requested" or scan.requestedAt ~= asked then return end
         local dg = diag(); dg.silent = (dg.silent or 0) + 1; dg.silentAt = time()
-        if scan.cross then learn("account") end
         scan = { state = "idle", silent = asked }
         ns.Feed(ns.LABEL .. "Auction scan|r  the server did not send the list; try again in a while", { tab = "prices", key = "ahscan", hold = 10 })
         if ns.PanelDirty then ns.PanelDirty() end
@@ -343,7 +338,7 @@ function ns.AuctionScan(force)
     if not api() then return false, "noapi" end
     if not ahOpen then return false, "closed" end
     if scan.state ~= "idle" then return false, "busy" end
-    local wait = waitFor(ahKey)
+    local wait = waitFor()
     if wait > 0 and not force then return false, "throttled", wait end
     -- straight away, inside the key press or click that asked for it: on the live client a full-list request
     -- sent from a timer went unanswered, while Auctionator's (sent from its button click) was answered
@@ -365,7 +360,7 @@ end
 
 function ns.AuctionStatus()
     local d = db()
-    local wait = waitFor(ahKey or ns.AuctionKey())
+    local wait = waitFor()
     local realms = {}
     local mine = ns.AuctionKey()
     local realmName = ns.AuctionRealmName()
@@ -377,7 +372,7 @@ function ns.AuctionStatus()
         table.sort(realms, function(a, b) return a.faction < b.faction end)
     end
     return { state = scan.state, done = scan.i or 0, total = scan.n or 0, ahOpen = ahOpen, api = api(), openKey = ahKey,
-        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), rule = d and d.throttle, armed = armed and ahOpen,
+        nextIn = math.max(0, wait), realms = realms, faction = mine and mine:match("%-(%a+)$"), auctionator = auctionatorLast() > 0, armed = armed and ahOpen,
         silent = scan.silent ~= nil and d ~= nil and d.lastRead ~= d.lastRequest }
 end
 
@@ -385,7 +380,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
     ahOpen = true
     ahKey = openKey()
     diag().api = diag().api or { replicate = api() and "yes" or "no", ready = type(C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady) == "function" and "yes" or "no" }
-    armed = (ns.db and ns.db.ahAutoScan and api() and waitFor(ahKey) <= 0) or false
+    armed = (ns.db and ns.db.ahAutoScan and api() and waitFor() <= 0) or false
     ns.AuctionButton()
     if ns.PanelDirty then ns.PanelDirty() end
 end, "ah:show")
@@ -415,7 +410,7 @@ function ns.AuctionButton()
         ahButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
         ns.Every(1, function() if ahButton:IsShown() then ns.AuctionButton() end end, "ah:button")
     end
-    local wait = waitFor(ahKey or ns.AuctionKey())
+    local wait = waitFor()
     local label = (scan.state == "requested" and "Waiting for list") or (scan.state == "collecting" and "Scanning...")
         or (wait > 0 and ("Scan (" .. ns.shortTime(wait) .. ")")) or "Scan prices"
     if ahButton.SetText then ahButton:SetText(label) end
@@ -424,8 +419,6 @@ end
 ns.On("AUCTION_HOUSE_CLOSED", function()
     ahOpen = false; ahKey = nil
     if scan.state == "requested" then
-        -- a try at a second house that waited half a minute for nothing: the 15 minutes are the account's
-        if scan.cross and time() - (scan.requestedAt or time()) >= 30 then learn("account") end
         abort("auction house closed before the list arrived")
     end
     if ns.PanelDirty then ns.PanelDirty() end
@@ -435,7 +428,6 @@ ns.On("UI_ERROR_MESSAGE", function(_, msg)
     if not msg or scan.state ~= "requested" or time() - (scan.requestedAt or 0) > 5 then return end
     if msg:lower():find("auction") then
         diag().error = msg
-        if scan.cross then learn("account") end
         abort("refused: " .. msg)
     end
 end, "ah:error")

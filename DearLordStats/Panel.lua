@@ -747,8 +747,7 @@ local function scanStatusRow()
     end
     local r = KV(table.concat(parts, L .. "  ·  |r"), status, { tip = table.concat(tip, "\n")
         .. "\n\nWith the auction house open every auction is read once and the lowest buyout per item is kept, per realm and faction. "
-        .. "The game allows one scan per 15 minutes; whether that counts per account or per house is learned from the first try"
-        .. (st.rule == "key" and " (here: each house has its own 15 minutes)." or (st.rule == "account" and " (here: one 15 minutes for the whole account)." or ".")) })
+        .. "The game allows one full scan per 15 minutes for the whole account, whichever addon asks: an Auctionator Full Scan counts, and its list is read here too." })
     -- a real button: tries even when the 15 minutes are not over (the server decides; a refused try costs nothing)
     if st.ahOpen and st.state == "idle" then
         local b = toggleButton()

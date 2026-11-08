@@ -502,11 +502,13 @@ if MODE ~= "bare" then
     fire("AUCTION_HOUSE_CLOSED")
     -- a goblin auction house: neutral, shared by both factions, scanned into its own key
     world.npc, world.npcFaction = true, nil
-    -- minutes after the Horde scan: the goblin house has its own 15 minutes, so the scan runs by itself
+    -- minutes after the Horde scan: the account's 15 minutes are not over, so nothing is asked; another addon's
+    -- full scan (Auctionator) brings a list anyway, and it is read for this never-scanned house
     local reqBefore = C_AuctionHouse.requests
-    fire("AUCTION_HOUSE_SHOW"); advance(6); keys.scripts.OnKeyDown(keys, "W"); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
-    scanResult.neutralAuto = C_AuctionHouse.requests - reqBefore
-    scanResult.rule = DearLordAuctionDB.throttle
+    fire("AUCTION_HOUSE_SHOW"); advance(6); keys.scripts.OnKeyDown(keys, "W")
+    scanResult.neutralAsked = C_AuctionHouse.requests - reqBefore
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    scanResult.foreign = ns.db.diag.ah.foreign
     scanResult.neutral = DearLordAuctionDB.realms["ClassicBetaPvE2-Neutral"]
     -- the status row's button: "Try now" while the 15 minutes run, and it does try
     ns.OpenPanel("prices")
@@ -521,6 +523,10 @@ if MODE ~= "bare" then
     reqBefore = C_AuctionHouse.requests
     if ahBtn then ahBtn.scripts.OnClick(ahBtn) end
     scanResult.ahButton = ahBtn ~= nil and C_AuctionHouse.requests - reqBefore == 1
+    local keepReq = DearLordAuctionDB.lastRequest
+    DearLordAuctionDB.lastRequest = 0; Auctionator = { SavedState = { TimeOfLastReplicateScan = wall - 120 } }
+    scanResult.auctionatorWait = ns.AuctionStatus().nextIn
+    Auctionator = nil; DearLordAuctionDB.lastRequest = keepReq
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
@@ -791,7 +797,8 @@ if MODE ~= "bare" then
     check("scan: repeated list events after a finished scan do not start it again (" .. tostring(scanResult.rereads) .. ")", scanResult.rereads == 0)
     local feedHit = false; for _, l in ipairs(feedLog) do if strip(l):find("Auction scan  4 items", 1, true) then feedHit = true end end
     check("scan: feed line announces the result", feedHit)
-    check("scan: a second house scans by itself within the first one's 15 minutes, and the rule is learned (" .. tostring(scanResult.rule) .. ")", scanResult.neutralAuto == 1 and scanResult.rule == "key")
+    check("scan: within the account's 15 minutes a second house asks nothing, but reads another addon's list", scanResult.neutralAsked == 0 and scanResult.foreign == 1)
+    check("scan: Auctionator's last Full Scan counts toward the 15 minutes (" .. tostring(scanResult.auctionatorWait) .. " s)", scanResult.auctionatorWait and scanResult.auctionatorWait >= 770 and scanResult.auctionatorWait <= 790)
     check("scan: the status row offers Try now while throttled, and it sends a request", scanResult.tryNow)
     check("scan: the automatic scan waits for a key press (not Escape) instead of a timer", scanResult.heldBack)
     check("scan: the button on the auction house window sends a request", scanResult.ahButton)
