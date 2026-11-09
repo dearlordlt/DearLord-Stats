@@ -159,27 +159,70 @@ local function readPet()
     pet.xp, pet.max, pet.level = cur, max, level
 end
 
-local function petMood()
-    if not GetPetHappiness then return nil end
-    local happiness, damage, loyaltyRate = GetPetHappiness()
-    local h = HAPPY[ns.N(happiness) or 0]
-    return h, ns.N(damage), ns.N(loyaltyRate), ns.N(happiness)
+-- Forever moved the classic pet calls into C_PetInfo; older clients have them as globals.
+-- Either way they may answer with plain values or with one table, so both are read.
+local function petCall(name)
+    local fn = (type(C_PetInfo) == "table" and C_PetInfo[name]) or _G[name]
+    if type(fn) ~= "function" then return nil end
+    local function after(ok, ...) if ok then return ... end end
+    return after(pcall(fn))
 end
 
--- "Loyalty Level 3 (Submissive)" -> 3, "Submissive"; any other wording is shown as it comes
+local function field(t, ...)
+    for i = 1, select("#", ...) do
+        local v = t[select(i, ...)]
+        if v ~= nil then return v end
+    end
+end
+
+local function petMood()
+    local happiness, damage, rate = petCall("GetPetHappiness")
+    if type(happiness) == "table" then
+        local t = happiness
+        happiness = field(t, "happiness", "happinessLevel", "level", 1)
+        damage = field(t, "damagePercentage", "damagePercent", "damage", 2)
+        rate = field(t, "loyaltyRate", "loyalty", 3)
+    end
+    happiness = ns.N(happiness)
+    return HAPPY[happiness or 0], ns.N(damage), ns.N(rate), happiness
+end
+
+local LOYALTY = { "Rebellious", "Unruly", "Submissive", "Dependable", "Faithful", "Best Friend" }
+
+-- "Loyalty Level 3 (Submissive)" -> 3, "Submissive"; a bare number gets its name; other wording shown as it comes
 local function petLoyalty()
-    local text = GetPetLoyalty and ns.S(GetPetLoyalty())
+    local v, second = petCall("GetPetLoyalty")
+    if type(v) == "table" then v, second = field(v, "loyaltyLevel", "level", "text", "name", 1), field(v, "name", "text", 2) end
+    local n = ns.N(v)
+    if n then
+        local name = ns.S(second)
+        if not name or name:find("^%d") then name = LOYALTY[n] end
+        return tostring(n), name
+    end
+    local text = ns.S(v)
     if not text then return nil end
     local level, name = text:match("(%d+)"), text:match("%((.-)%)")
-    return level, name, text
+    return level, name or (level and LOYALTY[tonumber(level)]), text
 end
 
 local function petTraining()
-    if not GetPetTrainingPoints then return nil end
-    local total, spent = GetPetTrainingPoints()
+    local total, spent = petCall("GetPetTrainingPoints")
+    if type(total) == "table" then
+        local t = total
+        total = field(t, "totalPoints", "total", "points", 1)
+        spent = field(t, "spent", "spentPoints", "used", 2)
+    end
     total, spent = ns.N(total), ns.N(spent)
     if not total then return nil end
     return math.max(0, total - (spent or 0))
+end
+
+local function petFoods()
+    local foods = {}
+    local list = { petCall("GetPetFoodTypes") }
+    if type(list[1]) == "table" then list = list[1] end
+    for _, f in pairs(list) do f = ns.S(f); if f then foods[#foods + 1] = f end end
+    return foods
 end
 
 -- what this client gives for the pet calls: missing, secret or plain values (read once per session)
@@ -192,12 +235,20 @@ function ns.PetProbe()
         end
         return #out > 0 and table.concat(out, ",") or "none"
     end
+    local function dump(v)
+        if type(v) ~= "table" or (issecretvalue and issecretvalue(v)) then return nil end
+        local out = {}
+        for k, x in pairs(v) do out[#out + 1] = tostring(k) .. ":" .. ((issecretvalue and issecretvalue(x)) and "secret" or tostring(x)) end
+        table.sort(out)
+        return "{" .. table.concat(out, ";") .. "}"
+    end
     local function try(name)
-        local fn = _G[name]
+        local where, fn = "C_PetInfo.", type(C_PetInfo) == "table" and C_PetInfo[name]
+        if type(fn) ~= "function" then where, fn = "", _G[name] end
         if type(fn) ~= "function" then return name .. "=missing" end
         local ok, a, b, c, d = pcall(fn)
-        if not ok then return name .. "=error " .. tostring(a) end
-        return name .. "=" .. show(a, b, c, d)
+        if not ok then return where .. name .. "=error " .. tostring(a) end
+        return where .. name .. "=" .. (dump(a) or show(a, b, c, d))
     end
     local parts = {}
     for _, n in ipairs({ "GetPetHappiness", "GetPetLoyalty", "GetPetTrainingPoints", "GetPetExperience", "GetPetFoodTypes" }) do
@@ -350,8 +401,13 @@ xpwin:SetScript("OnEnter", function(self)
         local G = 0.8
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Pet: " .. (pet.name or "?"))
-        local loyalty = GetPetLoyalty and ns.S(GetPetLoyalty())
-        GameTooltip:AddDoubleLine("Level", pet.level .. (loyalty and ("  " .. loyalty) or ""), G, G, G, 1, 1, 1)
+        GameTooltip:AddDoubleLine("Level", tostring(pet.level), G, G, G, 1, 1, 1)
+        local lvl, lname, raw = petLoyalty()
+        if lvl or raw then
+            GameTooltip:AddDoubleLine("Loyalty level", lvl and (lvl .. (lname and (" " .. lname) or "")) or raw, G, G, G, 1, 1, 1)
+        end
+        local tp = petTraining()
+        if tp then GameTooltip:AddDoubleLine("Training points unspent", tostring(tp), G, G, G, 1, 1, 1) end
         if pet.max and pet.max > 0 then
             GameTooltip:AddDoubleLine("Pet XP", shortNumber(pet.xp) .. " / " .. shortNumber(pet.max), G, G, G, 1, 1, 1)
         end
@@ -361,11 +417,8 @@ xpwin:SetScript("OnEnter", function(self)
         if h then
             GameTooltip:AddDoubleLine("Happiness", h[2] .. h[1] .. "|r" .. (damage and ("  " .. damage .. "% damage") or ""), G, G, G, 1, 1, 1)
         end
-        if GetPetFoodTypes then
-            local foods = {}
-            for _, f in ipairs({ GetPetFoodTypes() }) do f = ns.S(f); if f then foods[#foods + 1] = f end end
-            if #foods > 0 then GameTooltip:AddDoubleLine("Eats", table.concat(foods, ", "), G, G, G, 1, 1, 1) end
-        end
+        local foods = petFoods()
+        if #foods > 0 then GameTooltip:AddDoubleLine("Eats", table.concat(foods, ", "), G, G, G, 1, 1, 1) end
         if rate and rate ~= 0 then
             GameTooltip:AddDoubleLine("Loyalty", rate > 0 and (ns.GREEN .. "growing|r") or (ns.RED .. "falling, feed your pet|r"), G, G, G, 1, 1, 1)
         end

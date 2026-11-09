@@ -107,6 +107,9 @@ function HasPetUI() if world.pet then return true, true end return false, false 
 function GetPetExperience() if not world.pet then return 0, 0 end return hide(world.petXP or 0), world.petXPMax or 900 end
 function GetPetHappiness() if world.pet then return world.petHappy or 3, ({ 75, 100, 125 })[world.petHappy or 3], (world.petHappy or 3) == 1 and -10 or 20 end end
 function GetPetLoyalty() if world.pet then return "Loyalty Level 1 (Rebellious)" end end
+-- Forever: the pet calls live in C_PetInfo (this one answers with a table, the way some new calls do)
+C_PetInfo = { GetPetTrainingPoints = function() if world.pet then return { totalPoints = 120, spent = 95 } end end,
+    GetPetLoyalty = function() if world.pet then return 1 end end }
 function GetPetTrainingPoints() if world.pet then return 120, 95 end return 0, 0 end
 function GetPetFoodTypes() if world.pet then return "Meat", "Fish" end end
 function GetMaxPlayerLevel() return 60 end
@@ -802,7 +805,7 @@ check("pet line: level, progress, kills from the last pet gain, happiness (" .. 
 check("pet level-up gain counted across the wrap, unhappy pet warned (" .. tostring(petLineUnhappy) .. ")", petLineUnhappy == "pet L7  2%  30 kills   unhappy 75% damage, feed it")
 check("pet XP this session 45+845+30", petSessionXP == 920)
 check("with the background on, a feed line is as wide as the XP window and has its background", feedJoined)
-check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == "string" and petProbe:find("GetPetTrainingPoints=120,95") ~= nil)
+check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == "string" and petProbe:find("C_PetInfo.GetPetTrainingPoints={spent:95;totalPoints:120}", 1, true) ~= nil)
 check("second pet line: loyalty and unspent training points (" .. tostring(petLine2) .. ")", petLine2 == "    loyalty 1 Rebellious   25 training points")
 check("pet damage counted (90)", c.petDmg == 90)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
