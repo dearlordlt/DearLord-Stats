@@ -184,6 +184,11 @@ local function petMood()
         rate = field(t, "loyaltyRate", "loyalty", 3)
     end
     happiness = ns.N(happiness)
+    if happiness then
+        pet.mood = { HAPPY[happiness], ns.N(damage), ns.N(rate), happiness }
+    elseif pet.mood and pet.name == ns.S(UnitName("pet")) then
+        return unpack(pet.mood)             -- hidden in combat: keep the last reading
+    end
     return HAPPY[happiness or 0], ns.N(damage), ns.N(rate), happiness
 end
 
