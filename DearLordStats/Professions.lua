@@ -83,6 +83,17 @@ local function refreshRanks(quiet)
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
+-- the profession being worked on right now (for the XP window), or nil after 5 idle minutes
+function ns.ProfessionHudInfo()
+    if not lastActive or GetTime() - lastActive.t > 300 then return nil end
+    local name = lastActive.name
+    local info, p = ranks[name], ns.session.prof[name]
+    if not p then return nil end
+    local elapsed = time() - (p.first or time())
+    return { name = name, rank = info and info.rank, max = info and info.max, ups = p.ups, gathers = p.gathers,
+        rate = (p.ups > 0 and elapsed >= 300) and (p.ups / elapsed * 3600) or nil }
+end
+
 function ns.ProfessionHudLine()
     if not lastActive or GetTime() - lastActive.t > 300 then return nil end
     local name = lastActive.name

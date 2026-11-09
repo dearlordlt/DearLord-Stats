@@ -19,7 +19,7 @@ On screen, always: two small transparent text blocks you can drag anywhere.
 
 - **Latency, measured spell lag, FPS.** The game's latency number refreshes every ~30 s; the `lag`
   value is measured on your own casts and updates live.
-- **XP per hour, last gain, kills and quests to level (rested-aware), time to level, gold per hour.**
+- **XP window:** a level bar with rested XP drawn on it, XP per hour, last gain, kills and quests to level (rested-aware), time to level; a pet block (portrait, XP bar coloured by happiness, loyalty, training points); net gold and gold per hour; a skill bar for the profession you are working on.
 
 On screen, only when relevant: a one-line **fight recap** after combat, a profession line while you
 gather or craft, **hunter pet lines** (level, progress, kills to its next level, happiness, loyalty, unspent training points) while

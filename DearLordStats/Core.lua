@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.12.1"
+ns.version = "2.13.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -360,10 +360,13 @@ function ns.ApplyHudSettings()
         local step = db.fontSize + 2
         for i, fs in ipairs(f.lines) do
             ns.SetHudFont(fs)
-            fs:ClearAllPoints()
-            if f.justify == "LEFT" then fs:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -4 - (i - 1) * step)
-            else fs:SetPoint("TOP", f, "TOP", 0, -4 - (i - 1) * step) end
+            if not f.Layout then
+                fs:ClearAllPoints()
+                if f.justify == "LEFT" then fs:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -4 - (i - 1) * step)
+                else fs:SetPoint("TOP", f, "TOP", 0, -4 - (i - 1) * step) end
+            end
         end
+        if f.Layout then f:Layout() end
         f.bg:SetColorTexture(0, 0, 0, db.bgAlpha or 0.4)
         f.bg:SetShown(db.background)
     end

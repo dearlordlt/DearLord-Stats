@@ -4,7 +4,7 @@ local ADDON, ns = ...
 local LABEL, WHITE = ns.LABEL, ns.WHITE
 local shortNumber, shortTime, money = ns.shortNumber, ns.shortTime, ns.money
 
-local xpwin = ns.CreateHud("xp", 7, "LEFT")
+local xpwin = ns.CreateHud("xp", 0, "LEFT")
 xpwin.panelTab = "combat"
 
 local lastXP, lastMax, levelAtLastXP, lastMoney
@@ -292,39 +292,199 @@ function ns.PetProbe()
     return table.concat(parts, " ")
 end
 
-local function petLines()
+local LOYALTY_LEVEL = {}
+for i, n in ipairs(LOYALTY) do LOYALTY_LEVEL[n] = i end
+
+-- everything the pet block shows, or nil without a hunter pet out
+local function petInfo()
     if ns.db.showPet == false or not hunterPet() then return nil end
     readPet()
     if not pet.level then return nil end
-    local line = string.format("%spet|r %sL%d|r", LABEL, WHITE, pet.level)
-    if pet.max and pet.max > 0 then
-        local kills = pet.lastGain and math.ceil(math.max(0, pet.max - pet.xp) / pet.lastGain)
-        line = line .. string.format("  %s%d%%|r  %s%s|r %s%s|r", LABEL, math.floor(pet.xp / pet.max * 100),
-            WHITE, kills or "-", LABEL, kills == 1 and "kill" or "kills")
-    end
-    local h, damage, rate, mood = petMood()
-    if h then
-        line = line .. "   " .. h[2] .. h[1] .. "|r"
-        if damage then line = line .. string.format(" %s%d%% damage|r", mood == 1 and ns.RED or LABEL, damage) end
-        if mood == 1 then line = line .. ns.RED .. ", feed it|r" end
-    end
-
-    local parts = {}
-    local lvl, name, raw = petLoyalty()
-    if lvl or raw then
-        local trend = (rate and rate < 0) and (ns.RED .. " falling|r") or ""
-        parts[#parts + 1] = lvl and string.format("%sloyalty|r %s%s%s|r%s", LABEL, WHITE, lvl, name and (" " .. name) or "", trend)
-            or (WHITE .. raw .. "|r" .. trend)
-    end
-    local tp = petTraining()
-    if tp then
-        parts[#parts + 1] = string.format("%s%d|r %straining points|r", tp > 0 and ns.AMBER or WHITE, tp, LABEL)
-    end
     if ns.db.diag and not ns.db.diag.petProbe then ns.db.diag.petProbe = ns.PetProbe() end
-    return line, #parts > 0 and ("    " .. table.concat(parts, "   ")) or nil
+    local h, damage, rate, mood = petMood()
+    local lvl, lname, raw = petLoyalty()
+    lname = lname or raw
+    lvl = tonumber(lvl) or (lname and LOYALTY_LEVEL[lname])
+    return { h = h, damage = damage, rate = rate, mood = mood, loyalty = lname, loyaltyLevel = lvl, tp = petTraining(),
+        kills = (pet.lastGain and pet.max and pet.max > 0) and math.ceil(math.max(0, pet.max - pet.xp) / pet.lastGain) or nil }
 end
 
 local KIND = { kill = "kill", quest = "quest", other = "other" }
+
+----------------------------------------------------------------------
+-- the window: blocks of icon + bar + small lines. XP (player portrait),
+-- pet (portrait, bar coloured by happiness), gold (coin), profession (its icon).
+----------------------------------------------------------------------
+local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local HAPPY_FACE = "|TInterface\\PetPaperDollFrame\\UI-PetHappiness:%d:%d:0:0:128:64:%d:%d:0:23|t"
+local FACE_X = { 48, 24, 0 }                  -- unhappy, content, happy
+local MOOD_COLOR = { { 0.80, 0.22, 0.20 }, { 0.85, 0.68, 0.18 }, { 0.30, 0.72, 0.30 } }
+local PROF_ICON = {
+    Skinning = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01", Mining = "Interface\\Icons\\Trade_Mining",
+    Herbalism = "Interface\\Icons\\Trade_Herbalism", Fishing = "Interface\\Icons\\Trade_Fishing",
+    Cooking = "Interface\\Icons\\INV_Misc_Food_15", ["First Aid"] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
+    Alchemy = "Interface\\Icons\\Trade_Alchemy", Blacksmithing = "Interface\\Icons\\Trade_BlackSmithing",
+    Enchanting = "Interface\\Icons\\Trade_Engraving", Engineering = "Interface\\Icons\\Trade_Engineering",
+    Leatherworking = "Interface\\Icons\\Trade_LeatherWorking", Tailoring = "Interface\\Icons\\Trade_Tailoring",
+}
+local SEP = "|cff8a8a8a  ·  |r"
+
+local blocks = {}
+xpwin.blocks = blocks
+
+local function text(parent)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    fs:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")          -- real font comes from the settings in Layout
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+    fs:SetJustifyH("LEFT")
+    xpwin.lines[#xpwin.lines + 1] = fs
+    return fs
+end
+
+local function newBlock(key, bar, subs, color)
+    local f = CreateFrame("Frame", nil, xpwin)
+    local b = { key = key, frame = f, subs = {}, shownSubs = 0 }
+    b.icon = f:CreateTexture(nil, "ARTWORK")
+    if bar then
+        local sb = CreateFrame("StatusBar", nil, f)
+        sb:SetStatusBarTexture(BAR_TEXTURE)
+        sb:SetStatusBarColor(color[1], color[2], color[3])
+        sb:SetMinMaxValues(0, 1)
+        local bg = sb:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.55)
+        b.extra = sb:CreateTexture(nil, "BORDER")          -- rested part, under the fill
+        b.extra:SetTexture(BAR_TEXTURE)
+        b.extra:Hide()
+        b.left = text(sb)
+        b.right = text(sb)
+        b.right:SetJustifyH("RIGHT")
+        b.bar = sb
+    end
+    for i = 1, subs do
+        b.subs[i] = text(f)
+    end
+    blocks[#blocks + 1] = b
+    blocks[key] = b
+    return b
+end
+
+newBlock("xp", true, 2, { 0.58, 0.20, 0.78 })
+newBlock("pet", true, 1, MOOD_COLOR[2])
+newBlock("gold", false, 1)
+newBlock("prof", true, 1, { 0.20, 0.48, 0.86 })
+blocks.gold.icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+
+local function setBlock(b, on)
+    b.on = on and true or false
+    b.frame:SetShown(b.on)
+    if b.left then b.left:SetShown(b.on); b.right:SetShown(b.on) end
+    for i, fs in ipairs(b.subs) do fs:SetShown(b.on and i <= b.shownSubs) end
+end
+
+local function setSubs(b, ...)
+    local n = 0
+    for i = 1, #b.subs do
+        local t = select(i, ...)
+        if t and t ~= "" then n = n + 1; b.subs[n]:SetText(t) end
+    end
+    b.shownSubs = n
+end
+
+local function font(fs, delta)
+    local db = ns.db
+    local size, flags = math.max(8, db.fontSize + delta), db.outline or "OUTLINE"
+    if not fs:SetFont(ns.FontPath(), size, flags) then fs:SetFont(STANDARD_TEXT_FONT, size, flags) end
+end
+
+-- sizes follow the font size setting; bars stretch to the widest line, never narrower than ~18 characters
+function xpwin:Layout()
+    local fsz = ns.db.fontSize
+    local pad, gap = 6, 5
+    local barH, step = fsz + 6, fsz + 3
+    local big = barH + step
+    local textX = big + 6
+    local W = fsz * 18
+    for _, b in ipairs(blocks) do
+        if b.left then font(b.left, -1); font(b.right, -1) end
+        for _, fs in ipairs(b.subs) do font(fs, -1) end
+        if b.on then
+            if b.bar then W = math.max(W, b.left:GetStringWidth() + b.right:GetStringWidth() + 20) end
+            for i = 1, b.shownSubs do W = math.max(W, b.subs[i]:GetStringWidth() + 2) end
+        end
+    end
+    local y = pad
+    for _, b in ipairs(blocks) do
+        if b.on then
+            local f = b.frame
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", self, "TOPLEFT", pad, -y)
+            local h
+            if b.bar then
+                b.icon:ClearAllPoints()
+                b.icon:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+                b.icon:SetSize(big, big)
+                b.bar:ClearAllPoints()
+                b.bar:SetPoint("TOPLEFT", f, "TOPLEFT", textX, 0)
+                b.bar:SetSize(W, barH)
+                b.left:ClearAllPoints(); b.left:SetPoint("LEFT", b.bar, "LEFT", 5, 0)
+                b.right:ClearAllPoints(); b.right:SetPoint("RIGHT", b.bar, "RIGHT", -5, 0)
+                for i = 1, b.shownSubs do
+                    b.subs[i]:ClearAllPoints()
+                    b.subs[i]:SetPoint("TOPLEFT", f, "TOPLEFT", textX + 1, -(barH + 3) - (i - 1) * step)
+                end
+                if b.extraPart and b.extraPart[2] > 0 then
+                    b.extra:ClearAllPoints()
+                    b.extra:SetPoint("TOPLEFT", b.bar, "TOPLEFT", W * b.extraPart[1], 0)
+                    b.extra:SetSize(math.max(1, W * b.extraPart[2]), barH)
+                    b.extra:Show()
+                else
+                    b.extra:Hide()
+                end
+                h = math.max(big, barH + 3 + b.shownSubs * step)
+            else
+                local isz = fsz + 2
+                b.icon:ClearAllPoints()
+                b.icon:SetPoint("TOPLEFT", f, "TOPLEFT", big - isz, 0)
+                b.icon:SetSize(isz, isz)
+                for i = 1, b.shownSubs do
+                    b.subs[i]:ClearAllPoints()
+                    b.subs[i]:SetPoint("TOPLEFT", f, "TOPLEFT", textX + 1, -1 - (i - 1) * step)
+                end
+                h = math.max(isz, b.shownSubs * step)
+            end
+            f:SetSize(textX + W, h)
+            y = y + h + gap
+        end
+    end
+    self:SetWidth(pad * 2 + textX + W)
+    self:SetHeight(math.max(20, y - gap + pad))
+    if ns.LayoutFeed then ns.LayoutFeed() end
+end
+function xpwin:Fit() self:Layout() end
+
+local portraitOf = {}
+local function portrait(b, unit, who)
+    if portraitOf[unit] ~= who and SetPortraitTexture then
+        SetPortraitTexture(b.icon, unit)
+        portraitOf[unit] = who
+    end
+end
+ns.On("UNIT_PORTRAIT_UPDATE", function(unit) unit = ns.S(unit); if unit then portraitOf[unit] = nil end end, "xp:portrait")
+
+local function V(x) return WHITE .. x .. "|r" end
+local function Lb(x) return LABEL .. x .. "|r" end
+
+local function profIcon(name)
+    local tex
+    if C_Spell and C_Spell.GetSpellTexture then
+        local ok, t = pcall(C_Spell.GetSpellTexture, name)
+        if ok then tex = t end
+    end
+    if tex == nil or (issecretvalue and issecretvalue(tex)) then tex = PROF_ICON[name] end
+    return tex or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
 
 local function refresh()
     local db, session = ns.db, ns.session
@@ -337,56 +497,89 @@ local function refresh()
     local remaining = math.max(0, max - cur)
     local elapsed = math.max(1, time() - session.start)
     local perHour = (session.xp > 0 and elapsed >= 30) and (session.xp / elapsed * 3600) or nil
-    local L = xpwin.lines
 
-    for i = 1, 3 do L[i]:SetShown(not atCap) end
+    -- player XP
+    local b = blocks.xp
+    setBlock(b, not atCap)
     if not atCap then
-        local last = session.lastGain and
-            string.format("%s+%s|r %s%s|r", WHITE, shortNumber(session.lastGain), LABEL, KIND[session.lastKind] or "")
-            or (LABEL .. "-|r")
-        L[1]:SetFormattedText("%sxp/h|r %s%s|r    %slast|r %s", LABEL, WHITE, perHour and shortNumber(perHour) or "-", LABEL, last)
-
+        portrait(b, "player", "player")
+        local frac = max > 0 and cur / max or 0
+        b.bar:SetValue(frac)
         local pool = restedPool()
+        b.extraPart = { frac, max > 0 and math.min(pool, remaining) / max or 0 }
+        b.extra:SetVertexColor(0.25, 0.55, 1, 0.45)
+        b.left:SetText(V("Level " .. level))
+        b.right:SetText(V(math.floor(frac * 100) .. "%") .. Lb("  " .. shortNumber(remaining) .. " to go"))
+        local last = session.lastGain and (V("+" .. shortNumber(session.lastGain)) .. " " .. Lb((KIND[session.lastKind] or "") .. ""))
         local kills = killsNeeded(remaining, session.baseKill or session.lastKill, pool)
         local quests = session.lastQuest and math.ceil(remaining / session.lastQuest)
-        local line2 = string.format("%sto level|r %s%s|r %s%s|r  %s%s|r %s%s|r",
-            LABEL, WHITE, kills or "-", LABEL, kills == 1 and "kill" or "kills",
-            WHITE, quests or "-", LABEL, quests == 1 and "quest" or "quests")
-        if pool > 0 then line2 = line2 .. string.format("   %srested %s|r", ns.BLUE, shortNumber(pool)) end
-        L[2]:SetText(line2)
-
         local eta = perHour and (remaining / (perHour / 3600)) or nil
-        L[3]:SetFormattedText("%slevel in|r %s%s|r   %s%d%%  %s left|r",
-            LABEL, WHITE, shortTime(eta), LABEL, max > 0 and math.floor(cur / max * 100) or 0, shortNumber(remaining))
+        local one = { V(perHour and shortNumber(perHour) or "-") .. " " .. Lb("xp/h") }
+        if last then one[#one + 1] = Lb("last ") .. last end
+        if eta then one[#one + 1] = Lb("level in ") .. V(shortTime(eta)) end
+        local two = {}
+        if kills then two[#two + 1] = V(kills) .. " " .. Lb(kills == 1 and "kill" or "kills") end
+        if quests then two[#two + 1] = V(quests) .. " " .. Lb(quests == 1 and "quest" or "quests") end
+        if #two > 0 then two[1] = Lb("to level ") .. two[1] end
+        if pool > 0 then two[#two + 1] = ns.BLUE .. shortNumber(pool) .. " rested|r" end
+        setSubs(b, table.concat(one, SEP), table.concat(two, SEP))
+        setBlock(b, true)
     end
 
-    local earned, spent = session.earned or 0, session.spent or 0
-    local goldRate = (earned > 0 and elapsed >= 30) and money(earned / elapsed * 3600) or (LABEL .. "-|r")
-    -- pet line: only with a hunter pet out
-    local petText, petText2 = petLines()
-    L[4]:SetShown(petText ~= nil)
-    if petText then L[4]:SetText(petText) end
-    L[5]:SetShown(petText2 ~= nil)
-    if petText2 then L[5]:SetText(petText2) end
-
-    L[6]:SetShown(db.showGold ~= false)
-    L[6]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
-
-    -- last line: only while a profession is being worked on
-    local profLine = db.showProf ~= false and ns.ProfessionHudLine and ns.ProfessionHudLine() or nil
-    L[7]:SetShown(profLine ~= nil)
-    if profLine then L[7]:SetText(profLine) end
-
-    -- re-stack visible lines so hidden ones leave no gap
-    local step, n = db.fontSize + 2, 0
-    for i = 1, #L do
-        if L[i]:IsShown() then
-            L[i]:ClearAllPoints()
-            L[i]:SetPoint("TOPLEFT", xpwin, "TOPLEFT", 8, -4 - n * step)
-            n = n + 1
+    -- hunter pet
+    b = blocks.pet
+    local pi = petInfo()
+    if pi then
+        portrait(b, "pet", pet.name)
+        local frac = (pet.max and pet.max > 0) and pet.xp / pet.max or 0
+        b.bar:SetValue(frac)
+        local c = MOOD_COLOR[pi.mood or 0] or { 0.75, 0.55, 0.25 }
+        b.bar:SetStatusBarColor(c[1], c[2], c[3])
+        b.left:SetText(V((pet.name or "Pet") .. "  " .. pet.level))
+        b.right:SetText(V(math.floor(frac * 100) .. "%") .. (pi.kills and Lb("  " .. pi.kills .. (pi.kills == 1 and " kill" or " kills")) or ""))
+        local parts = {}
+        if pi.h then
+            local sz = db.fontSize + 1
+            local face = string.format(HAPPY_FACE, sz, sz, FACE_X[pi.mood], FACE_X[pi.mood] + 24)
+            local t = face .. " " .. pi.h[2] .. pi.h[1] .. "|r"
+            if pi.damage then t = t .. Lb(" " .. pi.damage .. "%") end
+            if pi.mood == 1 then t = t .. ns.RED .. "  feed it|r" end
+            parts[#parts + 1] = t
         end
+        if pi.loyalty then
+            local t = V(pi.loyalty) .. (pi.loyaltyLevel and Lb(" " .. pi.loyaltyLevel .. "/6") or "")
+            if pi.rate and pi.rate < 0 then t = t .. ns.RED .. " falling|r" end
+            parts[#parts + 1] = t
+        end
+        if pi.tp then parts[#parts + 1] = (pi.tp > 0 and (ns.AMBER .. pi.tp .. " TP to spend|r") or (V("0") .. Lb(" TP"))) end
+        setSubs(b, table.concat(parts, SEP))
     end
-    xpwin:Fit()
+    setBlock(b, pi ~= nil)
+
+    -- gold
+    b = blocks.gold
+    local earned, spent = session.earned or 0, session.spent or 0
+    local gold = { Lb("net ") .. V(money(earned - spent, true)) }
+    if earned > 0 and elapsed >= 30 then gold[#gold + 1] = V(money(earned / elapsed * 3600)) .. Lb(" per hour") end
+    setSubs(b, table.concat(gold, SEP))
+    setBlock(b, db.showGold ~= false)
+
+    -- the profession being worked on
+    b = blocks.prof
+    local pr = db.showProf ~= false and ns.ProfessionHudInfo and ns.ProfessionHudInfo() or nil
+    if pr then
+        b.icon:SetTexture(profIcon(pr.name))
+        b.bar:SetValue((pr.rank and pr.max and pr.max > 0) and pr.rank / pr.max or 0)
+        b.left:SetText(V(pr.name))
+        b.right:SetText(pr.rank and (V(pr.rank) .. Lb(" / " .. pr.max)) or "")
+        local parts = {}
+        if pr.ups > 0 then parts[#parts + 1] = ns.GREEN .. "+" .. pr.ups .. "|r" .. (pr.rate and Lb(string.format(" %.0f/h", pr.rate)) or "") end
+        if pr.gathers > 0 then parts[#parts + 1] = V(pr.gathers) .. Lb(pr.gathers == 1 and " gather" or " gathers") end
+        setSubs(b, table.concat(parts, SEP))
+    end
+    setBlock(b, pr ~= nil)
+
+    xpwin:Layout()
 end
 ns.RefreshXP = refresh
 

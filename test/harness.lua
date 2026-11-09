@@ -53,6 +53,7 @@ local function widget(kind, name)
     function M:GetWidth() return self.w end
     function M:GetHeight() return self.h end
     function M:SetAlpha(a) self.alpha = a end
+    function M:SetStatusBarColor(r, g, b) self.color = { r, g, b } end
     function M:SetFrameLevel(l) self.level = l end
     function M:GetFrameLevel() return self.level or 1 end
     function M:GetTop() return 900 end
@@ -436,12 +437,27 @@ world.petLevel, world.petXP, world.petXPMax = 6, 0, 900
 advance(1)
 world.petXP = 45; fire("UNIT_PET_EXPERIENCE", "pet"); advance(1)
 hud("pet out, one pet kill")
-local function petHudLine() for _, l in ipairs(ns.huds.xp.lines) do if l.shown and strip(l.text):find("^pet ") then return strip(l.text) end end end
+local function blockText(key)
+    local b = ns.huds.xp.blocks[key]
+    if not b.on then return nil end
+    local t = {}
+    if b.left then t[#t + 1] = strip(b.left.text); t[#t + 1] = strip(b.right.text) end
+    for i = 1, b.shownSubs do t[#t + 1] = strip(b.subs[i].text) end
+    return (table.concat(t, " | "):gsub("|T.-|t ?", ""))
+end
+local function petHudLine() return blockText("pet") end
 local petLineHappy = petHudLine()
-local petLine2; for i, l in ipairs(ns.huds.xp.lines) do if l.shown and strip(l.text):find("^pet ") then petLine2 = ns.huds.xp.lines[i + 1].shown and strip(ns.huds.xp.lines[i + 1].text) end end
+local petFace = ns.huds.xp.blocks.pet.subs[1].text:find("UI-PetHappiness:14:14:0:0:128:64:0:24", 1, true) ~= nil
+local xpBlock = blockText("xp")
+local xpRested = ns.huds.xp.blocks.xp.extra
 world.petXP = 890; fire("UNIT_PET_EXPERIENCE", "pet"); advance(1)
 world.petLevel, world.petXP = 7, 20; fire("UNIT_PET_EXPERIENCE", "pet"); world.petHappy = 1; advance(1)
 local petLineUnhappy = petHudLine()
+local petBarColor = ns.huds.xp.blocks.pet.bar.color
+local petBarRed = petBarColor ~= nil and petBarColor[1] > 0.7 and petBarColor[2] < 0.3
+world.rested = 200; advance(1)
+local restedShown = ns.huds.xp.blocks.xp.extra.shown and ns.huds.xp.blocks.xp.extra.w > 1 and (blockText("xp") or ""):find("200 rested", 1, true) ~= nil
+world.rested = 0; advance(1)
 local petSessionXP = ns.session.petXP
 ns.db.background = true; ns.ApplyHudSettings(); ns.Feed("short", { key = "bgtest" }); advance(0.5)
 local feedJoined = false
@@ -801,12 +817,18 @@ if os.getenv("SV") then                       -- started from a real saved-varia
 end
 check("6 fights on the character", c.fights == 6)
 check("all 6 fights came from the damage meter", ns.db.diag.fightsFromMeter == 6)
-check("pet line: level, progress, kills from the last pet gain, happiness (" .. tostring(petLineHappy) .. ")", petLineHappy == "pet L6  5%  19 kills   happy 125% damage")
-check("pet level-up gain counted across the wrap, unhappy pet warned (" .. tostring(petLineUnhappy) .. ")", petLineUnhappy == "pet L7  2%  30 kills   unhappy 75% damage, feed it")
+check("pet block: name and level, progress, kills from the last pet gain, happiness, loyalty, TP (" .. tostring(petLineHappy) .. ")",
+    petLineHappy == "Humar  6 | 5%  19 kills | happy 125%  ·  Rebellious 1/6  ·  25 TP to spend")
+check("happy face icon from the pet frame texture", petFace)
+check("pet level-up gain counted across the wrap, unhappy pet warned (" .. tostring(petLineUnhappy) .. ")",
+    petLineUnhappy == "Humar  7 | 2%  30 kills | unhappy 75%  feed it  ·  Rebellious 1/6 falling  ·  25 TP to spend")
+check("pet bar turns red when unhappy", petBarRed)
+check("rested XP drawn on the bar and named", restedShown)
+check("XP block: level bar, rates, kills to level (" .. tostring(xpBlock) .. ")", xpBlock ~= nil and xpBlock:find("^Level 7 | %d+%%  [%d.k]+ to go | [%d.k]+ xp/h") ~= nil)
+check("bars stretch to the widest line", ns.huds.xp.blocks.xp.bar:GetWidth() >= 13 * 18 and ns.huds.xp:GetWidth() > ns.huds.xp.blocks.xp.bar:GetWidth())
 check("pet XP this session 45+845+30", petSessionXP == 920)
 check("with the background on, a feed line is as wide as the XP window and has its background", feedJoined)
 check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == "string" and petProbe:find("C_PetInfo.GetPetTrainingPoints={spent:95;totalPoints:120}", 1, true) ~= nil)
-check("second pet line: loyalty and unspent training points (" .. tostring(petLine2) .. ")", petLine2 == "    loyalty 1 Rebellious   25 training points")
 check("pet damage counted (90)", c.petDmg == 90)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)
