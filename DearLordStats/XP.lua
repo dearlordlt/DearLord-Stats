@@ -182,6 +182,31 @@ local function petTraining()
     return math.max(0, total - (spent or 0))
 end
 
+-- what this client gives for the pet calls: missing, secret or plain values (read once per session)
+function ns.PetProbe()
+    local function show(...)
+        local out = {}
+        for i = 1, select("#", ...) do
+            local v = select(i, ...)
+            out[i] = (issecretvalue and issecretvalue(v)) and "secret" or tostring(v)
+        end
+        return #out > 0 and table.concat(out, ",") or "none"
+    end
+    local function try(name)
+        local fn = _G[name]
+        if type(fn) ~= "function" then return name .. "=missing" end
+        local ok, a, b, c, d = pcall(fn)
+        if not ok then return name .. "=error " .. tostring(a) end
+        return name .. "=" .. show(a, b, c, d)
+    end
+    local parts = {}
+    for _, n in ipairs({ "GetPetHappiness", "GetPetLoyalty", "GetPetTrainingPoints", "GetPetExperience", "GetPetFoodTypes" }) do
+        parts[#parts + 1] = try(n)
+    end
+    parts[#parts + 1] = "C_PetInfo=" .. type(C_PetInfo)
+    return table.concat(parts, " ")
+end
+
 local function petLines()
     if ns.db.showPet == false or not hunterPet() then return nil end
     readPet()
@@ -210,9 +235,7 @@ local function petLines()
     if tp then
         parts[#parts + 1] = string.format("%s%d|r %straining points|r", tp > 0 and ns.AMBER or WHITE, tp, LABEL)
     end
-    if ns.db.diag then
-        ns.db.diag.petApi = string.format("happy=%s loyalty=%s tp=%s", tostring(mood), tostring(raw), tostring(tp))
-    end
+    if ns.db.diag and not ns.db.diag.petProbe then ns.db.diag.petProbe = ns.PetProbe() end
     return line, #parts > 0 and ("    " .. table.concat(parts, "   ")) or nil
 end
 
@@ -327,6 +350,7 @@ xpwin:SetScript("OnEnter", function(self)
 end)
 
 ns.OnLogin(function()
+    if ns.db.diag then ns.db.diag.petProbe = nil end       -- probed again each session
     ns.curLevel = ns.N(UnitLevel("player"))
     lastXP, lastMax, levelAtLastXP = ns.N(UnitXP("player")), ns.N(UnitXPMax("player")), ns.curLevel
     lastMoney = ns.N(GetMoney())

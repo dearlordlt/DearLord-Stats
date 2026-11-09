@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.11.1"
+ns.version = "2.11.2"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -394,8 +394,12 @@ function ns.LayoutFeed()
         row:SetScale(ns.db.scale)
         ns.SetHudFont(row.text)
         row:SetAlpha(row:IsShown() and row:GetAlpha() or 0)
-        if prev then row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -1)
-        else row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2) end
+        -- with the background on, the lines join the window above as one block
+        local joined = ns.db.background
+        row.bg:SetColorTexture(0, 0, 0, ns.db.bgAlpha or 0.4)
+        row.bg:SetShown(joined)
+        if prev then row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, joined and 0 or -1)
+        else row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, joined and 0 or -2) end
         prev = row
     end
 end
@@ -407,6 +411,9 @@ local function feedRow(i)
     row:SetSize(200, 16)
     row:SetAlpha(0)
     row:Hide()
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    row.bg = bg
     local text = row:CreateFontString(nil, "OVERLAY")
     text:SetFont(STANDARD_TEXT_FONT, 13, "OUTLINE")
     text:SetShadowColor(0, 0, 0, 1)
@@ -425,9 +432,17 @@ local function feedRow(i)
     return row
 end
 
+-- a line is at least as wide as the window it hangs under, so the backgrounds line up
+local function feedWidth(row)
+    local anchor = feedAnchor()
+    local w = row.text:GetStringWidth() + 16
+    if ns.db.background and anchor then w = math.max(w, anchor:GetWidth()) end
+    if math.abs(row:GetWidth() - w) > 0.5 then row:SetWidth(w) end
+end
+
 local function feedShow(row, entry)
     row.text:SetText(entry.text)
-    row:SetWidth(row.text:GetStringWidth() + 16)
+    feedWidth(row)
     row:SetHeight(ns.db.fontSize + 4)
     row.tab, row.key = entry.tab, entry.key
     row.age, row.hold, row.state = 0, entry.hold or 7, "in"
@@ -456,6 +471,7 @@ ns.Every(0.05, function(dt)
     for i = 1, #feed.rows do
         local row = feed.rows[i]
         if row:IsShown() then
+            feedWidth(row)
             row.age = row.age + dt
             if row.state == "in" then
                 row:SetAlpha(math.min(1, row.age / 0.35))

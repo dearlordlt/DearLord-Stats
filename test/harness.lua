@@ -440,6 +440,11 @@ world.petXP = 890; fire("UNIT_PET_EXPERIENCE", "pet"); advance(1)
 world.petLevel, world.petXP = 7, 20; fire("UNIT_PET_EXPERIENCE", "pet"); world.petHappy = 1; advance(1)
 local petLineUnhappy = petHudLine()
 local petSessionXP = ns.session.petXP
+ns.db.background = true; ns.ApplyHudSettings(); ns.Feed("short", { key = "bgtest" }); advance(0.5)
+local feedJoined = false
+for _, row in ipairs(ns.feed.rows) do if row.shown and row.key == "bgtest" then feedJoined = row.bg.shown and row:GetWidth() >= ns.huds.xp:GetWidth() end end
+ns.db.background = false; ns.ApplyHudSettings()
+local petProbe = ns.db.diag.petProbe
 ns.huds.xp.scripts.OnEnter(ns.huds.xp)
 world.petHappy = nil
 world.hp = 175
@@ -796,6 +801,8 @@ check("all 6 fights came from the damage meter", ns.db.diag.fightsFromMeter == 6
 check("pet line: level, progress, kills from the last pet gain, happiness (" .. tostring(petLineHappy) .. ")", petLineHappy == "pet L6  5%  19 kills   happy 125% damage")
 check("pet level-up gain counted across the wrap, unhappy pet warned (" .. tostring(petLineUnhappy) .. ")", petLineUnhappy == "pet L7  2%  30 kills   unhappy 75% damage, feed it")
 check("pet XP this session 45+845+30", petSessionXP == 920)
+check("with the background on, a feed line is as wide as the XP window and has its background", feedJoined)
+check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == "string" and petProbe:find("GetPetTrainingPoints=120,95") ~= nil)
 check("second pet line: loyalty and unspent training points (" .. tostring(petLine2) .. ")", petLine2 == "    loyalty 1 Rebellious   25 training points")
 check("pet damage counted (90)", c.petDmg == 90)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
