@@ -21,7 +21,7 @@ local CONTROLS = {
     { type = "check", key = "showXP", label = "XP window" },
     { type = "check", key = "showGold", label = "Gold line in the XP window" },
     { type = "check", key = "showProf", label = "Profession line while gathering or crafting" },
-    { type = "check", key = "showPet", label = "Hunter pet line: level, XP and happiness" },
+    { type = "check", key = "showPet", label = "Hunter pet lines: level, XP, happiness, loyalty, training points" },
 
     { header = "Messages under the HUD" },
     { type = "check", key = "showRecap", label = "Fight recap after combat" },

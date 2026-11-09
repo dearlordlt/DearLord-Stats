@@ -4,7 +4,7 @@ local ADDON, ns = ...
 local LABEL, WHITE = ns.LABEL, ns.WHITE
 local shortNumber, shortTime, money = ns.shortNumber, ns.shortTime, ns.money
 
-local xpwin = ns.CreateHud("xp", 6, "LEFT")
+local xpwin = ns.CreateHud("xp", 7, "LEFT")
 xpwin.panelTab = "combat"
 
 local lastXP, lastMax, levelAtLastXP, lastMoney
@@ -166,7 +166,23 @@ local function petMood()
     return h, ns.N(damage), ns.N(loyaltyRate), ns.N(happiness)
 end
 
-local function petLine()
+-- "Loyalty Level 3 (Submissive)" -> 3, "Submissive"; any other wording is shown as it comes
+local function petLoyalty()
+    local text = GetPetLoyalty and ns.S(GetPetLoyalty())
+    if not text then return nil end
+    local level, name = text:match("(%d+)"), text:match("%((.-)%)")
+    return level, name, text
+end
+
+local function petTraining()
+    if not GetPetTrainingPoints then return nil end
+    local total, spent = GetPetTrainingPoints()
+    total, spent = ns.N(total), ns.N(spent)
+    if not total then return nil end
+    return math.max(0, total - (spent or 0))
+end
+
+local function petLines()
     if ns.db.showPet == false or not hunterPet() then return nil end
     readPet()
     if not pet.level then return nil end
@@ -176,12 +192,28 @@ local function petLine()
         line = line .. string.format("  %s%d%%|r  %s%s|r %s%s|r", LABEL, math.floor(pet.xp / pet.max * 100),
             WHITE, kills or "-", LABEL, kills == 1 and "kill" or "kills")
     end
-    local h, damage, _, level = petMood()
+    local h, damage, rate, mood = petMood()
     if h then
         line = line .. "   " .. h[2] .. h[1] .. "|r"
-        if level == 1 and damage then line = line .. string.format(" %s%d%% damage, feed it|r", ns.RED, damage) end
+        if damage then line = line .. string.format(" %s%d%% damage|r", mood == 1 and ns.RED or LABEL, damage) end
+        if mood == 1 then line = line .. ns.RED .. ", feed it|r" end
     end
-    return line
+
+    local parts = {}
+    local lvl, name, raw = petLoyalty()
+    if lvl or raw then
+        local trend = (rate and rate < 0) and (ns.RED .. " falling|r") or ""
+        parts[#parts + 1] = lvl and string.format("%sloyalty|r %s%s%s|r%s", LABEL, WHITE, lvl, name and (" " .. name) or "", trend)
+            or (WHITE .. raw .. "|r" .. trend)
+    end
+    local tp = petTraining()
+    if tp then
+        parts[#parts + 1] = string.format("%s%d|r %straining points|r", tp > 0 and ns.AMBER or WHITE, tp, LABEL)
+    end
+    if ns.db.diag then
+        ns.db.diag.petApi = string.format("happy=%s loyalty=%s tp=%s", tostring(mood), tostring(raw), tostring(tp))
+    end
+    return line, #parts > 0 and ("    " .. table.concat(parts, "   ")) or nil
 end
 
 local KIND = { kill = "kill", quest = "quest", other = "other" }
@@ -223,17 +255,19 @@ local function refresh()
     local earned, spent = session.earned or 0, session.spent or 0
     local goldRate = (earned > 0 and elapsed >= 30) and money(earned / elapsed * 3600) or (LABEL .. "-|r")
     -- pet line: only with a hunter pet out
-    local petText = petLine()
+    local petText, petText2 = petLines()
     L[4]:SetShown(petText ~= nil)
     if petText then L[4]:SetText(petText) end
+    L[5]:SetShown(petText2 ~= nil)
+    if petText2 then L[5]:SetText(petText2) end
 
-    L[5]:SetShown(db.showGold ~= false)
-    L[5]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
+    L[6]:SetShown(db.showGold ~= false)
+    L[6]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
 
     -- last line: only while a profession is being worked on
     local profLine = db.showProf ~= false and ns.ProfessionHudLine and ns.ProfessionHudLine() or nil
-    L[6]:SetShown(profLine ~= nil)
-    if profLine then L[6]:SetText(profLine) end
+    L[7]:SetShown(profLine ~= nil)
+    if profLine then L[7]:SetText(profLine) end
 
     -- re-stack visible lines so hidden ones leave no gap
     local step, n = db.fontSize + 2, 0
@@ -274,6 +308,11 @@ xpwin:SetScript("OnEnter", function(self)
         local h, damage, rate = petMood()
         if h then
             GameTooltip:AddDoubleLine("Happiness", h[2] .. h[1] .. "|r" .. (damage and ("  " .. damage .. "% damage") or ""), G, G, G, 1, 1, 1)
+        end
+        if GetPetFoodTypes then
+            local foods = {}
+            for _, f in ipairs({ GetPetFoodTypes() }) do f = ns.S(f); if f then foods[#foods + 1] = f end end
+            if #foods > 0 then GameTooltip:AddDoubleLine("Eats", table.concat(foods, ", "), G, G, G, 1, 1, 1) end
         end
         if rate and rate ~= 0 then
             GameTooltip:AddDoubleLine("Loyalty", rate > 0 and (ns.GREEN .. "growing|r") or (ns.RED .. "falling, feed your pet|r"), G, G, G, 1, 1, 1)
