@@ -370,11 +370,17 @@ local function newBlock(key, bar, subs, color)
     return b
 end
 
+newBlock("stats", false, 1)                     -- fps, latency and lag, as a slim top row
 newBlock("xp", true, 2, { 0.58, 0.20, 0.78 })
 newBlock("pet", true, 1, MOOD_COLOR[2])
 newBlock("gold", false, 1)
 newBlock("prof", true, 1, { 0.20, 0.48, 0.86 })
 blocks.gold.icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+blocks.stats.icon:Hide()
+local divider = xpwin:CreateTexture(nil, "ARTWORK")      -- hairline under the stats row
+divider:SetTexture(BAR_TEXTURE)
+divider:SetVertexColor(1, 1, 1, 0.12)
+divider:Hide()
 
 local function setBlock(b, on)
     b.on = on and true or false
@@ -411,7 +417,7 @@ function xpwin:Layout()
         for _, fs in ipairs(b.subs) do font(fs, -1) end
         if b.on then
             if b.bar then W = math.max(W, b.left:GetStringWidth() + b.right:GetStringWidth() + 20) end
-            for i = 1, b.shownSubs do W = math.max(W, b.subs[i]:GetStringWidth() + 2) end
+            for i = 1, b.shownSubs do W = math.max(W, b.subs[i]:GetStringWidth() + 2 - (b.key == "stats" and textX or 0)) end
         end
     end
     local y = pad
@@ -443,6 +449,10 @@ function xpwin:Layout()
                     b.extra:Hide()
                 end
                 h = math.max(big, barH + 3 + b.shownSubs * step)
+            elseif b.key == "stats" then
+                b.subs[1]:ClearAllPoints()
+                b.subs[1]:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+                h = step
             else
                 local isz = fsz + 2
                 b.icon:ClearAllPoints()
@@ -456,8 +466,20 @@ function xpwin:Layout()
             end
             f:SetSize(textX + W, h)
             y = y + h + gap
+            if b.key == "stats" then
+                local below = false
+                for _, o in ipairs(blocks) do if o ~= b and o.on then below = true end end
+                divider:SetShown(below)
+                if below then
+                    divider:ClearAllPoints()
+                    divider:SetPoint("TOPLEFT", self, "TOPLEFT", pad, -(y - 2))
+                    divider:SetSize(textX + W, 1)
+                    y = y + 2
+                end
+            end
         end
     end
+    if not blocks.stats.on then divider:Hide() end
     self:SetWidth(pad * 2 + textX + W)
     self:SetHeight(math.max(20, y - gap + pad))
     if ns.LayoutFeed then ns.LayoutFeed() end
@@ -490,8 +512,16 @@ local function refresh()
     local db, session = ns.db, ns.session
     if not db or not session or not ns.char then return end
     local level, maxLevel = ns.N(UnitLevel("player")) or 0, (GetMaxPlayerLevel and ns.N(GetMaxPlayerLevel())) or 60
-    if not db.showXP then xpwin:Hide(); if ns.LayoutFeed then ns.LayoutFeed() end return end
+    local showXP = db.showXP ~= false
+    local stats = db.showStats ~= false and ns.StatsLine and ns.StatsLine() or nil
+    if not showXP and not stats then xpwin:Hide(); if ns.LayoutFeed then ns.LayoutFeed() end return end
     xpwin:Show()
+
+    -- fps, latency and lag
+    local b = blocks.stats
+    if stats then setSubs(b, stats) end
+    setBlock(b, stats ~= nil)
+
     local atCap = level >= maxLevel
     local cur, max = ns.N(UnitXP("player")) or 0, ns.N(UnitXPMax("player")) or 0
     local remaining = math.max(0, max - cur)
@@ -499,9 +529,9 @@ local function refresh()
     local perHour = (session.xp > 0 and elapsed >= 30) and (session.xp / elapsed * 3600) or nil
 
     -- player XP
-    local b = blocks.xp
-    setBlock(b, not atCap)
-    if not atCap then
+    b = blocks.xp
+    setBlock(b, showXP and not atCap)
+    if showXP and not atCap then
         portrait(b, "player", "player")
         local frac = max > 0 and cur / max or 0
         b.bar:SetValue(frac)
@@ -528,7 +558,7 @@ local function refresh()
 
     -- hunter pet
     b = blocks.pet
-    local pi = petInfo()
+    local pi = showXP and petInfo() or nil
     if pi then
         portrait(b, "pet", pet.name)
         local frac = (pet.max and pet.max > 0) and pet.xp / pet.max or 0
@@ -562,11 +592,11 @@ local function refresh()
     local gold = { Lb("net ") .. V(money(earned - spent, true)) }
     if earned > 0 and elapsed >= 30 then gold[#gold + 1] = V(money(earned / elapsed * 3600)) .. Lb(" per hour") end
     setSubs(b, table.concat(gold, SEP))
-    setBlock(b, db.showGold ~= false)
+    setBlock(b, showXP and db.showGold ~= false)
 
     -- the profession being worked on
     b = blocks.prof
-    local pr = db.showProf ~= false and ns.ProfessionHudInfo and ns.ProfessionHudInfo() or nil
+    local pr = showXP and db.showProf ~= false and ns.ProfessionHudInfo and ns.ProfessionHudInfo() or nil
     if pr then
         b.icon:SetTexture(profIcon(pr.name))
         b.bar:SetValue((pr.rank and pr.max and pr.max > 0) and pr.rank / pr.max or 0)
@@ -588,6 +618,7 @@ xpwin:SetScript("OnEnter", function(self)
     if not session then return end
     self.bg:Show()
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+    if ns.db.showStats ~= false and ns.StatsTooltip then ns.StatsTooltip(GameTooltip); GameTooltip:AddLine(" ") end
     GameTooltip:AddLine("DearLord Stats: session")
     GameTooltip:AddDoubleLine("Session length", shortTime(time() - session.start), 0.8, 0.8, 0.8, 1, 1, 1)
     GameTooltip:AddDoubleLine("XP gained", shortNumber(session.xp), 0.8, 0.8, 0.8, 1, 1, 1)

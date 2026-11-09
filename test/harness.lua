@@ -97,11 +97,12 @@ C_Timer = { After = function(d, fn) timers[#timers + 1] = { at = now + d, fn = f
 function GetNetStats() return 0, 0, 127, 128 end
 function GetFramerate() return 99.6 end
 function GetBuildInfo() return "1.60.1", "69913", "Sep 17 2026", 16001 end
-function UnitName(u) if u == "mouseover" and world.mo then return world.mo.name end if u == "player" then return "Tess Ter" elseif u == "pet" then return world.pet elseif u == "target" then return world.targetName end end
+function UnitName(u) if u == "mouseover" and world.mo then return world.mo.name end if u == "player" then return "Tess Ter" elseif u == "pet" then return world.pet elseif u == "target" then return world.targetName elseif world.party and world.party[u] then return world.party[u].name end end
 function UnitIsPlayer(u) return u == "mouseover" and world.mo ~= nil end
 function GetGuildInfo(u) if u == "mouseover" and world.mo then return world.mo.guild end end
 function GetRealmName() return "Classic Beta PvE 2" end
-function UnitClass(u) if u == "mouseover" and world.mo then return world.mo.className, world.mo.class end return "Hunter", "HUNTER", 3 end
+function UnitClass(u) if u == "mouseover" and world.mo then return world.mo.className, world.mo.class end
+    if world.party and world.party[u] then return world.party[u].class, world.party[u].class:upper(), 1 end return "Hunter", "HUNTER", 3 end
 function UnitRace(u) if u == "mouseover" and world.mo then return world.mo.race, world.mo.race end return "Troll", "Troll", 8 end
 function UnitLevel(u) if u == "mouseover" and world.mo then return world.mo.level end if u == "target" then return world.targetLevel end if u == "pet" then return world.pet and world.petLevel end return world.level end
 function HasPetUI() if world.pet then return true, true end return false, false end
@@ -121,7 +122,8 @@ function GetMoney() return world.money end
 function UnitIsAFK() return world.afk end
 function UnitAffectingCombat() return world.combat end
 function InCombatLockdown() return world.combat end
-function UnitExists(u) return (u == "pet" and world.pet ~= nil) or (u == "npc" and world.npc == true) end
+function UnitExists(u) return u == "player" or (u == "pet" and world.pet ~= nil) or (u == "npc" and world.npc == true) or (u == "target" and world.threat.target ~= nil)
+    or (world.party ~= nil and world.party[u] ~= nil) end
 function UnitHealth(u) if u == "player" then return hide(world.hp) end return secret() end
 function UnitHealthMax() return world.hpMax end
 function UnitPower() return hide(world.mana) end
@@ -129,6 +131,19 @@ function UnitPowerMax() return world.manaMax end
 function UnitPowerType() return 0, "MANA" end
 function UnitGUID(u) if u == "player" then return "Player-1-0000ABCD" elseif u == "pet" then return world.pet and "Pet-0-1" elseif world.threat[u] then return world.threat[u] end end
 function UnitThreatSituation(who, unit) if world.threat[unit] and who == "player" then return 3 end end
+-- world.tlist[unit] = { tanking, status, scaled, raw, value } on the current target; world.threatSecret hides the numbers
+function UnitDetailedThreatSituation(unit, mob)
+    if not world.threat[mob] or not world.tlist then return nil end
+    local t = world.tlist[unit]
+    if not t then return nil end
+    if world.threatSecret then return secret(), secret(), secret(), secret(), secret() end
+    return t[1], t[2], t[3], t[4], t[5]
+end
+function UnitCanAttack(_, u) return world.threat[u] ~= nil end
+function UnitIsUnit(a, b) return a == b end
+function IsInGroup() return world.party ~= nil end
+function IsInRaid() return false end
+function GetNumGroupMembers() local n = 0; for _ in pairs(world.party or {}) do n = n + 1 end; return n > 0 and n + 1 or 0 end
 function UnitCastingInfo() if world.casting then return hide("Aimed Shot") end end
 function UnitChannelInfo() return nil end
 function GetZoneText() return world.zone end
@@ -359,7 +374,7 @@ end
 local function strip(s) return (s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
 local function hud(title)
     io.write("\n== " .. title .. "\n")
-    for _, key in ipairs({ "stats", "xp" }) do
+    for _, key in ipairs({ "xp", "threat" }) do
         local f = ns.huds[key]
         if f.shown then for _, l in ipairs(f.lines) do if l.shown and l.text ~= "" then io.write("   " .. strip(l.text) .. "\n") end end end
     end
@@ -399,6 +414,7 @@ local function runFight(o)
         fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-" .. (now - 0.25) .. c, c)
         advance(1.5)
     end
+    if o.during then advance(0.5); o.during() end
     fire("UNIT_COMBAT", "player", "WOUND", "", o.taken, 1)
     fire("UNIT_COMBAT", "target", "WOUND", "", o.dmg, 1)
     for _ = 1, o.oom or 0 do fire("UI_ERROR_MESSAGE", 50, "Not enough mana") end
@@ -431,7 +447,19 @@ runFight({ name = "Kolkar Outrunner", mobs = 2, kills = 2, dmg = 300, taken = 15
 hud("after fight 2 (two mobs, ran out of mana, close call)")
 world.hp = 175; world.mana = 120; world.pet = "Humar"; fire("UNIT_PET", "player")
 advance(15)
-runFight({ name = "Dire Mottled Boar", dmg = 120, petDmg = 90, petSpells = { { 17253, 60 }, { 16827, 30 } }, taken = 20, duration = 14, spells = { { 75, 120 } } })
+local function threatRows()
+    local tw, out = ns.huds.threat, {}
+    if not tw.shown then return nil end
+    for i = 1, tw.count or 0 do local r = tw.rows[i]; out[#out + 1] = strip(r.name.text) .. "=" .. strip(r.value.text) end
+    return table.concat(out, ", ")
+end
+local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview
+world.tlist = { player = { false, 1, 92, 110, 16900 }, pet = { true, 3, 100, 100, 18400 } }
+runFight({ during = function()
+    threatSolo = threatRows()
+    local r = ns.huds.threat.rows[2]
+    threatSoloEdge = r ~= nil and r.edge.shown
+end, name = "Dire Mottled Boar", dmg = 120, petDmg = 90, petSpells = { { 17253, 60 }, { 16827, 30 } }, taken = 20, duration = 14, spells = { { 75, 120 } } })
 hud("after fight 3 (with a pet)")
 world.petLevel, world.petXP, world.petXPMax = 6, 0, 900
 advance(1)
@@ -497,7 +525,13 @@ fire("QUEST_TURNED_IN", 1, 450, 0); fire("CHAT_MSG_COMBAT_XP_GAIN", "You gain 45
 world.xp = (world.xp + 450) - world.xpMax; world.xpMax = 1400; fire("PLAYER_XP_UPDATE", "player"); advance(3)
 
 -- two fights at the new level against the same higher-level mob
-runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 200, taken = 120, duration = 20 }); world.hp = 175
+threatAfter = threatRows()
+world.party = { party1 = { name = "Tankard", class = "Warrior" }, party2 = { name = "Healbot", class = "Priest" } }
+world.tlist = { player = { false, 0, 60, 66, 9000 }, party1 = { true, 3, 100, 100, 15000 }, party2 = { false, 0, 20, 22, 3000 } }
+world.threatSecret = true
+runFight({ during = function() threatParty = threatRows() end, name = "Razormane Hunter", mobLevel = 10, dmg = 200, taken = 120, duration = 20 }); world.hp = 175
+world.party, world.threatSecret, world.tlist = nil, nil, nil
+ns.ThreatPreview(5); threatPreview = threatRows(); advance(6)
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 210, taken = 130, duration = 22 }); world.hp = 175
 
 -- looting: junk, a stack, a green, a blue, some coin; then a loot reset files it under history
@@ -701,7 +735,7 @@ local lagNew = {}
 for i = lagBefore + 1, #ns.lag.samples do lagNew[#lagNew + 1] = ns.lag.samples[i].ms end
 
 -- every tab and scope of the report, plus menu, tooltips, clicks
-for _, key in ipairs({ "stats", "xp" }) do
+for _, key in ipairs({ "xp", "threat" }) do
     local f = ns.huds[key]
     for _, s in ipairs({ "OnEnter", "OnLeave", "OnDragStart", "OnDragStop" }) do f.scripts[s](f) end
     f.dragged = nil; f.scripts.OnMouseUp(f, "RightButton")
@@ -772,7 +806,7 @@ local fitBtn; for _, f in ipairs(frames) do if f.kind == "Button" and f.fs and f
 if fitBtn then fitBtn.scripts.OnEnter(fitBtn); fitBtn.scripts.OnLeave(fitBtn); fitBtn.scripts.OnClick(fitBtn, "LeftButton"); fitBtn.scripts.OnClick(fitBtn, "RightButton") end
 local afterDefault = ns.db.panelSize
 for _, f in ipairs(frames) do      -- exercise every row's hover and right-click, and every button
-    if f.scripts.OnEnter and f ~= ns.huds.stats and f ~= ns.huds.xp then pcall(f.scripts.OnEnter, f); if f.scripts.OnLeave then pcall(f.scripts.OnLeave, f) end end
+    if f.scripts.OnEnter and f ~= ns.huds.threat and f ~= ns.huds.xp then pcall(f.scripts.OnEnter, f); if f.scripts.OnLeave then pcall(f.scripts.OnLeave, f) end end
 end
 for _, cmd in ipairs({ "", "", "levels", "summary", "recap", "recap", "nudges", "nudges", "size 14", "scale 1", "alpha 1", "bg", "bg", "lock", "lock", "errors", "help" }) do
     SlashCmdList["DEARLORDSTATS"](cmd)
@@ -830,6 +864,13 @@ check("pet XP this session 45+845+30", petSessionXP == 920)
 check("with the background on, a feed line is as wide as the XP window and has its background", feedJoined)
 check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == "string" and petProbe:find("C_PetInfo.GetPetTrainingPoints={spent:95;totalPoints:120}", 1, true) ~= nil)
 check("pet damage counted (90)", c.petDmg == 90)
+check("threat solo: pet holding aggro first, then you at 92% (" .. tostring(threatSolo) .. ")", threatSolo == "Humar=aggro, Tess Ter=169  92%")
+check("threat edge shows your state colour", threatSoloEdge == true)
+check("threat window gone a few seconds after the fight", threatAfter == nil)
+check("threat in a party with secret numbers: three bars, no crash (" .. tostring(threatParty) .. ")", threatParty ~= nil and select(2, threatParty:gsub("=", "")) == 3)
+check("threat preview shows five bars", threatPreview ~= nil and select(2, threatPreview:gsub("=", "")) == 5)
+check("threat probe recorded", type(ns.db.diag.threatProbe) == "string" and ns.db.diag.threatProbe:find("player:false/1/92", 1, true) ~= nil)
+check("fps row sits at the top of the XP window", (blockText("stats") or ""):find("^100 fps  ·  H 127  W 128 ms  ·  lag") ~= nil)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)
 check("split by level: 4 fights at 7, 2 at 8", ns.char.byLevel[7].fights == 4 and ns.char.byLevel[8].fights == 2)

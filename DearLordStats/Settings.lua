@@ -17,11 +17,13 @@ local CONTROLS = {
     { type = "check", key = "locked", label = "Lock the windows in place" },
 
     { header = "What is shown" },
-    { type = "check", key = "showStats", label = "Latency, lag and FPS line" },
+    { type = "check", key = "showStats", label = "FPS, latency and lag row at the top of the XP window" },
     { type = "check", key = "showXP", label = "XP window" },
     { type = "check", key = "showGold", label = "Gold line in the XP window" },
     { type = "check", key = "showProf", label = "Profession line while gathering or crafting" },
     { type = "check", key = "showPet", label = "Hunter pet lines: level, XP, happiness, loyalty, training points" },
+    { type = "check", key = "showThreat", label = "Threat window in combat: you, your pet, your party or raid" },
+    { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },
 
     { header = "Messages under the HUD" },
     { type = "check", key = "showRecap", label = "Fight recap after combat" },
@@ -60,7 +62,7 @@ end
 
 function ns.ResetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "stats", "xp", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.panelSize = nil
     applyAll()
     ns.say("window positions and sizes reset")

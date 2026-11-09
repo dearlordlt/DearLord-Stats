@@ -9,7 +9,7 @@ local function toggle(key, after)
 end
 local function resetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "stats", "xp", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.scale, db.alpha, db.fontSize = d.scale, d.alpha, d.fontSize
     db.panelSize = nil
     ns.ApplyHudSettings()
@@ -25,6 +25,7 @@ local ITEMS = {
     { text = "Print level log", fn = function() ns.PrintLevelLog() end },
     { divider = true },
     { text = "Show XP window", key = "showXP", after = applyAndRefresh },
+    { text = "Show threat window", key = "showThreat", after = function() if ns.RefreshThreat then ns.RefreshThreat() end end },
     { text = "Fight recap after combat", key = "showRecap" },
     { text = "Gentle reminders", key = "nudges" },
     { text = "Dark background", key = "background", after = applyAndRefresh },
@@ -68,7 +69,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test] | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -86,6 +87,9 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "resetxp" or cmd == "session" then ns.ResetSession()
         elseif cmd == "lock" then db.locked = not db.locked; ns.say(db.locked and "locked" or "unlocked")
         elseif cmd == "xp" then db.showXP = not db.showXP; applyAndRefresh()
+        elseif cmd == "threat" then
+            if arg == "test" or arg == "preview" then ns.ThreatPreview(20); ns.say("threat preview for 20 s: drag it where you want it")
+            else db.showThreat = db.showThreat == false; ns.RefreshThreat(); ns.say("threat window " .. (db.showThreat and "on" or "off")) end
         elseif cmd == "recap" then db.showRecap = not db.showRecap; ns.say("fight recap " .. (db.showRecap and "on" or "off"))
         elseif cmd == "nudges" then db.nudges = not db.nudges; ns.say("reminders " .. (db.nudges and "on" or "off"))
         elseif cmd == "bg" then db.background = not db.background; applyAndRefresh()

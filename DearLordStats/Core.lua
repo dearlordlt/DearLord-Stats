@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.13.1"
+ns.version = "2.14.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -187,12 +187,12 @@ end
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
     showRecap = true, nudges = true,
-    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true,
+    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
     ahTooltip = true, ahAutoScan = false, ahTooltipNeutral = true, ahCompare = "always", panelEsc = true,
     censusPassive = true, censusWho = true,
-    stats = { point = "TOP", x = 0, y = -12 },
-    xp    = { point = "TOP", x = 0, y = -34 },
+    xp     = { point = "TOP", x = 0, y = -12 },
+    threat = { point = "TOP", x = 330, y = -40 },
     panel = { point = "CENTER", x = 0, y = 40 },
 }
 ns.defaults = defaults
@@ -383,8 +383,7 @@ ns.feed = feed
 
 local function feedAnchor()
     local xp = ns.huds.xp
-    if xp and xp:IsShown() then return xp end
-    return ns.huds.stats
+    return xp                                -- a hidden window still holds its place
 end
 
 function ns.LayoutFeed()

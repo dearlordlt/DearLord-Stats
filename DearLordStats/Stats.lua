@@ -95,31 +95,24 @@ local function lagMedian(count, maxAge)
 end
 ns.lagMedian = lagMedian
 
-local stats = ns.CreateHud("stats", 1, "CENTER")
-
-stats:SetScript("OnEnter", function(self)
-    self.bg:Show()
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-    GameTooltip:AddLine("DearLord Stats")
-    GameTooltip:AddLine("H = home latency, W = world latency (the game refreshes these every ~30 s).", 0.8, 0.8, 0.8, true)
-    GameTooltip:AddLine("lag = measured live on your own casts.", 0.8, 0.8, 0.8)
+-- the line itself lives at the top of the XP window (XP.lua asks for it every second)
+function ns.StatsTooltip(tt)
+    local G = 0.8
+    tt:AddLine("Connection")
+    tt:AddLine("H = home latency, W = world latency (the game refreshes these every ~30 s); lag = measured live on your own casts.", 0.6, 0.6, 0.6, true)
     if #lag.samples > 0 then
         local med, worst, now = lagMedian(10, 300), 0, GetTime()
         for _, s in ipairs(lag.samples) do if now - s.at <= 300 and s.ms > worst then worst = s.ms end end
-        GameTooltip:AddDoubleLine("Last cast", lag.samples[#lag.samples].ms .. " ms", 0.8, 0.8, 0.8, 1, 1, 1)
-        if med then GameTooltip:AddDoubleLine("Typical (5 min)", med .. " ms", 0.8, 0.8, 0.8, 1, 1, 1) end
-        GameTooltip:AddDoubleLine("Worst (5 min)", worst .. " ms", 0.8, 0.8, 0.8, 1, 1, 1)
+        tt:AddDoubleLine("Last cast", lag.samples[#lag.samples].ms .. " ms", G, G, G, 1, 1, 1)
+        if med then tt:AddDoubleLine("Typical (5 min)", med .. " ms", G, G, G, 1, 1, 1) end
+        tt:AddDoubleLine("Worst (5 min)", worst .. " ms", G, G, G, 1, 1, 1)
     else
-        GameTooltip:AddLine("Cast something after a short pause to get a reading.", 0.6, 0.6, 0.6)
+        tt:AddLine("Cast something after a short pause to get a lag reading.", 0.6, 0.6, 0.6)
     end
-    GameTooltip:AddLine("Click: open report.  Drag: move.  Right-click: options.", 0.6, 0.8, 1)
-    GameTooltip:Show()
-end)
+end
 
-local function refresh()
-    if not ns.db then return end
-    stats:SetShown(ns.db.showStats ~= false)
-    if ns.db.showStats == false then return end
+local SEP = "|cff8a8a8a  ·  |r"
+function ns.StatsLine()
     local _, _, home, world = GetNetStats()
     home, world = ns.N(home) or 0, ns.N(world) or 0
     local fps = math.floor((ns.N(GetFramerate()) or 0) + 0.5)
@@ -128,10 +121,8 @@ local function refresh()
     if recent then lagText = string.format("|cff%s%d|r", latencyColor(recent), recent)
     elseif #lag.samples > 0 then lagText = string.format("%s%d|r", LABEL, lag.samples[#lag.samples].ms)
     else lagText = LABEL .. "-|r" end
-    stats.lines[1]:SetFormattedText("%sH|r |cff%s%d|r  %sW|r |cff%s%d|r %sms|r    %slag|r %s %sms|r    |cff%s%d|r %sfps|r",
-        LABEL, latencyColor(home), home, LABEL, latencyColor(world), world, LABEL,
-        LABEL, lagText, LABEL, fpsColor(fps), fps, LABEL)
-    stats:Fit()
+    return string.format("|cff%s%d|r %sfps|r%s%sH|r |cff%s%d|r  %sW|r |cff%s%d|r %sms|r%s%slag|r %s %sms|r",
+        fpsColor(fps), fps, LABEL, SEP,
+        LABEL, latencyColor(home), home, LABEL, latencyColor(world), world, LABEL, SEP,
+        LABEL, lagText, LABEL)
 end
-ns.Every(1, refresh, "stats:refresh")
-ns.OnLogin(refresh, "stats:login")
