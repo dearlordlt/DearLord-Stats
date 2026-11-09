@@ -69,7 +69,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test] | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -89,7 +89,9 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "xp" then db.showXP = not db.showXP; applyAndRefresh()
         elseif cmd == "threat" then
             if arg == "test" or arg == "preview" then ns.ThreatPreview(20); ns.say("threat preview for 20 s: drag it where you want it")
-            else db.showThreat = db.showThreat == false; ns.RefreshThreat(); ns.say("threat window " .. (db.showThreat and "on" or "off")) end
+            elseif arg == "off" or arg == "on" then db.showThreat = arg == "on"; ns.RefreshThreat(); ns.say("threat window " .. arg)
+            elseif db.showThreat == false then ns.say("the threat window is off: /dls threat on")
+            elseif not ns.ToggleThreat() then ns.say("threat window closed; it opens with your next fight (with a pet out or in a group)") end
         elseif cmd == "recap" then db.showRecap = not db.showRecap; ns.say("fight recap " .. (db.showRecap and "on" or "off"))
         elseif cmd == "nudges" then db.nudges = not db.nudges; ns.say("reminders " .. (db.nudges and "on" or "off"))
         elseif cmd == "bg" then db.background = not db.background; applyAndRefresh()

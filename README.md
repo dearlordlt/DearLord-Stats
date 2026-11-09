@@ -23,12 +23,13 @@ On screen, always: one small window you can drag anywhere.
   (rested-aware), time to level; a pet block (portrait, XP bar coloured by happiness, loyalty,
   training points); net gold and gold per hour; a skill bar for the profession you are working on.
 
-In combat: a **threat window** with one bar per unit on the mob's threat list: you and your pet
-when solo, the party and their pets in a dungeon, the top ten in a raid (always including you).
+With a pet out or in a group: a **threat window** that opens with each fight and stays until you
+close it with its x (the last fight's bars stay, dimmed). One bar per unit on the mob's threat
+list: you and your pet when solo, the party and their pets in a dungeon, the top ten in a raid (always including you).
 Bars are in class colours with class crests (pet portraits for pets), 100% means that unit pulls
 aggro, the holder is marked `aggro`, and a coloured edge shows the state (green safe, yellow above
-the tank, orange or red holding aggro). It hides a few seconds after the fight; `/dls threat test`
-shows a 20-second preview to move it. If the client hides threat numbers in a fight, the bars still
+the tank, orange or red holding aggro). `/dls threat` shows or hides it, `/dls threat test` shows a
+20-second preview to move it, `/dls threat off` turns it off. If the client hides threat numbers in a fight, the bars still
 fill but are not sorted.
 
 On screen, only when relevant: a one-line **fight recap** after combat, a profession line while you

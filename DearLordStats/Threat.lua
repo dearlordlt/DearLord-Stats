@@ -21,11 +21,12 @@ local CLASS_TC = {
 -- 0 lower than the tank, 1 higher than the tank (about to pull), 2 has aggro but someone is close, 3 has aggro
 local STATE_HEX = { [0] = "9fd89f", [1] = "ffd166", [2] = "ff9a3c", [3] = "ff5a5a" }
 local RAID_ROWS = 10
-local HOLD = 3                                       -- seconds the window stays after the fight data stops
+-- the window opens itself when a fight starts (only with a pet out or in a group), keeps the
+-- last fight's bars dimmed afterwards, and stays until you close it with its x
 
 local rows = {}
 tw.rows = rows
-local state = { mob = nil, lastData = 0, demoUntil = 0, entries = {} }
+local state = { open = false, hasData = false, stale = false, demoUntil = 0, entries = {} }
 ns.threat = state
 
 local function text(parent, justify)
@@ -45,6 +46,16 @@ end
 
 tw.title = text(tw)
 tw.sub = text(tw, "RIGHT")
+
+local close = CreateFrame("Button", nil, tw)
+close.tex = close:CreateTexture(nil, "ARTWORK")
+close.tex:SetAllPoints()
+close.tex:SetTexture("Interface\\Buttons\\UI-StopButton")
+close.tex:SetVertexColor(0.65, 0.65, 0.65)
+close:SetScript("OnEnter", function(self) self.tex:SetVertexColor(1, 0.35, 0.35) end)
+close:SetScript("OnLeave", function(self) self.tex:SetVertexColor(0.65, 0.65, 0.65) end)
+close:SetScript("OnClick", function() ns.CloseThreat() end)
+tw.close = close
 
 local function row(i)
     if rows[i] then return rows[i] end
@@ -225,9 +236,11 @@ function tw:Layout()
         -- a secret name gives a secret width; such a row just takes the default width
         W = math.max(W, (N(r.name:GetStringWidth()) or 0) + (N(r.value:GetStringWidth()) or 0) + 24)
     end
-    W = math.max(W, (N(self.title:GetStringWidth()) or 0) + (N(self.sub:GetStringWidth()) or 0) + 12 - barH - 4)
+    W = math.max(W, (N(self.title:GetStringWidth()) or 0) + (N(self.sub:GetStringWidth()) or 0) + fsz + 16 - barH - 4)
     self.title:ClearAllPoints(); self.title:SetPoint("TOPLEFT", self, "TOPLEFT", pad, -pad)
-    self.sub:ClearAllPoints(); self.sub:SetPoint("TOPRIGHT", self, "TOPRIGHT", -pad, -pad - 1)
+    local csz = fsz
+    close:ClearAllPoints(); close:SetPoint("TOPRIGHT", self, "TOPRIGHT", -pad + 1, -pad + 1); close:SetSize(csz, csz)
+    self.sub:ClearAllPoints(); self.sub:SetPoint("TOPRIGHT", self, "TOPRIGHT", -pad - csz - 4, -pad - 1)
     local y = pad + fsz + 4
     for i = 1, self.count or 0 do
         local r = rows[i]
@@ -253,6 +266,7 @@ local function show(list, demo, mobName)
         n = i
         local r = row(i)
         fill(r, e, demo)
+        r:SetAlpha(1)
         r:Show()
     end
     for i = n + 1, #rows do rows[i]:Hide() end
@@ -265,6 +279,19 @@ local function show(list, demo, mobName)
     tw:Show()
 end
 
+-- worth showing: a pet out, or a party or raid around you
+local function eligible()
+    if UnitExists and B(UnitExists("pet")) then return true end
+    return (IsInGroup and B(IsInGroup())) or (IsInRaid and B(IsInRaid())) or false
+end
+
+-- the fight is over or the mob is gone: keep the last bars, dimmed
+local function goStale()
+    if state.stale then return end
+    state.stale = true
+    for i = 1, tw.count or 0 do rows[i]:SetAlpha(0.5) end
+end
+
 local function refresh()
     local db = ns.db
     if not db then return end
@@ -272,8 +299,11 @@ local function refresh()
     local now = GetTime()
     if state.demoUntil > now then
         show(DEMO, true, "preview")
+        state.demo = true
         return
     end
+    if state.demo then state.demo, state.hasData = false, false end     -- the preview replaced the last bars
+    if not state.open or not eligible() then tw:Hide(); return end
     local mob = findMob()
     local list = {}
     if mob then
@@ -283,11 +313,11 @@ local function refresh()
         end
     end
     if #list == 0 then
-        if tw:IsShown() and now - state.lastData > HOLD then tw:Hide() end
+        if state.hasData then goStale(); tw:Show() else tw:Hide() end
         return
     end
     probe(mob, list)
-    state.lastData = now
+    state.hasData, state.stale = true, false
     local sorted = sortEntries(list)
     local raid = IsInRaid and B(IsInRaid())
     if raid and #list > RAID_ROWS then
@@ -303,6 +333,18 @@ local function refresh()
     show(list, false, UnitName and UnitName(mob))
 end
 ns.RefreshThreat = refresh
+
+function ns.CloseThreat()
+    state.open, state.demoUntil = false, 0
+    tw:Hide()
+end
+-- /dls threat: open it now (with the last fight's bars) or close it
+function ns.ToggleThreat()
+    if tw:IsShown() then ns.CloseThreat(); return false end
+    state.open = true
+    refresh()
+    return tw:IsShown()
+end
 
 function ns.ThreatPreview(seconds)
     state.demoUntil = GetTime() + (seconds or 20)
@@ -325,10 +367,13 @@ tw:SetScript("OnEnter", function(self)
             GameTooltip:AddDoubleLine(name, ns.shortNumber(math.floor(v / 100)) .. (raw and string.format("  (%.0f%% raw)", raw) or ""), 0.8, 0.8, 0.8, 1, 1, 1)
         end
     end
-    GameTooltip:AddLine("Drag: move.  Right-click: options.  /dls threat test: preview.", 0.6, 0.8, 1)
+    if state.stale then GameTooltip:AddLine("Dimmed: the last fight. Opens again with the next one; the x closes it.", 0.6, 0.6, 0.6, true) end
+    GameTooltip:AddLine("Drag: move.  Right-click: options.  /dls threat: show or hide.  /dls threat test: preview.", 0.6, 0.8, 1)
     GameTooltip:Show()
 end)
 
+-- every fight opens it again, even after a close
+ns.On("PLAYER_REGEN_DISABLED", function() if eligible() then state.open = true end; refresh() end, "threat:combat")
 -- threat events can fire dozens of times a second in a raid; the bars redraw five times a second
 ns.On("PLAYER_TARGET_CHANGED", function() refresh() end, "threat:target")
 ns.Every(0.2, refresh, "threat:tick")

@@ -443,7 +443,9 @@ runFight({ name = "Kolkar Drudge", dmg = 161, taken = 64, duration = 23, casts =
 hud("after fight 1 (one mob)")
 world.hp = 175; world.mana = 120
 advance(20)
-runFight({ name = "Kolkar Outrunner", mobs = 2, kills = 2, dmg = 300, taken = 150, duration = 31, oom = 2, casts = { 3044 }, spells = { { 75, 180 }, { 3044, 120 } } })
+local threatNoPet
+world.tlist = { player = { true, 3, 100, 100, 5000 } }
+runFight({ during = function() threatNoPet = ns.huds.threat.shown end, name = "Kolkar Outrunner", mobs = 2, kills = 2, dmg = 300, taken = 150, duration = 31, oom = 2, casts = { 3044 }, spells = { { 75, 180 }, { 3044, 120 } } })
 hud("after fight 2 (two mobs, ran out of mana, close call)")
 world.hp = 175; world.mana = 120; world.pet = "Humar"; fire("UNIT_PET", "player")
 advance(15)
@@ -453,7 +455,7 @@ local function threatRows()
     for i = 1, tw.count or 0 do local r = tw.rows[i]; out[#out + 1] = strip(r.name.text) .. "=" .. strip(r.value.text) end
     return table.concat(out, ", ")
 end
-local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview
+local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview, threatDim, threatClosed
 world.tlist = { player = { false, 1, 92, 110, 16900 }, pet = { true, 3, 100, 100, 18400 } }
 runFight({ during = function()
     threatSolo = threatRows()
@@ -526,6 +528,9 @@ world.xp = (world.xp + 450) - world.xpMax; world.xpMax = 1400; fire("PLAYER_XP_U
 
 -- two fights at the new level against the same higher-level mob
 threatAfter = threatRows()
+threatDim = ns.huds.threat.rows[1] and ns.huds.threat.rows[1].alpha
+ns.huds.threat.close.scripts.OnClick(ns.huds.threat.close); advance(1)
+threatClosed = ns.huds.threat.shown
 world.party = { party1 = { name = "Tankard", class = "Warrior" }, party2 = { name = "Healbot", class = "Priest" } }
 world.tlist = { player = { false, 0, 60, 66, 9000 }, party1 = { true, 3, 100, 100, 15000 }, party2 = { false, 0, 20, 22, 3000 } }
 world.threatSecret = true
@@ -866,7 +871,10 @@ check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == 
 check("pet damage counted (90)", c.petDmg == 90)
 check("threat solo: pet holding aggro first, then you at 92% (" .. tostring(threatSolo) .. ")", threatSolo == "Humar=aggro, Tess Ter=169  92%")
 check("threat edge shows your state colour", threatSoloEdge == true)
-check("threat window gone a few seconds after the fight", threatAfter == nil)
+check("no threat window solo without a pet", threatNoPet == false)
+check("threat window stays after the fight, dimmed (" .. tostring(threatAfter) .. ")", threatAfter == "Humar=aggro, Tess Ter=169  92%" and threatDim == 0.5)
+check("the x closes it", threatClosed == false)
+check("after a close, the next fight (now in a party) opens it again", threatParty ~= nil)
 check("threat in a party with secret numbers: three bars, no crash (" .. tostring(threatParty) .. ")", threatParty ~= nil and select(2, threatParty:gsub("=", "")) == 3)
 check("threat preview shows five bars", threatPreview ~= nil and select(2, threatPreview:gsub("=", "")) == 5)
 check("threat probe recorded", type(ns.db.diag.threatProbe) == "string" and ns.db.diag.threatProbe:find("player:false/1/92", 1, true) ~= nil)
