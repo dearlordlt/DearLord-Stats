@@ -22,7 +22,8 @@ On screen, always: two small transparent text blocks you can drag anywhere.
 - **XP per hour, last gain, kills and quests to level (rested-aware), time to level, gold per hour.**
 
 On screen, only when relevant: a one-line **fight recap** after combat, a profession line while you
-gather or craft, and gentle one-line reminders (a new spell that is not on your bars, skill-ups you
+gather or craft, a **hunter pet line** (pet level, progress, kills to its next level, happiness) while
+your pet is out, and gentle one-line reminders (a new spell that is not on your bars, skill-ups you
 could craft from your bags, a trainer unlock you reached). They fade out by themselves; left-click
 opens the matching report tab, right-click dismisses.
 

@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.10.0"
+ns.version = "2.11.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -187,7 +187,7 @@ end
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
     showRecap = true, nudges = true,
-    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true,
+    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
     ahTooltip = true, ahAutoScan = false, ahTooltipNeutral = true, ahCompare = "always", panelEsc = true,
     censusPassive = true, censusWho = true,

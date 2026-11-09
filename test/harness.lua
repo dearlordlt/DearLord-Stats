@@ -102,7 +102,11 @@ function GetGuildInfo(u) if u == "mouseover" and world.mo then return world.mo.g
 function GetRealmName() return "Classic Beta PvE 2" end
 function UnitClass(u) if u == "mouseover" and world.mo then return world.mo.className, world.mo.class end return "Hunter", "HUNTER", 3 end
 function UnitRace(u) if u == "mouseover" and world.mo then return world.mo.race, world.mo.race end return "Troll", "Troll", 8 end
-function UnitLevel(u) if u == "mouseover" and world.mo then return world.mo.level end if u == "target" then return world.targetLevel end return world.level end
+function UnitLevel(u) if u == "mouseover" and world.mo then return world.mo.level end if u == "target" then return world.targetLevel end if u == "pet" then return world.pet and world.petLevel end return world.level end
+function HasPetUI() if world.pet then return true, true end return false, false end
+function GetPetExperience() if not world.pet then return 0, 0 end return hide(world.petXP or 0), world.petXPMax or 900 end
+function GetPetHappiness() if world.pet then return world.petHappy or 3, ({ 75, 100, 125 })[world.petHappy or 3], (world.petHappy or 3) == 1 and -10 or 20 end end
+function GetPetLoyalty() if world.pet then return "Loyalty Level 1 (Rebellious)" end end
 function GetMaxPlayerLevel() return 60 end
 function UnitXP() return world.xp end
 function UnitXPMax() return world.xpMax end
@@ -423,6 +427,18 @@ world.hp = 175; world.mana = 120; world.pet = "Humar"; fire("UNIT_PET", "player"
 advance(15)
 runFight({ name = "Dire Mottled Boar", dmg = 120, petDmg = 90, petSpells = { { 17253, 60 }, { 16827, 30 } }, taken = 20, duration = 14, spells = { { 75, 120 } } })
 hud("after fight 3 (with a pet)")
+world.petLevel, world.petXP, world.petXPMax = 6, 0, 900
+advance(1)
+world.petXP = 45; fire("UNIT_PET_EXPERIENCE", "pet"); advance(1)
+hud("pet out, one pet kill")
+local function petHudLine() for _, l in ipairs(ns.huds.xp.lines) do if l.shown and strip(l.text):find("^pet ") then return strip(l.text) end end end
+local petLineHappy = petHudLine()
+world.petXP = 890; fire("UNIT_PET_EXPERIENCE", "pet"); advance(1)
+world.petLevel, world.petXP = 7, 20; fire("UNIT_PET_EXPERIENCE", "pet"); world.petHappy = 1; advance(1)
+local petLineUnhappy = petHudLine()
+local petSessionXP = ns.session.petXP
+ns.huds.xp.scripts.OnEnter(ns.huds.xp)
+world.petHappy = nil
 world.hp = 175
 advance(10)
 runFight({ name = "Armored Scorpid", mobs = 3, dmg = 80, taken = 175, duration = 9, die = true })
@@ -774,6 +790,9 @@ if os.getenv("SV") then                       -- started from a real saved-varia
 end
 check("6 fights on the character", c.fights == 6)
 check("all 6 fights came from the damage meter", ns.db.diag.fightsFromMeter == 6)
+check("pet line: level, progress, kills from the last pet gain, happiness (" .. tostring(petLineHappy) .. ")", petLineHappy == "pet L6  5%  19 kills   happy")
+check("pet level-up gain counted across the wrap, unhappy pet warned (" .. tostring(petLineUnhappy) .. ")", petLineUnhappy == "pet L7  2%  30 kills   unhappy 75% damage, feed it")
+check("pet XP this session 45+845+30", petSessionXP == 920)
 check("pet damage counted (90)", c.petDmg == 90)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)

@@ -4,7 +4,7 @@ local ADDON, ns = ...
 local LABEL, WHITE = ns.LABEL, ns.WHITE
 local shortNumber, shortTime, money = ns.shortNumber, ns.shortTime, ns.money
 
-local xpwin = ns.CreateHud("xp", 5, "LEFT")
+local xpwin = ns.CreateHud("xp", 6, "LEFT")
 xpwin.panelTab = "combat"
 
 local lastXP, lastMax, levelAtLastXP, lastMoney
@@ -129,6 +129,61 @@ function ns.ResetSession()
     ns.say("session reset")
 end
 
+
+-- hunter pet: level, progress, kills to its next level (from its last XP gain), happiness
+local pet = {}
+local HAPPY = { { "unhappy", ns.RED }, { "content", ns.AMBER }, { "happy", ns.GREEN } }
+
+local function hunterPet()
+    if not (HasPetUI and GetPetExperience and ns.B(UnitExists("pet"))) then return false end
+    local hasUI, isHunter = HasPetUI()
+    return ns.B(hasUI) and ns.B(isHunter) or false
+end
+
+local function readPet()
+    local cur, max = GetPetExperience()
+    cur, max = ns.N(cur), ns.N(max)
+    local level, name = ns.N(UnitLevel("pet")), ns.S(UnitName("pet"))
+    if not cur or not max or not level then return end
+    if name ~= pet.name then
+        pet.name, pet.lastGain = name, nil
+    elseif pet.xp then
+        local gain
+        if level > pet.level then gain = math.max(0, pet.max - pet.xp) + cur
+        elseif level == pet.level and cur > pet.xp then gain = cur - pet.xp end
+        if gain and gain > 0 then
+            pet.lastGain = gain
+            if ns.session then ns.session.petXP = (ns.session.petXP or 0) + gain end
+        end
+    end
+    pet.xp, pet.max, pet.level = cur, max, level
+end
+
+local function petMood()
+    if not GetPetHappiness then return nil end
+    local happiness, damage, loyaltyRate = GetPetHappiness()
+    local h = HAPPY[ns.N(happiness) or 0]
+    return h, ns.N(damage), ns.N(loyaltyRate), ns.N(happiness)
+end
+
+local function petLine()
+    if ns.db.showPet == false or not hunterPet() then return nil end
+    readPet()
+    if not pet.level then return nil end
+    local line = string.format("%spet|r %sL%d|r", LABEL, WHITE, pet.level)
+    if pet.max and pet.max > 0 then
+        local kills = pet.lastGain and math.ceil(math.max(0, pet.max - pet.xp) / pet.lastGain)
+        line = line .. string.format("  %s%d%%|r  %s%s|r %s%s|r", LABEL, math.floor(pet.xp / pet.max * 100),
+            WHITE, kills or "-", LABEL, kills == 1 and "kill" or "kills")
+    end
+    local h, damage, _, level = petMood()
+    if h then
+        line = line .. "   " .. h[2] .. h[1] .. "|r"
+        if level == 1 and damage then line = line .. string.format(" %s%d%% damage, feed it|r", ns.RED, damage) end
+    end
+    return line
+end
+
 local KIND = { kill = "kill", quest = "quest", other = "other" }
 
 local function refresh()
@@ -167,13 +222,18 @@ local function refresh()
 
     local earned, spent = session.earned or 0, session.spent or 0
     local goldRate = (earned > 0 and elapsed >= 30) and money(earned / elapsed * 3600) or (LABEL .. "-|r")
-    L[4]:SetShown(db.showGold ~= false)
-    L[4]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
+    -- pet line: only with a hunter pet out
+    local petText = petLine()
+    L[4]:SetShown(petText ~= nil)
+    if petText then L[4]:SetText(petText) end
 
-    -- fifth line: only while a profession is being worked on
+    L[5]:SetShown(db.showGold ~= false)
+    L[5]:SetFormattedText("%sgold/h|r %s%s|r   %snet|r %s%s|r", LABEL, WHITE, goldRate, LABEL, WHITE, money(earned - spent, true))
+
+    -- last line: only while a profession is being worked on
     local profLine = db.showProf ~= false and ns.ProfessionHudLine and ns.ProfessionHudLine() or nil
-    L[5]:SetShown(profLine ~= nil)
-    if profLine then L[5]:SetText(profLine) end
+    L[6]:SetShown(profLine ~= nil)
+    if profLine then L[6]:SetText(profLine) end
 
     -- re-stack visible lines so hidden ones leave no gap
     local step, n = db.fontSize + 2, 0
@@ -200,6 +260,28 @@ xpwin:SetScript("OnEnter", function(self)
     GameTooltip:AddDoubleLine("Gold earned / spent", money(session.earned or 0) .. " / " .. money(session.spent or 0), 0.8, 0.8, 0.8, 1, 1, 1)
     local rec = char and char.levels[ns.curLevel]
     if rec then GameTooltip:AddDoubleLine("This level so far", shortTime(rec.seconds) .. (rec.partial and " *" or ""), 0.8, 0.8, 0.8, 1, 1, 1) end
+    if hunterPet() and pet.level then
+        local G = 0.8
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Pet: " .. (pet.name or "?"))
+        local loyalty = GetPetLoyalty and ns.S(GetPetLoyalty())
+        GameTooltip:AddDoubleLine("Level", pet.level .. (loyalty and ("  " .. loyalty) or ""), G, G, G, 1, 1, 1)
+        if pet.max and pet.max > 0 then
+            GameTooltip:AddDoubleLine("Pet XP", shortNumber(pet.xp) .. " / " .. shortNumber(pet.max), G, G, G, 1, 1, 1)
+        end
+        if pet.lastGain then GameTooltip:AddDoubleLine("Last pet gain", "+" .. shortNumber(pet.lastGain), G, G, G, 1, 1, 1) end
+        if (session.petXP or 0) > 0 then GameTooltip:AddDoubleLine("Pet XP this session", shortNumber(session.petXP), G, G, G, 1, 1, 1) end
+        local h, damage, rate = petMood()
+        if h then
+            GameTooltip:AddDoubleLine("Happiness", h[2] .. h[1] .. "|r" .. (damage and ("  " .. damage .. "% damage") or ""), G, G, G, 1, 1, 1)
+        end
+        if rate and rate ~= 0 then
+            GameTooltip:AddDoubleLine("Loyalty", rate > 0 and (ns.GREEN .. "growing|r") or (ns.RED .. "falling, feed your pet|r"), G, G, G, 1, 1, 1)
+        end
+        if pet.level >= (ns.N(UnitLevel("player")) or 0) then
+            GameTooltip:AddLine("A pet cannot level past you.", 0.5, 0.7, 1, true)
+        end
+    end
     GameTooltip:AddLine("Kills to level count double only while rested XP lasts.", 0.5, 0.7, 1, true)
     GameTooltip:AddLine("Click: open report.  Drag: move.  Right-click: options.", 0.6, 0.8, 1)
     GameTooltip:Show()
@@ -221,6 +303,7 @@ ns.On("CHAT_MSG_COMBAT_XP_GAIN", function(msg)
 end, "xp:chat")
 ns.On("QUEST_TURNED_IN", function() questFlag = GetTime() end, "xp:quest")
 ns.On("PLAYER_MONEY", onMoney, "xp:money")
+ns.On("UNIT_PET_EXPERIENCE", function() if hunterPet() then readPet() end end, "xp:pet")
 ns.On("UPDATE_EXHAUSTION", function()
     local pool = restedPool()
     if pool > restedBefore then restedBefore = pool end
