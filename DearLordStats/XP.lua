@@ -315,7 +315,7 @@ local KIND = { kill = "kill", quest = "quest", other = "other" }
 -- the window: blocks of icon + bar + small lines. XP (player portrait),
 -- pet (portrait, bar coloured by happiness), gold (coin), profession (its icon).
 ----------------------------------------------------------------------
-local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local BAR_TEXTURE = "Interface\\Buttons\\WHITE8X8"     -- flat fill
 local HAPPY_FACE = "|TInterface\\PetPaperDollFrame\\UI-PetHappiness:%d:%d:0:0:128:64:%d:%d:0:23|t"
 local FACE_X = { 48, 24, 0 }                  -- unhappy, content, happy
 local MOOD_COLOR = { { 0.80, 0.22, 0.20 }, { 0.85, 0.68, 0.18 }, { 0.30, 0.72, 0.30 } }
@@ -601,8 +601,10 @@ xpwin:SetScript("OnEnter", function(self)
         GameTooltip:AddLine("Pet: " .. (pet.name or "?"))
         GameTooltip:AddDoubleLine("Level", tostring(pet.level), G, G, G, 1, 1, 1)
         local lvl, lname, raw = petLoyalty()
-        if lvl or raw then
-            GameTooltip:AddDoubleLine("Loyalty level", lvl and (lvl .. (lname and (" " .. lname) or "")) or raw, G, G, G, 1, 1, 1)
+        lname = lname or raw
+        lvl = tonumber(lvl) or (lname and LOYALTY_LEVEL[lname])
+        if lname or lvl then
+            GameTooltip:AddDoubleLine("Loyalty level", (lname or "") .. (lvl and ("  " .. lvl .. "/6") or ""), G, G, G, 1, 1, 1)
         end
         local tp = petTraining()
         if tp then GameTooltip:AddDoubleLine("Training points unspent", tostring(tp), G, G, G, 1, 1, 1) end
