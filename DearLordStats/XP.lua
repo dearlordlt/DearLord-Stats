@@ -203,7 +203,36 @@ function ns.PetProbe()
     for _, n in ipairs({ "GetPetHappiness", "GetPetLoyalty", "GetPetTrainingPoints", "GetPetExperience", "GetPetFoodTypes" }) do
         parts[#parts + 1] = try(n)
     end
-    parts[#parts + 1] = "C_PetInfo=" .. type(C_PetInfo)
+    -- the names only (some pet calls act, e.g. abandon), never called
+    local function keys(t, pattern)
+        local out = {}
+        if type(t) ~= "table" then return "none" end
+        for k in pairs(t) do if type(k) == "string" and (not pattern or k:find(pattern)) then out[#out + 1] = k end end
+        table.sort(out)
+        return #out > 0 and table.concat(out, "/") or "none"
+    end
+    parts[#parts + 1] = "C_PetInfo=" .. keys(C_PetInfo)
+    local found = {}
+    for k, v in pairs(_G) do
+        if type(k) == "string" and (type(v) == "function" or type(v) == "table")
+            and (k:find("Happ") or k:find("Loyal") or k:find("Training") or k:find("Diet") or k:find("PetFood")
+                or (k:find("^C_") and k:find("Pet"))) then
+            found[#found + 1] = k .. ":" .. type(v)
+        end
+    end
+    table.sort(found)
+    parts[#parts + 1] = "globals=" .. (#found > 0 and table.concat(found, "/") or "none")
+    local PT = Enum and Enum.PowerType
+    parts[#parts + 1] = "PowerType=" .. keys(PT, "Happ")
+    local hp = PT and PT.Happiness or 4
+    parts[#parts + 1] = "UnitPower(pet," .. tostring(hp) .. ")=" .. show(UnitPower("pet", hp)) .. "/" .. show(UnitPowerMax("pet", hp))
+        .. " type=" .. show(UnitPowerType("pet"))
+    for _, n in ipairs({ "PetLevelText", "PetLoyaltyText", "PetTrainingPointText", "PetTrainingPointLabel", "PetPaperDollFrameExpBar" }) do
+        local f = _G[n]
+        parts[#parts + 1] = n .. "=" .. (type(f) == "table" and f.GetText and show(f:GetText()) or type(f))
+    end
+    local hf = _G.PetFrameHappiness
+    parts[#parts + 1] = "PetFrameHappiness=" .. type(hf) .. (type(hf) == "table" and hf.IsShown and (" shown=" .. tostring(hf:IsShown())) or "")
     return table.concat(parts, " ")
 end
 
