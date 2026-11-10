@@ -37,6 +37,10 @@ in the world with it off, the pet line says so and a small banner offers the swi
 text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
 icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
 
+**Keys on the cooldown manager:** the game's own cooldown manager shows your spells without their
+keys. Each icon gets the key of the action bar slot that holds the spell (or a macro casting it),
+shortened the way action buttons do: `R`, `c-5`, `s-WU`, `M4`.
+
 On screen, only when relevant: a one-line **fight recap** after combat, a profession line while you
 gather or craft, **hunter pet lines** (level, progress, kills to its next level, happiness, loyalty, unspent training points) while
 your pet is out, and gentle one-line reminders (a new spell that is not on your bars, skill-ups you

@@ -287,6 +287,19 @@ C_SpellBook = {
 }
 local BARS = { [1] = { "spell", 1978 }, [2] = { "spell", 3044 }, [3] = { "spell", 75 }, [9] = { "macro", 1 } }
 function GetActionInfo(slot) local a = BARS[slot]; if a then return a[1], a[2], a[1] end end
+BARS[61] = { "spell", 781 }
+SPELLS[781] = "Disengage"
+SPELLS[14281] = "Arcane Shot"                  -- a higher rank: same name, another id
+local BINDINGS = { ACTIONBUTTON1 = "CTRL-5", ACTIONBUTTON2 = "R", MULTIACTIONBAR1BUTTON1 = "BUTTON4" }
+function GetBindingKey(cmd) return BINDINGS[cmd] end
+-- the game's cooldown manager: icons that know only a cooldown id
+local CDM = { [11] = { spellID = 14281 }, [12] = { spellID = 1978 }, [13] = { spellID = 19434 }, [14] = { spellID = 781, overrideSpellID = 781 } }
+C_CooldownViewer = { GetCooldownViewerCooldownInfo = function(id) return CDM[id] end }
+local function cdmItem(id) local w = widget("Frame"); w.cooldownID = id; w.w = 40; function w:GetCooldownID() return self.cooldownID end; return w end
+local cdmItems = { cdmItem(11), cdmItem(12), cdmItem(13) }
+EssentialCooldownViewer = widget("Frame"); function EssentialCooldownViewer:GetItemFrames() return cdmItems end
+local cdmUtility = { cdmItem(14) }
+UtilityCooldownViewer = widget("Frame"); function UtilityCooldownViewer:GetChildren() return unpack(cdmUtility) end
 function GetActionText(slot) if BARS[slot] and BARS[slot][1] == "macro" then return "Opener" end end
 function GetMacroBody(name) return "#showtooltip\n/cast Hunter's Mark" end
 MenuUtil = { CreateContextMenu = function(owner, gen)
@@ -904,6 +917,17 @@ check("after the click the banner goes", growlFixed)
 check("Growl off while alone: banner with the on macro", growlOffSolo)
 check("right-click leaves it and hides the banner", growlDismissed)
 check("turned back on: nothing left to say", growlBack)
+local function keyOf(item) local l = ns.keys.labels[item]; return l and l.holder.shown and l.fs.text or nil end
+check("cooldown manager: Arcane Shot shows R through another rank's name, Serpent Sting c-5, unbound Aimed Shot nothing",
+    keyOf(cdmItems[1]) == "R" and keyOf(cdmItems[2]) == "c-5" and keyOf(cdmItems[3]) == nil)
+check("cooldown manager: a mouse button on the second bar reads M4", keyOf(cdmUtility[1]) == "M4")
+check("key names shortened", ns.ShortKey("SHIFT-MOUSEWHEELUP") == "s-WU" and ns.ShortKey("ALT-CTRL-F") == "ac-F" and ns.ShortKey("NUMPAD7") == "N7")
+BINDINGS.ACTIONBUTTON2 = "T"; fire("UPDATE_BINDINGS"); advance(1)
+check("a changed binding follows", keyOf(cdmItems[1]) == "T")
+ns.db.showKeys = false; advance(1)
+check("and the setting takes the labels away", keyOf(cdmItems[1]) == nil)
+ns.db.showKeys = true
+check("cooldown manager probe recorded (" .. tostring(ns.db.diag.keysProbe) .. ")", type(ns.db.diag.keysProbe) == "string" and ns.db.diag.keysProbe:find("icons=4", 1, true) ~= nil)
 check("fps row sits at the top of the XP window", (blockText("stats") or ""):find("^100 fps  ·  H 127  W 128 ms  ·  lag") ~= nil)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)
