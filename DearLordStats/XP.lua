@@ -568,6 +568,9 @@ local function refresh()
         b.left:SetText(V((pet.name or "Pet") .. "  " .. pet.level))
         b.right:SetText(V(math.floor(frac * 100) .. "%") .. (pi.kills and Lb("  " .. pi.kills .. (pi.kills == 1 and " kill" or " kills")) or ""))
         local parts = {}
+        local growl = ns.GrowlWarning and ns.GrowlWarning()
+        if growl == "on" then parts[#parts + 1] = ns.RED .. "Growl ON|r"
+        elseif growl == "off" then parts[#parts + 1] = ns.AMBER .. "Growl off|r" end
         if pi.h then
             local sz = db.fontSize + 1
             local face = string.format(HAPPY_FACE, sz, sz, FACE_X[pi.mood], FACE_X[pi.mood] + 24)

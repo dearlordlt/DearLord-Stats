@@ -23,6 +23,7 @@ local CONTROLS = {
     { type = "check", key = "showProf", label = "Profession line while gathering or crafting" },
     { type = "check", key = "showPet", label = "Hunter pet lines: level, XP, happiness, loyalty, training points" },
     { type = "check", key = "showThreat", label = "Threat window: opens with each fight when you have a pet out or a group" },
+    { type = "check", key = "growlWarn", label = "Growl reminder: on autocast in a dungeon group, or off when you are alone" },
     { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },
 
     { header = "Messages under the HUD" },
@@ -62,7 +63,7 @@ end
 
 function ns.ResetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "growl", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.panelSize = nil
     applyAll()
     ns.say("window positions and sizes reset")

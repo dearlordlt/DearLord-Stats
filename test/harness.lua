@@ -142,6 +142,9 @@ end
 function UnitCanAttack(_, u) return world.threat[u] ~= nil end
 function UnitIsUnit(a, b) return a == b end
 function IsInGroup() return world.party ~= nil end
+function IsInInstance() if world.instance then return true, world.instance end return false, "none" end
+-- the pet bar: Growl sits in slot 4, on autocast unless world.growl is false
+function GetPetActionInfo(i) if i == 4 and world.pet then return "Growl", "tex", false, false, true, world.growl ~= false, 2649 end end
 function IsInRaid() return false end
 function GetNumGroupMembers() local n = 0; for _ in pairs(world.party or {}) do n = n + 1 end; return n > 0 and n + 1 or 0 end
 function UnitCastingInfo() if world.casting then return hide("Aimed Shot") end end
@@ -537,6 +540,22 @@ world.threatSecret = true
 runFight({ during = function() threatParty = threatRows() end, name = "Razormane Hunter", mobLevel = 10, dmg = 200, taken = 120, duration = 20 }); world.hp = 175
 world.party, world.threatSecret, world.tlist = nil, nil, nil
 ns.ThreatPreview(5); threatPreview = threatRows(); advance(6)
+-- Growl reminder: alone with Growl on is fine; a dungeon group is not; alone with it off is not
+local G = ns.growl
+local growlSolo = G.holder.shown == false and ns.GrowlWarning() == nil
+world.party, world.instance = { party1 = { name = "Tankard", class = "Warrior" } }, "party"
+fire("GROUP_ROSTER_UPDATE"); advance(1)
+local growlDungeon = G.holder.shown and ns.GrowlWarning() == "on" and G.macro == "/petautocastoff Growl"
+local growlPetLine = blockText("pet")
+world.growl = false; G.button.scripts.PostClick(G.button, "LeftButton", true); G.button.scripts.PostClick(G.button, "LeftButton", false); advance(1)
+local growlFixed = G.holder.shown == false and ns.GrowlWarning() == nil and ns.db.diag.growlClick == "worked"
+world.party, world.instance = nil, nil
+fire("GROUP_ROSTER_UPDATE"); advance(1)
+local growlOffSolo = G.holder.shown and ns.GrowlWarning() == "off" and G.macro == "/petautocaston Growl"
+G.button.scripts.PostClick(G.button, "RightButton", false); advance(3)
+local growlDismissed = G.holder.shown == false and ns.GrowlWarning() == "off"
+world.growl = nil; advance(3)
+local growlBack = G.holder.shown == false and ns.GrowlWarning() == nil
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 210, taken = 130, duration = 22 }); world.hp = 175
 
 -- looting: junk, a stack, a green, a blue, some coin; then a loot reset files it under history
@@ -878,6 +897,13 @@ check("after a close, the next fight (now in a party) opens it again", threatPar
 check("threat in a party with secret numbers: three bars, no crash (" .. tostring(threatParty) .. ")", threatParty ~= nil and select(2, threatParty:gsub("=", "")) == 3)
 check("threat preview shows five bars", threatPreview ~= nil and select(2, threatPreview:gsub("=", "")) == 5)
 check("threat probe recorded", type(ns.db.diag.threatProbe) == "string" and ns.db.diag.threatProbe:find("player:false/1/92", 1, true) ~= nil)
+check("Growl on while alone: no reminder", growlSolo)
+check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
+check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)
+check("after the click the banner goes", growlFixed)
+check("Growl off while alone: banner with the on macro", growlOffSolo)
+check("right-click leaves it and hides the banner", growlDismissed)
+check("turned back on: nothing left to say", growlBack)
 check("fps row sits at the top of the XP window", (blockText("stats") or ""):find("^100 fps  ·  H 127  W 128 ms  ·  lag") ~= nil)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)

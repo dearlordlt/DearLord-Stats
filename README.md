@@ -32,6 +32,11 @@ the tank, orange or red holding aggro). `/dls threat` shows or hides it, `/dls t
 20-second preview to move it, `/dls threat off` turns it off. If the client hides threat numbers in a fight, the bars still
 fill but are not sorted.
 
+**Growl reminder** (hunters): grouped inside a dungeon or raid with Growl on autocast, or alone
+in the world with it off, the pet line says so and a small banner offers the switch. Click its
+text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
+icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
+
 On screen, only when relevant: a one-line **fight recap** after combat, a profession line while you
 gather or craft, **hunter pet lines** (level, progress, kills to its next level, happiness, loyalty, unspent training points) while
 your pet is out, and gentle one-line reminders (a new spell that is not on your bars, skill-ups you

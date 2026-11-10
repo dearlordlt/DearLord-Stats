@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.14.1"
+ns.version = "2.15.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -187,12 +187,13 @@ end
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
     showRecap = true, nudges = true,
-    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true,
+    font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true, growlWarn = true,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
     ahTooltip = true, ahAutoScan = false, ahTooltipNeutral = true, ahCompare = "always", panelEsc = true,
     censusPassive = true, censusWho = true,
     xp     = { point = "TOP", x = 0, y = -12 },
     threat = { point = "TOP", x = 330, y = -40 },
+    growl  = { point = "CENTER", x = 0, y = 230 },
     panel = { point = "CENTER", x = 0, y = 40 },
 }
 ns.defaults = defaults
@@ -371,6 +372,7 @@ function ns.ApplyHudSettings()
         f.bg:SetShown(db.background)
     end
     if ns.LayoutFeed then ns.LayoutFeed() end
+    if ns.RefreshGrowl then ns.RefreshGrowl() end
 end
 
 ----------------------------------------------------------------------

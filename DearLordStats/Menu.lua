@@ -9,7 +9,7 @@ local function toggle(key, after)
 end
 local function resetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "growl", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.scale, db.alpha, db.fontSize = d.scale, d.alpha, d.fontSize
     db.panelSize = nil
     ns.ApplyHudSettings()
