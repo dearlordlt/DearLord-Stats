@@ -4,6 +4,7 @@
 -- pulls aggro (the game's scaled threat); the unit holding aggro is marked.
 -- When your own bar passes the warning level (90% by default) while someone else holds aggro, the
 -- window's border pulses red, its title says so and a sound plays once: time to ease off.
+-- Not while you are the tank.
 -- On this client threat values may be secret in combat. Bars still fill (a status bar takes a
 -- secret value), but then there is no sorting and no percentage text, only the threat state.
 local ADDON, ns = ...
@@ -276,10 +277,35 @@ function tw:Layout()
 end
 function tw:Fit() self:Layout() end
 
--- a tank is meant to be on top: no warning for one
+-- a tank is meant to be on top: no warning for one. Tanking shows as the tank role, or as what a tank
+-- wears: a warrior in Defensive Stance, a druid in bear form, a paladin with Righteous Fury on.
+local TANK_FORMS = { WARRIOR = { [71] = true }, DRUID = { [5487] = true, [9634] = true } }
+local RIGHTEOUS_FURY = 25780
 local function isTank()
-    return UnitGroupRolesAssigned ~= nil and S(UnitGroupRolesAssigned("player")) == "TANK"
+    if UnitGroupRolesAssigned and S(UnitGroupRolesAssigned("player")) == "TANK" then return true end
+    local class = UnitClass and S((select(2, UnitClass("player"))))
+    local forms = class and TANK_FORMS[class]
+    if forms and GetShapeshiftForm then
+        local form = N(GetShapeshiftForm()) or 0
+        if form > 0 then
+            local id = GetShapeshiftFormInfo and N((select(4, GetShapeshiftFormInfo(form))))
+            if id then return forms[id] == true end
+            return (class == "WARRIOR" and form == 2) or (class == "DRUID" and form == 1)      -- the usual places on the stance bar
+        end
+    elseif class == "PALADIN" then
+        if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+            local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, RIGHTEOUS_FURY)
+            if ok and aura ~= nil then return true end
+        end
+        local name = ns.spellName(RIGHTEOUS_FURY)
+        if name and AuraUtil and AuraUtil.FindAuraByName then
+            local ok, found = pcall(AuraUtil.FindAuraByName, name, "player")
+            if ok and found ~= nil then return true end
+        end
+    end
+    return false
 end
+ns.ThreatIsTank = isTank
 
 -- about to pull: your bar at the warning level while someone else has the mob
 local function pulling(list, demo)
@@ -410,7 +436,8 @@ tw:SetScript("OnEnter", function(self)
     GameTooltip:AddLine("100% = that unit pulls aggro from whoever has it.", 0.8, 0.8, 0.8, true)
     GameTooltip:AddLine("Edge colour: green safe, yellow above the tank, orange has aggro barely, red has aggro.", 0.8, 0.8, 0.8, true)
     if ns.db.threatWarn ~= false then
-        GameTooltip:AddLine("The border pulses red when you pass " .. (ns.db.threatWarnAt or 90) .. "% while someone else has aggro.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(isTank() and "You are tanking (role, stance, bear form or Righteous Fury): no pull warning."
+            or ("The border pulses red when you pass " .. (ns.db.threatWarnAt or 90) .. "% while someone else has aggro."), 0.8, 0.8, 0.8, true)
     end
     if state.sorted == false then
         GameTooltip:AddLine("This client hides threat numbers in this fight, so the bars are not sorted.", 1, 0.82, 0.4, true)

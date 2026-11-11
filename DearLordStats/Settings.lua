@@ -23,7 +23,7 @@ local CONTROLS = {
     { type = "check", key = "showProf", label = "Profession line while gathering or crafting" },
     { type = "check", key = "showPet", label = "Hunter pet lines: level, XP, happiness, loyalty, training points" },
     { type = "check", key = "showThreat", label = "Threat window: opens with each fight when you have a pet out or a group" },
-    { type = "check", key = "threatWarn", label = "Threat warning: the border pulses red when you are about to pull aggro" },
+    { type = "check", key = "threatWarn", label = "Threat warning: the border pulses red when you are about to pull aggro (never while tanking)" },
     { type = "slider", key = "threatWarnAt", label = "Warn at", min = 70, max = 100, step = 5, suffix = "%" },
     { type = "check", key = "threatSound", label = "Threat warning sound" },
     { type = "check", key = "growlWarn", label = "Growl reminder: on autocast in a dungeon group, or off when you are alone" },

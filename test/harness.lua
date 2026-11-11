@@ -102,7 +102,10 @@ function UnitIsPlayer(u) return u == "mouseover" and world.mo ~= nil end
 function GetGuildInfo(u) if u == "mouseover" and world.mo then return world.mo.guild end end
 function GetRealmName() return "Classic Beta PvE 2" end
 function UnitClass(u) if u == "mouseover" and world.mo then return world.mo.className, world.mo.class end
-    if world.party and world.party[u] then return world.party[u].class, world.party[u].class:upper(), 1 end return "Hunter", "HUNTER", 3 end
+    if world.party and world.party[u] then return world.party[u].class, world.party[u].class:upper(), 1 end
+    if u == "player" and world.class then return world.class, world.class:upper(), 1 end return "Hunter", "HUNTER", 3 end
+function GetShapeshiftForm() return world.stance or 0 end
+function UnitGroupRolesAssigned() return world.role or "NONE" end
 function UnitRace(u) if u == "mouseover" and world.mo then return world.mo.race, world.mo.race end return "Troll", "Troll", 8 end
 function UnitLevel(u) if u == "mouseover" and world.mo then return world.mo.level end if u == "target" then return world.targetLevel end if u == "pet" then return world.pet and world.petLevel end return world.level end
 function HasPetUI() if world.pet then return true, true end return false, false end
@@ -487,11 +490,17 @@ end
 local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview, threatDim, threatClosed
 world.tlist = { player = { false, 1, 92, 110, 16900 }, pet = { true, 3, 100, 100, 18400 } }
 local threatWarned, threatWarnSounds, threatWarnTitle, threatWarnCount, threatWarnAfter
+local threatTankRole, threatTankStance, threatBattleStance, threatBackOn
 runFight({ during = function()
     threatSolo = threatRows()
     threatWarned, threatWarnSounds, threatWarnTitle, threatWarnCount = ns.threat.warn, #soundsPlayed, strip(ns.huds.threat.title.text or ""), ns.threat.warnings
     local r = ns.huds.threat.rows[2]
     threatSoloEdge = r ~= nil and r.edge.shown
+    -- a tank gets no pull warning: by role, or by Defensive Stance
+    world.role = "TANK"; ns.RefreshThreat(); threatTankRole = ns.threat.warn == false and strip(ns.huds.threat.title.text or "") == "Threat"
+    world.role = nil; world.class, world.stance = "Warrior", 2; ns.RefreshThreat(); threatTankStance = ns.threat.warn == false and ns.ThreatIsTank() == true
+    world.stance = 1; threatBattleStance = ns.ThreatIsTank() == false
+    world.class, world.stance = nil, nil; ns.RefreshThreat(); threatBackOn = ns.threat.warn == true and #soundsPlayed
 end, name = "Dire Mottled Boar", dmg = 120, petDmg = 90, petSpells = { { 17253, 60 }, { 16827, 30 } }, taken = 20, duration = 14, spells = { { 75, 120 } } })
 hud("after fight 3 (with a pet)")
 world.petLevel, world.petXP, world.petXPMax = 6, 0, 900
@@ -975,6 +984,8 @@ check("threat edge shows your state colour", threatSoloEdge == true)
 check("threat warning: at 92% behind the pet the border shows, the title says ease off, one sound (" .. tostring(threatWarnTitle) .. ", " .. tostring(threatWarnSounds) .. ")",
     threatWarned == true and threatWarnTitle == "Ease off" and threatWarnSounds == 1 and threatWarnCount == 1)
 check("threat warning: gone once the fight is over", threatWarnAfter == true)
+check("threat warning: none for a tank (role, or a warrior in Defensive Stance), back for a hunter without a second sound (" .. tostring(threatBackOn) .. ")",
+    threatTankRole == true and threatTankStance == true and threatBattleStance == true and threatBackOn == 1)
 check("no threat window solo without a pet", threatNoPet == false)
 check("threat window stays after the fight, dimmed (" .. tostring(threatAfter) .. ")", threatAfter == "Humar=aggro, Tess Ter=169  92%" and threatDim == 0.5)
 check("the x closes it", threatClosed == false)
