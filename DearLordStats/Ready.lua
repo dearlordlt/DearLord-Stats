@@ -13,7 +13,7 @@
 local ADDON, ns = ...
 local N, S, B, T = ns.N, ns.S, ns.B, ns.T
 
-local FOOD_MIN, WATER_MIN, AMMO_MIN, SLOTS_MIN, DURABILITY_MIN, POISON_SOON = 4, 4, 200, 4, 30, 300
+local FOOD_MIN, WATER_MIN, AMMO_MIN, SLOTS_MIN, DURABILITY_MIN, POISON_SOON = 4, 4, 1000, 4, 30, 300
 local MANA = { DRUID = true, HUNTER = true, MAGE = true, PALADIN = true, PRIEST = true, SHAMAN = true, WARLOCK = true }
 local FOOD_SPELL, DRINK_SPELL = 433, 430                   -- the buffs every food and every drink give
 local PROJECTILE = 6                                       -- item class of arrows and bullets

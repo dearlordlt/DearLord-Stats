@@ -624,7 +624,7 @@ fire("GROUP_ROSTER_UPDATE"); advance(1); ready.joined = readyTexts()
 world.combat = true; fire("BAG_UPDATE_DELAYED"); ready.inFight = readyTexts()
 world.combat = false; fire("BAG_UPDATE_DELAYED"); ready.afterFight = readyTexts() ~= "hidden"
 world.petHappy = 1; fire("BAG_UPDATE_DELAYED"); ready.unhappy = readyItem("pet"); world.petHappy = nil
-world.bag1 = { { itemID = 4601, stackCount = 10 }, { itemID = 1179, stackCount = 10 }, { itemID = 2512, stackCount = 400 } }
+world.bag1 = { { itemID = 4601, stackCount = 10 }, { itemID = 1179, stackCount = 10 }, { itemID = 2512, stackCount = 1200 } }
 world.free, world.dur = 10, { 60, 60 }
 fire("BAG_UPDATE_DELAYED"); advance(1); ready.fixed = readyTexts() == "hidden" and R.active == false
 world.free = 0; fire("BAG_UPDATE_DELAYED"); advance(3); ready.quietAfter = readyTexts() == "hidden"
@@ -1069,7 +1069,7 @@ check("ready check: hidden in a fight, back after it; an unhappy pet is named ("
 check("ready check: gone once everything is in order, and quiet until the next group", ready.fixed and ready.quietAfter)
 check("ready check: a new group asks again (" .. tostring(ready.rejoined) .. "); a click closes it", ready.rejoined == "Before you go   click to close / Bags are full" and ready.closed)
 check("ready check: /dls ready shows the whole list (" .. tostring(ready.full) .. ")", ready.slash:find("1 thing missing", 1, true) ~= nil
-    and ready.full == "Before you go   click to close / Bags are full / Gear: lowest piece at 100% / Food: 10 / Water: 10 / Ammunition: 400 / Pet is out")
+    and ready.full == "Before you go   click to close / Bags are full / Gear: lowest piece at 100% / Food: 10 / Water: 10 / Ammunition: 1200 / Pet is out")
 check("ready check: a rogue without poisons learned is asked for none, nor for Vanish powder or water (" .. tostring(ready.rogueNew) .. ")", ready.rogueNew == "none, none, none")
 check("ready check: once learned (" .. tostring(ready.rogueLearned) .. "), carried (" .. tostring(ready.rogueCarried) .. ")",
     ready.rogueLearned == "missing: No poisons in your bags, missing: No Flash Powder (Vanish)" and ready.rogueCarried == "missing: No poison on your main hand, ok: Flash Powder: 3 (Vanish)")
