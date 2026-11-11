@@ -192,6 +192,8 @@ local function petMood()
     return HAPPY[happiness or 0], ns.N(damage), ns.N(rate), happiness
 end
 
+ns.PetMood = petMood                -- label, damage, rate, level (1 unhappy, 2 content, 3 happy)
+
 local LOYALTY = { "Rebellious", "Unruly", "Submissive", "Dependable", "Faithful", "Best Friend" }
 
 -- "Loyalty Level 3 (Submissive)" -> 3, "Submissive"; a bare number gets its name; other wording shown as it comes

@@ -40,6 +40,15 @@ in the world with it off, the pet line says so and a small banner offers the swi
 text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
 icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
 
+**Ready check**: when you join a group, or walk into a dungeon or raid with one, a small banner lists
+what you are missing: free bag slots, worn gear, food, water (classes with mana), ammunition, a pet
+that is away, dead or unhappy, and what your class burns or wears: an Ankh, seeds for Rebirth,
+candles, Arcane Powder, Symbols, Flash and Blinding Powder, soul shards, poisons on your weapons
+(also when they are about to run out). A thing is only asked for when the character can have it: a
+reagent when a spell that burns it is known, poisons once the rogue has learned Poisons or carries
+some, ammunition once the character has carried any. The banner goes away when everything is in
+order, or with a click; it never shows in a fight. `/dls ready` shows the whole list at any time.
+
 **Keys on the cooldown manager:** the game's own cooldown manager shows your spells without their
 keys. Each icon gets the key of the action bar slot that holds the spell (or a macro casting it),
 shortened the way action buttons do: `R`, `c-5`, `s-WU`, `M4`.

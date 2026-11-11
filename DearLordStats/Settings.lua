@@ -27,6 +27,7 @@ local CONTROLS = {
     { type = "slider", key = "threatWarnAt", label = "Warn at", min = 70, max = 100, step = 5, suffix = "%" },
     { type = "check", key = "threatSound", label = "Threat warning sound" },
     { type = "check", key = "growlWarn", label = "Growl reminder: on autocast in a dungeon group, or off when you are alone" },
+    { type = "check", key = "readyCheck", label = "Ready check: what you are missing when you join a group or enter a dungeon" },
     { type = "check", key = "showKeys", label = "Key bindings on the game's cooldown manager icons" },
     { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },
 
@@ -67,7 +68,7 @@ end
 
 function ns.ResetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "growl", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "growl", "ready", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.panelSize = nil
     applyAll()
     ns.say("window positions and sizes reset")

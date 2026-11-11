@@ -361,6 +361,19 @@ function LFGWhoFrame:UnregisterEvent(e) self.events[e] = nil end
 function GetFramesRegisteredForEvent(e) local out = {}; for _, f in ipairs(frames) do if f.events and f.events[e] then out[#out + 1] = f end end; return unpack(out) end
 WorldFrame = CreateFrame("Frame", "WorldFrame")
 
+-- the ready check: a second bag, free slots, durability, what items are, known spells, weapon poisons
+do
+    local slots, info = C_Container.GetContainerNumSlots, C_Container.GetContainerItemInfo
+    C_Container.GetContainerNumSlots = function(bag) if bag == 1 then return #(world.bag1 or {}) end return slots(bag) end
+    C_Container.GetContainerItemInfo = function(bag, slot) if bag == 1 then return (world.bag1 or {})[slot] end return info(bag, slot) end
+    C_Container.GetContainerNumFreeSlots = function(bag) if bag == 0 then return world.free or 10, 0 end return 0, 0 end
+end
+function GetInventoryItemDurability(slot) if slot == 5 and world.dur then return world.dur[1], world.dur[2] end end
+C_Item.GetItemSpell = function(id) return world.itemSpells and world.itemSpells[id] end
+C_Item.GetItemInfoInstant = function(id) return id, "Misc", "Junk", "", 1, world.itemClass and world.itemClass[id] or 15, 0 end
+function IsPlayerSpell(id) return world.spells ~= nil and world.spells[id] == true end
+function GetWeaponEnchantInfo() return unpack(world.enchant or { false, 0, 0, 0, false, 0, 0, 0 }) end
+function GetInventoryItemID() return nil end
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
 local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
@@ -594,6 +607,48 @@ G.button.scripts.PostClick(G.button, "RightButton", false); advance(3)
 local growlDismissed = G.holder.shown == false and ns.GrowlWarning() == "off"
 world.growl = nil; advance(3)
 local growlBack = G.holder.shown == false and ns.GrowlWarning() == nil
+-- ready check: joining a group lists what is missing; class things only when the character has them
+local R, ready = ns.ready, {}
+local function readyTexts()
+    local t = {}
+    for i = 1, R.frame.count or 0 do t[#t + 1] = (strip(R.frame.lines[i].text or ""):gsub("|T.-|t ", "")) end
+    return R.frame.shown and table.concat(t, " / ") or "hidden"
+end
+local function readyItem(key) for _, c in ipairs(ns.ReadyList()) do if c.key == key then return (c.ok and "ok: " or "missing: ") .. c.text end end return "none" end
+world.itemSpells, world.itemClass = { [4601] = "Food", [1179] = "Drink" }, { [2512] = 6 }
+world.bag1 = { { itemID = 4601, stackCount = 2 }, { itemID = 2512, stackCount = 50 } }
+world.free, world.dur, world.spells = 1, { 12, 60 }, { [883] = true }
+ready.alone = readyTexts()
+world.party = { party1 = { name = "Tankard", class = "Warrior" } }
+fire("GROUP_ROSTER_UPDATE"); advance(1); ready.joined = readyTexts()
+world.combat = true; fire("BAG_UPDATE_DELAYED"); ready.inFight = readyTexts()
+world.combat = false; fire("BAG_UPDATE_DELAYED"); ready.afterFight = readyTexts() ~= "hidden"
+world.petHappy = 1; fire("BAG_UPDATE_DELAYED"); ready.unhappy = readyItem("pet"); world.petHappy = nil
+world.bag1 = { { itemID = 4601, stackCount = 10 }, { itemID = 1179, stackCount = 10 }, { itemID = 2512, stackCount = 400 } }
+world.free, world.dur = 10, { 60, 60 }
+fire("BAG_UPDATE_DELAYED"); advance(1); ready.fixed = readyTexts() == "hidden" and R.active == false
+world.free = 0; fire("BAG_UPDATE_DELAYED"); advance(3); ready.quietAfter = readyTexts() == "hidden"
+world.party = nil; fire("GROUP_ROSTER_UPDATE"); advance(1)
+world.party = { party1 = { name = "Tankard", class = "Warrior" } }; fire("GROUP_ROSTER_UPDATE"); advance(1); ready.rejoined = readyTexts()
+R.frame.scripts.OnClick(R.frame, "LeftButton"); advance(3); ready.closed = readyTexts() == "hidden"
+printed = {}; SlashCmdList["DEARLORDSTATS"]("ready"); ready.slash, ready.full = printed[1] or "", readyTexts()
+R.frame.scripts.OnClick(R.frame, "LeftButton")
+world.party = nil; fire("GROUP_ROSTER_UPDATE"); advance(1); world.free = nil
+-- a rogue: nothing about poisons until they are learned or carried; Vanish powder only with Vanish
+world.class, world.bag1, world.spells = "Rogue", {}, {}
+ready.rogueNew = readyItem("poison") .. ", " .. readyItem("reagent:5140") .. ", " .. readyItem("water")
+world.spells = { [2842] = true, [1856] = true }
+ready.rogueLearned = readyItem("poison") .. ", " .. readyItem("reagent:5140")
+world.bag1 = { { itemID = 6947, stackCount = 5 }, { itemID = 5140, stackCount = 3 } }
+ready.rogueCarried = readyItem("poison") .. ", " .. readyItem("reagent:5140")
+world.enchant = { true, 1800000, 0, 1 }; ready.rogueApplied = readyItem("poison")
+world.enchant = { true, 120000, 0, 1 }; ready.rogueRunsOut = readyItem("poison")
+world.enchant = nil
+-- a shaman: the Ankh only once Reincarnation is known
+world.class, world.bag1, world.spells = "Shaman", {}, {}
+ready.shamanNew = readyItem("reagent:17030")
+world.spells = { [20608] = true }; ready.shamanAnkh = readyItem("reagent:17030")
+world.class, world.bag1, world.spells, world.itemSpells, world.itemClass, world.dur = nil, nil, nil, nil, nil, nil
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 210, taken = 130, duration = 22 }); world.hp = 175
 
 -- looting: junk, a stack, a green, a blue, some coin; then a loot reset files it under history
@@ -993,6 +1048,18 @@ check("after a close, the next fight (now in a party) opens it again", threatPar
 check("threat in a party with secret numbers: three bars, no crash (" .. tostring(threatParty) .. ")", threatParty ~= nil and select(2, threatParty:gsub("=", "")) == 3)
 check("threat preview shows five bars", threatPreview ~= nil and select(2, threatPreview:gsub("=", "")) == 5)
 check("threat probe recorded", type(ns.db.diag.threatProbe) == "string" and ns.db.diag.threatProbe:find("player:false/1/92", 1, true) ~= nil)
+check("ready check: nothing while alone; joining a group lists what is missing (" .. tostring(ready.joined) .. ")", ready.alone == "hidden"
+    and ready.joined == "Before you go   click to close / Bags: 1 free slot / Gear: lowest piece at 20% / Food: 2 / No water / Ammunition: 50")
+check("ready check: hidden in a fight, back after it; an unhappy pet is named (" .. tostring(ready.unhappy) .. ")", ready.inFight == "hidden" and ready.afterFight and ready.unhappy == "missing: Your pet is unhappy: feed it")
+check("ready check: gone once everything is in order, and quiet until the next group", ready.fixed and ready.quietAfter)
+check("ready check: a new group asks again (" .. tostring(ready.rejoined) .. "); a click closes it", ready.rejoined == "Before you go   click to close / Bags are full" and ready.closed)
+check("ready check: /dls ready shows the whole list (" .. tostring(ready.full) .. ")", ready.slash:find("1 thing missing", 1, true) ~= nil
+    and ready.full == "Before you go   click to close / Bags are full / Gear: lowest piece at 100% / Food: 10 / Water: 10 / Ammunition: 400 / Pet is out")
+check("ready check: a rogue without poisons learned is asked for none, nor for Vanish powder or water (" .. tostring(ready.rogueNew) .. ")", ready.rogueNew == "none, none, none")
+check("ready check: once learned (" .. tostring(ready.rogueLearned) .. "), carried (" .. tostring(ready.rogueCarried) .. ")",
+    ready.rogueLearned == "missing: No poisons in your bags, missing: No Flash Powder (Vanish)" and ready.rogueCarried == "missing: No poison on your main hand, ok: Flash Powder: 3 (Vanish)")
+check("ready check: poison applied, and about to run out (" .. tostring(ready.rogueRunsOut) .. ")", ready.rogueApplied == "ok: Poison on your main hand" and ready.rogueRunsOut == "missing: Poison on your main hand runs out in 2 min")
+check("ready check: a shaman is asked for an Ankh only with Reincarnation (" .. tostring(ready.shamanAnkh) .. ")", ready.shamanNew == "none" and ready.shamanAnkh == "missing: No Ankh (Reincarnation)")
 check("Growl on while alone: no reminder", growlSolo)
 check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
 check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)
