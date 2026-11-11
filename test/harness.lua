@@ -54,6 +54,8 @@ local function widget(kind, name)
     function M:GetHeight() return self.h end
     function M:SetAlpha(a) self.alpha = a end
     function M:SetStatusBarColor(r, g, b) self.color = { r, g, b } end
+    function M:GetStatusBarTexture() if self.kind ~= "StatusBar" then return nil end; self.fill = self.fill or widget("Texture"); return self.fill end
+    function M:SetValue(v) self.value = v end
     function M:SetFrameLevel(l) self.level = l end
     function M:GetFrameLevel() return self.level or 1 end
     function M:GetTop() return 900 end
@@ -1160,6 +1162,40 @@ if MODE ~= "bare" and not os.getenv("SV") then
     advance(31); world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player")
     shield.faded = st.goneKind == "faded"
     advance(2)
+    -- met half used (the bar was not there when it landed): measured against what such a shield holds, not what is left
+    local half = pws(505); half.expirationTime = GetTime() + 12
+    world.auras, world.absorb = { half }, 30; fire("UNIT_AURA", "player"); advance(0.5)
+    shield.half = sf.amount.text == "30" and sf.full.text == "/ 44"
+    world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player"); advance(2)
+    -- a fight that hides the amount and every buff: a shield from before is kept, and reads 30 / 44 again afterwards
+    local askById = C_UnitAuras.GetPlayerAuraBySpellID
+    C_UnitAuras.GetPlayerAuraBySpellID = function() return nil end
+    world.auras, world.absorb = { pws(506) }, 44; fire("UNIT_AURA", "player"); advance(0.5)
+    world.combat, world.aurasHidden, world.absorb = true, true, 30; fire("UNIT_ABSORB_AMOUNT_CHANGED", "player"); advance(0.5)
+    shield.kept = sf.shown and st.mode == "hidden" and st.max == 44 and st.maxKind == "seen" and issecretvalue(sf.presence.value)
+    world.combat, world.aurasHidden = false, nil; fire("UNIT_AURA", "player"); advance(0.5)
+    shield.after = st.mode == "amount" and sf.amount.text == "30" and sf.full.text == "/ 44"
+    world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player"); advance(2)
+    -- cast in the fight itself: your own cast says which shield it is (not one cast on somebody else)
+    world.combat, world.aurasHidden = true, true; world.auras, world.absorb = { pws(507) }, 44
+    fire("UNIT_AURA", "player"); advance(0.5)
+    local unseen = not sf.shown
+    fire("UNIT_SPELLCAST_SENT", "player", "Other One", "cast-1", 17); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 17); advance(0.5)
+    local other = not sf.shown
+    fire("UNIT_SPELLCAST_SENT", "player", UnitName("player"), "cast-2", 17); fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", 17); advance(0.5)
+    shield.cast = unseen and other and sf.shown and st.mode == "hidden" and st.aura.how == "cast" and st.max == 44 and st.maxKind == "learned" and sf.time.text ~= ""
+    -- the fight ends with nothing left: the bar goes without a farewell
+    world.combat, world.aurasHidden = false, nil; world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player")
+    shield.silent = not sf.shown and st.goneKind == nil
+    advance(1)
+    -- somebody else's shield in a fight: all that is known is that the amount changed. The bar is kept ready,
+    -- measured against your health, and the game draws it or not from the hidden amount.
+    world.combat, world.aurasHidden = true, true; world.auras, world.absorb = { pws(508) }, 44
+    fire("UNIT_ABSORB_AMOUNT_CHANGED", "player"); advance(0.5)
+    shield.standby = sf.shown and st.mode == "hidden" and st.maxKind == "health" and st.max == 175 and issecretvalue(sf.presence.value) and sf.full.text == ""
+    world.combat, world.aurasHidden = false, nil; world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player"); advance(1)
+    C_UnitAuras.GetPlayerAuraBySpellID = askById
+    shield.trace = #(ns.db.diag.shield.trace or {})
     -- a client that gives no amount: the bar shows the time left
     world.auras = { pws(503) }; fire("UNIT_AURA", "player"); advance(0.5)
     shield.timer = sf.shown and st.mode == "timer" and sf.amount.text == "~44"
@@ -1427,6 +1463,11 @@ check("shield bar: a hidden amount in a fight still shows, against the remembere
 check("shield bar: with buffs hidden too the shield is found by its spell id", shield.byId)
 check("shield bar: a shield that runs its time fades instead of breaking", shield.faded)
 check("shield bar: with nothing readable in a fight it is followed by its clock, and leaves when the buff is removed", shield.blind)
+check("shield bar: met half used, it is measured against what such a shield holds (30 / 44, not 30 / 30)", shield.half)
+check("shield bar: a fight that hides everything keeps the shield, and afterwards it still reads 30 / 44", shield.kept and shield.after)
+check("shield bar: cast in a fight with nothing readable, your own cast brings the bar up; a cast on someone else does not", shield.cast)
+check("shield bar: a fight ending with nothing left takes the bar away without a break", shield.silent)
+check("shield bar: an unknown shield in a fight is kept ready and drawn from the hidden amount; the fight is traced (" .. tostring(shield.trace) .. " lines)", shield.standby and (shield.trace or 0) > 3)
 check("shield bar: with no amount from the client the bar shows the time left; the setting switches it off", shield.timer and shield.off)
 check("shield bar: Edit Mode shows it with a running preview and it can be dragged there, not outside", shield.edit and shield.moved and shield.editBroken and shield.editOff and shield.fixed)
 check("shield bar: /dls shield previews it for 20 s", shield.preview and shield.previewOver)

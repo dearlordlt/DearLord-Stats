@@ -12,6 +12,13 @@
 --              the full size comes from what was learned while it was readable, or from the spell's rank
 --   * timer    no amount at all from the client: the bar shows the time left instead
 -- Which one the client gave is noted for the client checks page.
+--
+-- In a fight this client hides the amount and the buffs. So that the bar neither loses a shield nor shows
+-- one that is gone, everything drawn sits in a box cut to the filled part of a second, invisible bar that
+-- runs from 0 to 1 and is given the same hidden amount: one point of shield or more fills it and the bar
+-- is there, none empties it and the bar is not. The game does that; the addon never learns the number.
+-- Which shield it is comes from the buff when that can be read, else from your own cast, else from what
+-- was up when the fight began.
 local ADDON, ns = ...
 local N, S, T, B = ns.N, ns.S, ns.T, ns.B
 
@@ -84,23 +91,43 @@ local function statusBar(parent, level)
     return b
 end
 
+-- the invisible 0-to-1 bar, and the box cut to its filled part that everything else is drawn in
+f.presence = statusBar(f, 1)
+f.presence:SetPoint("TOPLEFT", f, "TOPLEFT", -6, 6)
+f.presence:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 6, -6)
+f.presence:SetStatusBarColor(0, 0, 0, 0)
+f.presence:SetValue(1)
+f.content = CreateFrame("Frame", nil, f)
+do
+    local fill = f.presence.GetStatusBarTexture and f.presence:GetStatusBarTexture()
+    if fill and f.content.SetClipsChildren then
+        f.content:SetClipsChildren(true)
+        f.content:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
+        f.content:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0, 0)
+        state.presenceOk = true
+    else
+        f.content:SetAllPoints(f.presence)
+        state.presenceOk = false
+    end
+end
+
 -- a soft glow outside the border: four edges, pulsing while a shield is up
 f.glow = {}
 for i = 1, 4 do
-    local g = tex(f, "BACKGROUND")
+    local g = tex(f.content, "BACKGROUND")
     if g.SetBlendMode then g:SetBlendMode("ADD") end
     f.glow[i] = g
 end
-f.edge = tex(f, "BACKGROUND", 0, 0, 0, 0.85)                  -- the dark border
+f.edge = tex(f.content, "BACKGROUND", 0, 0, 0, 0.85)                  -- the dark border
 f.edge:SetPoint("TOPLEFT", f, "TOPLEFT", -1, 1)
 f.edge:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 1, -1)
 
-f.iconBox = CreateFrame("Frame", nil, f)
+f.iconBox = CreateFrame("Frame", nil, f.content)
 f.icon = f.iconBox:CreateTexture(nil, "ARTWORK")
 f.icon:SetAllPoints()
 if f.icon.SetTexCoord then f.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
 
-f.body = CreateFrame("Frame", nil, f)                        -- everything that fills: clipped to the bar's shape
+f.body = CreateFrame("Frame", nil, f.content)                        -- everything that fills: clipped to the bar's shape
 if f.body.SetClipsChildren then f.body:SetClipsChildren(true) end
 f.back = tex(f.body, "BACKGROUND", 0.05, 0.06, 0.09, 0.80)
 f.back:SetAllPoints()
@@ -279,11 +306,30 @@ local function demoSample(now)
     return left, "plain", { fam = FAMILIES[1], id = nil, icon = nil, expires = start + 30, duration = 30, instance = math.floor((now - (state.demoStart or now)) / DEMO_LOOP), how = "demo" }
 end
 
-local function sample(now)
+-- the amount every time; the buffs when something changed, and twice a second besides
+local function sample(now, fresh)
     if editing() then return demoSample(now) end
     local amount, how = readAmount()
-    local aura, auraHow = findAura()
-    return amount, how, aura, auraHow
+    if fresh or not state.scanAt or now - state.scanAt >= 0.5 or now < state.scanAt then
+        state.scanAura, state.scanHow = findAura()
+        state.scanAt = now
+    end
+    return amount, how, state.scanAura, state.scanHow
+end
+
+-- a short record of what the client says during fights, for the saved data: what can be read there
+-- decides how well the bar can follow a shield
+local TRACE_MAX = 80
+local function flag(v)
+    if v == nil then return "nil" end
+    if issecretvalue and issecretvalue(v) then return "hidden" end
+    return tostring(v)
+end
+local function trace(text)
+    local d = diag()
+    d.trace = type(d.trace) == "table" and d.trace or {}
+    if #d.trace >= TRACE_MAX then return end
+    d.trace[#d.trace + 1] = string.format("%.1f %s%s", GetTime() % 1000, (InCombatLockdown and InCombatLockdown()) and "F " or "- ", text)
 end
 
 ----------------------------------------------------------------------
@@ -351,73 +397,82 @@ local function range(max)
     pcall(f.ghost.SetMinMaxValues, f.ghost, 0, max)
 end
 
-local function note(amountHow, aura, auraHow)
+local function note(amountHow, known, auraHow)
     if editing() then return end
     local d = diag()
     local key = (InCombatLockdown and InCombatLockdown()) and "combat" or "calm"
     if d[key] then return end
-    d[key] = string.format("mode=%s amount=%s aura=%s id=%s nominal=%s expires=%s instance=%s max=%s(%s) smooth=%s spark=%s",
-        tostring(state.mode), tostring(amountHow), tostring(auraHow), tostring(aura and aura.id), aura and aura.nominal and "plain" or "no",
-        aura and aura.expires and "plain" or "no", aura and aura.instance and "yes" or "no", tostring(state.max), tostring(state.maxKind),
-        INTERP and "yes" or "no", state.sparkOk and "yes" or "no")
-end
--- noted when a fight hid the buffs so well that the shield was only followed by its clock
-local function noteBlind()
-    local d = diag()
-    if state.blind and not d.blind then d.blind = "yes: followed by time and by the removed-buff signal (instance " .. tostring(state.instance) .. ")" end
+    d[key] = string.format("mode=%s amount=%s buffs=%s shield=%s id=%s nominal=%s expires=%s instance=%s max=%s(%s) smooth=%s spark=%s box=%s",
+        tostring(state.mode), tostring(amountHow), tostring(auraHow), tostring(known and known.how), tostring(known and known.id),
+        known and known.nominal and "plain" or "no", known and known.expires and "plain" or "no", known and known.instance and "yes" or "no",
+        tostring(state.max), tostring(state.maxKind), INTERP and "yes" or "no", state.sparkOk and "yes" or "no", state.presenceOk and "yes" or "no")
 end
 
-local function appear(now, fresh)
-    state.appearAt = now
-    state.goneAt, state.goneKind = nil, nil
-    state.sawAmount, state.instanceGone = false, nil
-    if ns.db.shieldAnim ~= false then
-        state.shineAt = now
-        state.flash = fresh and 0.9 or 0.5
-    end
+-- what a shield of this kind holds when full, as far as is known: read once, else the buff's own number, else the rank's
+local function fullSize(known, lk)
+    if not known then return nil end
+    local learn = learned()
+    return (lk and learn[lk]) or known.nominal or (known.id and known.fam.ids[known.id]) or nil
 end
 
-local function refresh()
+local function refresh(fresh)
     local db = ns.db
     if not db then return end
     local now = GetTime()
-    local amount, how, aura, auraHow = sample(now)
-    local on = db.shieldBar ~= false or editing()
+    local amount, how, aura, auraHow = sample(now, fresh)
+    local demo = editing()
+    local on = db.shieldBar ~= false or demo
+    local was, before = state.present, state.mode
+    local secret = how == "secret"
+    if not secret then state.standby = nil end
+    -- your own cast is only a stand-in for the buff: dropped once things can be read, or its time is over
+    local cast = state.cast
+    if cast and (how == "plain" or demo or now >= cast.expires or (auraHow == "list" and now - cast.castAt > 1)) then state.cast, cast = nil, nil end
+    -- which shield: the buff when it can be read, else your own cast, else the one that was up a moment ago
+    local known = aura
+    if not known and how ~= "plain" and not demo then
+        if cast then known = cast
+        elseif was and state.aura and state.expires and now < state.expires and not state.instanceGone and auraHow ~= "list" then
+            known = state.aura
+            if not state.blind then state.blind = true; diag().blind = "followed by its clock (buffs=" .. tostring(auraHow) .. ")" end
+        end
+    end
     local present = false
     if on then
-        if how == "plain" then present = amount > 0 or aura ~= nil else present = aura ~= nil end
-    end
-    local was = state.present
-    -- Buffs unreadable and no answer by spell id either, while a shield was up a moment ago: it is taken to
-    -- be still there until its time is over, or until the game says that buff was removed.
-    if on and not present and was and how ~= "plain" and not editing() and (auraHow == "hidden" or auraHow == "noapi")
-        and state.aura and state.expires and now < state.expires and not state.instanceGone then
-        present, aura = true, state.aura
-        state.blind = true
+        if how == "plain" then present = amount > 0 or aura ~= nil
+        elseif secret then present = known ~= nil or (state.standby == true and state.presenceOk == true)
+        else present = known ~= nil end
     end
     if present then
         local plain = how == "plain" and amount or nil
-        -- a new shield over the old one: another buff, a later end, or more than there was
-        local renewed = was and ((aura and state.instance and aura.instance and aura.instance ~= state.instance)
-            or (aura and aura.expires and state.expires and aura.expires > state.expires + 1)
-            or (plain and state.amount and plain > state.amount + 0.5))
-        if not was or renewed then appear(now, not was) end
+        -- a new shield over the old one: another buff, a later end, another cast, or more than there was
+        local renewed = was and ((known and ((state.instance and known.instance and known.instance ~= state.instance)
+            or (known.expires and state.expires and known.expires > state.expires + 1)
+            or (known.castAt and known.castAt ~= state.castAt)))
+            or (plain and state.amount and plain > state.amount + 0.5)) or false
+        if not was or renewed then
+            state.goneAt, state.goneKind, state.sawAmount, state.instanceGone, state.lastHit = nil, nil, false, nil, nil
+            if known ~= nil or (plain and plain > 0) then              -- not for the empty wait at the start of a fight
+                state.appearAt = now
+                if db.shieldAnim ~= false then state.shineAt = now; state.flash = was and 0.5 or 0.9 end
+            end
+        end
         if plain and plain > 0 then state.sawAmount = true end
-        local before = state.mode
-        state.mode = (plain and (plain > 0 or state.sawAmount)) and "amount" or (how == "secret" and "hidden") or "timer"
-        state.aura, state.instance = aura, aura and aura.instance
-        local duration = aura and (aura.duration or (aura.fam and aura.fam.duration))
+        state.mode = (plain and (plain > 0 or state.sawAmount)) and "amount" or (secret and "hidden") or "timer"
+        local duration = known and (known.duration or known.fam.duration)
         state.duration = duration
-        state.expires = aura and (aura.expires or (duration and ((not was or renewed) and (now + duration) or state.expires))) or nil
-        local learn = learned()
-        local lk = aura and aura.how ~= "demo" and (aura.id or aura.fam.key) or nil      -- what the full size is remembered under
+        state.expires = known and (known.expires or (duration and (((not was or renewed or not state.expires) and (now + duration)) or state.expires))) or nil
+        state.aura, state.instance, state.castAt = known, known and known.instance, known and known.castAt
+        local lk = known and known.how ~= "demo" and (known.id or known.fam.key) or nil      -- what the full size is remembered under
         if state.mode == "amount" then
+            local freshCast = known and known.expires and duration and (known.expires - now) >= duration - 1.5
             if not was or renewed then
-                state.max = plain
-                if lk then
-                    local freshCast = aura.expires and duration and (aura.expires - now) >= duration - 1.5
-                    learn[lk] = freshCast and plain or math.max(learn[lk] or 0, plain)
-                end
+                if freshCast or not known then
+                    state.max = plain
+                    if freshCast and lk then learned()[lk] = plain end
+                else state.max = math.max(plain, fullSize(known, lk) or 0) end          -- met half used: after a fight, or at login
+            elseif before ~= "amount" then                           -- the fight is over and the number can be read again
+                state.max = math.max(plain, (state.maxKind ~= "health" and state.maxKind ~= "none" and state.max) or fullSize(known, lk) or 0)
             else state.max = math.max(state.max or 0, plain) end
             state.maxKind = "seen"
             if state.amount and plain < state.amount - 0.5 and was and not renewed then  -- a hit: blink, and leave a trail
@@ -428,12 +483,11 @@ local function refresh()
             if not was or renewed or before ~= "amount" then state.disp, state.ghostV = plain, plain end
             range(math.max(1, state.max))
         elseif state.mode == "hidden" then
-            local id = aura and aura.id
-            -- the shield was readable a moment ago (a fight began): its full size is known
-            local max, kind = (was and not renewed and before == "amount") and state.max or nil, "seen"
-            if not max then max, kind = lk and learn[lk], "learned" end
-            if not max then max, kind = aura and aura.nominal, "buff" end
-            if not max then max, kind = id and aura.fam.ids[id], "rank" end
+            -- the full size: what it was while readable, else what is known of this kind of shield, else your health
+            local max, kind = (was and not renewed and state.maxKind == "seen") and state.max or nil, "seen"
+            if not max then max, kind = lk and learned()[lk], "learned" end
+            if not max then max, kind = known and known.nominal, "buff" end
+            if not max then max, kind = known and known.id and known.fam.ids[known.id], "rank" end
             if not max then max, kind = N(UnitHealthMax and UnitHealthMax("player")), "health" end
             state.max, state.maxKind = max or 1, max and kind or "none"
             state.amount, state.raw = nil, amount
@@ -442,35 +496,49 @@ local function refresh()
             -- the trail: the same value, eased by the client itself
             state.ghostOk = INTERP ~= nil and db.shieldAnim ~= false and pcall(f.ghost.SetValue, f.ghost, amount, INTERP) or false
         else
-            local id = aura and aura.id
-            state.max = aura and ((lk and learn[lk]) or aura.nominal or (id and aura.fam.ids[id])) or nil
-            state.maxKind = "rank"
+            state.max, state.maxKind = fullSize(known, lk), "rank"
             state.amount, state.raw = nil, nil
             range(1)
         end
         state.present = true
-        if not was or renewed then paint(); note(how, aura, auraHow) end
+        local look = (known and (known.fam.key .. ":" .. tostring(known.id)) or "?") .. ":" .. tostring(db.shieldColor)
+        if look ~= state.look then state.look = look; paint() end
+        if not was or renewed then note(how, known, auraHow) end
     elseif was then
+        -- the fight is over and nothing is left: it ended some time ago, unseen. No farewell for that.
+        local silent = before == "hidden" and how == "plain"
         -- gone before its time (or right after a hit): broken; otherwise it ran out
         local broke = (state.expires and now < state.expires - 0.5) or (state.lastHit and now - state.lastHit < 1) or false
-        state.present, state.goneAt, state.goneKind = false, now, broke and "broken" or "faded"
-        state.amount, state.raw = state.mode == "amount" and 0 or nil, nil
-        if broke and db.shieldAnim ~= false then state.flash = 1 end
-        if broke and db.shieldSound and PlaySound and not editing() then
-            pcall(PlaySound, (SOUNDKIT and SOUNDKIT.ALARM_CLOCK_WARNING_2) or 12867, "Master")
+        state.present = false
+        state.goneAt, state.goneKind = (not silent) and now or nil, (not silent) and (broke and "broken" or "faded") or nil
+        state.amount, state.raw = before == "amount" and 0 or nil, nil
+        if not silent then
+            if broke and db.shieldAnim ~= false then state.flash = 1 end
+            if broke and db.shieldSound and PlaySound and not demo then
+                pcall(PlaySound, (SOUNDKIT and SOUNDKIT.ALARM_CLOCK_WARNING_2) or 12867, "Master")
+            end
         end
-        state.lastHit = nil
+        state.lastHit, state.blind, state.look = nil, nil, nil
     end
-    noteBlind()
+    -- the box everything is drawn in: open, or (hidden amount) as open as the game makes it
+    if state.present and state.mode == "hidden" then
+        if not pcall(f.presence.SetValue, f.presence, amount) then f.presence:SetValue(1) end
+    else f.presence:SetValue(1) end
+    local sig = tostring(state.present) .. "/" .. tostring(state.mode) .. "/" .. tostring(how) .. "/" .. tostring(auraHow) .. "/" .. tostring(state.aura and state.aura.how)
+    if sig ~= state.sig and not demo then
+        state.sig = sig
+        trace("STATE present=" .. tostring(state.present) .. " mode=" .. tostring(state.mode) .. " amount=" .. tostring(how) .. " buffs=" .. tostring(auraHow)
+            .. " shield=" .. tostring(state.aura and state.present and state.aura.how) .. " max=" .. tostring(state.max) .. "(" .. tostring(state.maxKind) .. ")"
+            .. (state.goneKind and (" gone=" .. state.goneKind) or ""))
+    end
     writeTexts(now)
-    local visible = present or editing() or (on and state.goneAt ~= nil and now - state.goneAt < 0.8 and db.shieldAnim ~= false)
+    local visible = present or demo or (on and state.goneAt ~= nil and now - state.goneAt < 0.8 and db.shieldAnim ~= false)
     if visible and not f:IsShown() then f:Show() elseif not visible and f:IsShown() then f:Hide() end
-    local move = editing()
-    if state.moving ~= move then
-        state.moving = move
-        f.mover:SetShown(move)
-        f:EnableMouse(move)
-        if not move then place() end
+    if state.moving ~= demo then
+        state.moving = demo
+        f.mover:SetShown(demo)
+        f:EnableMouse(demo)
+        if not demo then place() end
     end
 end
 ns.RefreshShield = refresh
@@ -481,7 +549,7 @@ ns.On("UNIT_COMBAT", function(unit, action)
     action = S(action)
     if action == "WOUND" or action == "ABSORB" or action == "BLOCK" then
         state.lastHit = GetTime()
-        if ns.db.shieldAnim ~= false then state.flash = math.max(state.flash, 0.5) end
+        if state.mode == "timer" and ns.db.shieldAnim ~= false then state.flash = math.max(state.flash, 0.5) end
     end
 end, "shield:hit")
 
@@ -495,6 +563,22 @@ f:SetScript("OnUpdate", function(_, dt)
         acc = acc + dt
         if acc >= 0.1 then acc = 0; refresh() end
         local db, now = ns.db, GetTime()
+        -- the cut-to-fit box, checked once while it should be fully open: if it has no width the client does
+        -- not size it from the bar, and everything is drawn the plain way instead
+        if state.presenceOk and not state.boxChecked and state.present and state.mode ~= "hidden" then
+            state.boxAge = (state.boxAge or 0) + dt
+            if state.boxAge > 0.5 then
+                state.boxChecked = true
+                local w = N(f.content.GetWidth and f.content:GetWidth())
+                if w and w < 2 then
+                    state.presenceOk = false
+                    f.content:ClearAllPoints()
+                    f.content:SetAllPoints(f.presence)
+                    if f.content.SetClipsChildren then f.content:SetClipsChildren(false) end
+                end
+                diag().box = (state.presenceOk and "ok" or "fallback") .. " width=" .. tostring(w)
+            end
+        end
         local anim = db.shieldAnim ~= false
         local c = state.rgb or STYLE.gold
         -- the fill
@@ -610,32 +694,118 @@ end
 
 ns.On("UNIT_AURA", function(unit, info)
     if unit ~= nil and S(unit) ~= "player" then return end
-    local removed = T(info) and T(info.removedAuraInstanceIDs)
+    info = T(info)
+    local removed = info and T(info.removedAuraInstanceIDs)
     if removed and state.instance then
         for _, id in ipairs(removed) do if N(id) == state.instance then state.instanceGone = true end end
     end
-    refresh()
+    if info and InCombatLockdown and InCombatLockdown() then
+        local added = T(info.addedAuras)
+        local first = added and T(added[1])
+        if (added and #added > 0) or (removed and #removed > 0) then
+            trace("AURA added=" .. (added and #added or 0) .. (first and (" first[id=" .. flag(first.spellId) .. " inst=" .. flag(first.auraInstanceID)
+                .. " help=" .. flag(first.isHelpful) .. " ends=" .. flag(first.expirationTime) .. "]") or "")
+                .. " removed=" .. (removed and #removed or 0) .. (removed and removed[1] ~= nil and ("[" .. flag(removed[1]) .. "]") or "")
+                .. " ours=" .. tostring(state.instance) .. (state.instanceGone and " GONE" or ""))
+        end
+    end
+    refresh(true)
 end, "shield:UNIT_AURA")
-ns.On("UNIT_ABSORB_AMOUNT_CHANGED", function(unit) if unit == nil or S(unit) == "player" then refresh() end end, "shield:absorb")
-ns.On("PLAYER_ENTERING_WORLD", function() refresh() end, "shield:world")
+
+-- the amount on you changed. While it is hidden that is all there is to know: a shield landed or took a hit.
+-- From then until the numbers are readable again the bar is kept ready, and the game draws it or not.
+ns.On("UNIT_ABSORB_AMOUNT_CHANGED", function(unit)
+    if unit ~= nil and S(unit) ~= "player" then return end
+    local _, how = readAmount()
+    if how == "secret" then
+        if not state.standby then trace("ABSORB amount=hidden: kept ready from here") end
+        state.standby = true
+        if state.present and state.mode == "hidden" and ns.db.shieldAnim ~= false and GetTime() - (state.appearAt or 0) > 0.4 then
+            state.flash = math.max(state.flash, 0.5)
+        end
+        state.lastHit = GetTime()
+    end
+    refresh(true)
+end, "shield:absorb")
+
+-- your own shield casts (and the Voidwalker's Sacrifice): in a fight the buff may be unreadable, the cast is not
+ns.On("UNIT_SPELLCAST_SENT", function(unit, target, _, spellID)
+    if S(unit) ~= "player" then return end
+    local id = N(spellID)
+    if id and BY_ID[id] then state.sent = { id = id, target = S(target), at = GetTime() } end
+end, "shield:sent")
+local SELF_ONLY = { barrier = true, mana = true, fireward = true, frostward = true, shadowward = true }
+ns.On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
+    unit = S(unit)
+    local id = N(spellID)
+    local fam = id and BY_ID[id]
+    if not fam or (unit ~= "player" and unit ~= "pet") then return end
+    local now, onMe = GetTime(), false
+    if unit == "pet" then onMe = fam.key == "sacrifice"
+    elseif SELF_ONLY[fam.key] then onMe = true
+    elseif fam.key == "pws" then
+        local sent = state.sent
+        local target = sent and sent.id == id and now - sent.at < 4 and sent.target or nil
+        local me = S(UnitName and UnitName("player"))
+        if target and target ~= "" then onMe = me ~= nil and (target == me or target:match("^[^-]+") == me)
+        else                                                 -- no name given: yours, unless you have someone else selected to help
+            local other = UnitExists and B(UnitExists("target")) and UnitIsFriend and B(UnitIsFriend("player", "target"))
+                and UnitIsUnit and B(UnitIsUnit("target", "player")) == false
+            onMe = not other
+        end
+    end
+    trace("CAST id=" .. id .. " by=" .. unit .. " target=" .. tostring(state.sent and state.sent.id == id and state.sent.target) .. " on me=" .. tostring(onMe))
+    if not onMe then return end
+    state.cast = { fam = fam, id = id, duration = fam.duration, expires = now + fam.duration, castAt = now, how = "cast" }
+    refresh(true)
+end, "shield:cast")
+
+ns.On("PLAYER_ENTERING_WORLD", function() refresh(true) end, "shield:world")
 ns.Every(0.5, function() if not f:IsShown() then refresh() end end, "shield:tick")   -- a net under the events
 
--- what the client shows about buffs once a fight is on, with no shield needed: noted once
+-- what the client lets an addon read once a fight is on: noted at the start of the first few fights
+local fights = 0
 ns.On("PLAYER_REGEN_DISABLED", function()
+    refresh(true)
+    fights = fights + 1
+    if fights > 3 then return end
     ns.After(1, function()
         local d = diag()
-        if d.fight then return end
         local _, how = readAmount()
         local aura, auraHow = findAura()
-        local names = {}
-        for k, v in pairs(type(C_Secrets) == "table" and C_Secrets or {}) do
-            if type(k) == "string" and type(v) == "function" and k:find("Aura") then names[#names + 1] = k end
+        local UA, count, ids, names, insts = C_UnitAuras, 0, 0, 0, 0
+        if UA and UA.GetAuraDataByIndex then
+            for i = 1, 40 do
+                local ok, raw = pcall(UA.GetAuraDataByIndex, "player", i, "HELPFUL")
+                if not ok or raw == nil then break end
+                count = count + 1
+                local a = T(raw)
+                if a then
+                    if N(a.spellId) then ids = ids + 1 end
+                    if S(a.name) then names = names + 1 end
+                    if N(a.auraInstanceID) then insts = insts + 1 end
+                end
+            end
         end
-        table.sort(names)
-        d.fight = "amount=" .. tostring(how) .. " buffs=" .. tostring(auraHow) .. " shield=" .. (aura and "yes" or "no")
-            .. " secrets=" .. table.concat(names, ",")
+        local apis = {}
+        for _, name in ipairs({ "GetAuraDataByIndex", "GetPlayerAuraBySpellID", "GetAuraDataByAuraInstanceID", "GetAuraDuration", "GetUnitAuraBySpellID", "GetBuffDataByIndex" }) do
+            if UA and type(UA[name]) == "function" then apis[#apis + 1] = name end
+        end
+        local secrets = {}
+        for k, v in pairs(type(C_Secrets) == "table" and C_Secrets or {}) do
+            if type(k) == "string" and type(v) == "function" and (k:find("Aura") or k:find("Absorb")) then
+                local ok, r = pcall(v)
+                secrets[#secrets + 1] = k .. "=" .. (ok and flag(r) or "args")
+            end
+        end
+        table.sort(secrets)
+        local text = "amount=" .. tostring(how) .. " buffs=" .. tostring(auraHow) .. " seen=" .. count .. " ids=" .. ids .. " names=" .. names .. " instances=" .. insts
+            .. " shield=" .. tostring(aura and aura.how) .. " box=" .. tostring(state.presenceOk) .. " apis=" .. table.concat(apis, ",") .. " secrets=" .. table.concat(secrets, ",")
+        d.fight = d.fight or text
+        trace("FIGHT " .. text)
     end, "shield:probe")
 end, "shield:fight")
+ns.On("PLAYER_REGEN_ENABLED", function() ns.After(0.3, function() refresh(true) end, "shield:calm") end, "shield:calm")
 
 ns.OnLogin(function()
     -- the shields' names in the game's language, for buffs that give a name but no spell id
@@ -651,6 +821,7 @@ ns.OnLogin(function()
         d.version = ns.version
     end
     d.api = type(UnitGetTotalAbsorbs) == "function" and "yes" or "no"
+    d.trace = nil                                             -- each session its own record
     -- Edit Mode: the bar shows itself there, with its preview running, and can be dragged
     if EventRegistry and EventRegistry.RegisterCallback then
         pcall(EventRegistry.RegisterCallback, EventRegistry, "EditMode.Enter", function() ns.safe("shield:edit", function() setEdit(true) end) end, f)
