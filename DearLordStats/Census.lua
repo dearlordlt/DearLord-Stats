@@ -333,12 +333,22 @@ if hooksecurefunc and FL and FL.SendWho then
     hooksecurefunc(FL, "SendWho", function() if not sending then userWho = time() end end)
 end
 -- the game refused: stop asking and say so once
+-- Only a refused /who counts: the game reports every protected action it refuses this addon here, and one
+-- that has nothing to do with /who must not switch the census off.
+local function isWho(fn) return type(fn) == "string" and fn:lower():find("who", 1, true) ~= nil end
 local function blocked(addon, fn)
     if S(addon) ~= ADDON then return end
-    diag().blocked = S(fn) or "?"
+    fn = S(fn)
+    if not isWho(fn) and not (fn == nil and pending and GetTime() - lastSent < 1) then return end
+    diag().blocked = fn or "?"
     pending = nil; quiet(false)
-    ns.Feed(ns.LABEL .. "Census: the game blocked background /who, counting the players you see instead|r", { tab = "census", hold = 10 })
+    ns.Feed(ns.LABEL .. "Census: the game blocked background /who, counting the players you see instead|r", { tab = "census", key = "censusblocked", hold = 10 })
 end
+-- versions before 2.26 took any refused action for a refused /who and switched the census off for good
+ns.OnLogin(function()
+    local d = diag()
+    if d.blocked and not isWho(d.blocked) then d.blockedWas, d.blocked = d.blocked, nil end
+end, "census:unblock")
 ns.On("ADDON_ACTION_BLOCKED", blocked, "census:blocked")
 ns.On("ADDON_ACTION_FORBIDDEN", blocked, "census:blocked")
 

@@ -37,6 +37,18 @@ local CONTROLS = {
     { type = "check", key = "showKeys", label = "Key bindings on the game's cooldown manager icons" },
     { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },
 
+    { header = "Shield bar" },
+    { type = "check", key = "shieldBar", label = "Shield bar: how much is left of the absorb shield on you (move it in the game's Edit Mode)" },
+    { type = "slider", key = "shieldWidth", label = "Width", min = 100, max = 420, step = 10 },
+    { type = "slider", key = "shieldHeight", label = "Height", min = 10, max = 44, step = 1 },
+    { type = "choice", key = "shieldColor", label = "Colour", options = function() return ns.SHIELD_COLORS end },
+    { type = "choice", key = "shieldText", label = "Numbers", options = function() return ns.SHIELD_TEXTS end },
+    { type = "check", key = "shieldIcon", label = "The shield's icon" },
+    { type = "check", key = "shieldTimer", label = "Time left: a line along the bottom and the seconds" },
+    { type = "check", key = "shieldAnim", label = "Animations: shine when it lands, a trail behind each hit, a shake when it breaks" },
+    { type = "check", key = "shieldSound", label = "Sound when a shield breaks" },
+    { type = "button", label = "Preview the shield bar (20 s, to move it)", action = function() ns.ShieldPreview(20) end },
+
     { header = "Messages under the HUD" },
     { type = "check", key = "showRecap", label = "Fight recap after combat" },
     { type = "slider", key = "recapHold", label = "Recap stays for", min = 3, max = 20, step = 1, suffix = " s" },
@@ -74,7 +86,7 @@ end
 
 function ns.ResetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "growl", "ready", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.panelSize = nil
     applyAll()
     ns.say("window positions and sizes reset")

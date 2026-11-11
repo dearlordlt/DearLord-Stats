@@ -23,6 +23,17 @@ function ns.HealthRows()
     if #errs == 0 then add("Addon errors", "ok", "none logged")
     else add("Addon errors", "bad", #errs .. " logged; /dls errors lists the newest") end
 
+    -- protected actions the game refused (frames it guards, mostly in combat)
+    local refusedN, refusedLast, refusedAt = 0, nil, 0
+    for fn, e in pairs(type(d.blocked) == "table" and d.blocked or {}) do
+        if type(e) == "table" then
+            refusedN = refusedN + (e.n or 0)
+            if (e.at or 0) >= refusedAt then refusedAt, refusedLast = e.at or 0, fn .. ((e.combat and " in combat") or "") end
+        end
+    end
+    if refusedN == 0 then add("Refused actions", "ok", "the game has refused the addon nothing")
+    else add("Refused actions", "limited", refusedN .. " refused so far, the last " .. ago(refusedAt) .. ": " .. tostring(refusedLast)) end
+
     local slowN, slowMax, slowWhere = 0, 0, nil
     for label, e in pairs(type(d.slow) == "table" and d.slow or {}) do
         slowN = slowN + (e.n or 0)
@@ -118,6 +129,22 @@ function ns.HealthRows()
             local visible = d.partySoloProbe:match("frame=y(%a)") == "y"
             add("Party frame when alone", visible and "ok" or "limited", visible and "shown while you are in no group, out of combat" or "asked to show, but the client keeps it off screen")
         else add("Party frame when alone", "wait", "leave your group, out of combat, with raid-style party frames on") end
+    end
+
+    if not db or db.shieldBar ~= false then
+        local sh = type(d.shield) == "table" and d.shield or {}
+        local seen = S(sh.combat) or S(sh.calm)
+        local where = S(sh.combat) and "in a fight" or "out of a fight"
+        local mode = seen and seen:match("mode=(%a+)")
+        if not seen then
+            add("Shield bar", "wait", "no shield seen on you yet (/dls shield previews the bar)"
+                .. (sh.api == "no" and "; this client has no absorb amount, the bar will show the time left" or ""))
+        elseif mode == "amount" then add("Shield bar", "ok", "the amount left is read as a number, " .. where)
+        elseif mode == "hidden" then
+            local kind = seen:match("max=[^(]*%((%a+)%)")
+            add("Shield bar", kind == "health" and "limited" or "ok", "the amount is hidden from addons " .. where .. ": the bar and number follow it anyway"
+                .. (kind == "health" and ", measured against your health (the shield's full size is not known yet)" or ", against the shield's full size"))
+        else add("Shield bar", "limited", "this client gives no amount " .. where .. ": the bar shows the time left") end
     end
 
     if GetBuildInfo then

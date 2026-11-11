@@ -62,10 +62,24 @@ reagent when a spell that burns it is known, poisons once the rogue has learned 
 some, ammunition once the character has carried any. The banner goes away when everything is in
 order, or with a click; it never shows in a fight. `/dls ready` shows the whole list at any time.
 
+**Shield bar**: a small bar of its own for the absorb shield on you, for any class and whoever cast
+it: Power Word: Shield, Ice Barrier, Mana Shield, a ward, a Voidwalker's Sacrifice. It appears with
+the shield and leaves with it, and shows what is left, of how much, with the shield's icon and the
+seconds it still lasts. A shine runs across when a shield lands, each hit blinks and leaves a trail
+that drains behind the fill, the border glows (red and quick under a quarter), and a shield that
+breaks before its time shakes and flashes red, while one that runs out just fades. Move it in the
+game's Edit Mode, where it shows itself with a running preview, or during `/dls shield`; elsewhere
+clicks pass through it. Width, height, colour (by shield, or one of five), the numbers (left and
+full, left, percent, none), icon, time, animations and a break sound are settings. Most numbers are
+hidden from addons in a fight on this client: the bar and its number still follow a hidden amount,
+measured against the full size remembered from when it could be read (else the spell rank's); if the
+client gives no amount at all, the bar shows the time left instead.
+
 **Client checks** (Summary > Client checks, or `/dls check`): one row per part of the addon that leans
 on something a game patch can change (threat numbers, the Growl switch, keys on the cooldown manager,
-auction scans and searches, vendor prices, recipes, pet details, the census, the ready check), each
-marked works, limited, not working or not tried yet, with what the client actually gave.
+auction scans and searches, vendor prices, recipes, pet details, the census, the ready check, the
+shield bar), each marked works, limited, not working or not tried yet, with what the client actually
+gave. It also lists protected actions the game refused the addon, by name.
 
 **Keys on the cooldown manager:** the game's own cooldown manager shows your spells without their
 keys. Each icon gets the key of the action bar slot that holds the spell (or a macro casting it),
@@ -153,7 +167,7 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls shield`, `/dls ready`, `/dls check`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

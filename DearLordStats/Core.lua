@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.25.1"
+ns.version = "2.26.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -188,6 +188,7 @@ local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
     showRecap = true, nudges = true,
     font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true, threatWarn = true, threatWarnAt = 90, threatSound = true, growlWarn = true, readyCheck = true, partyTargets = true, partyTargetsSelf = true, partySolo = false, partyTargetSide = "right", partyTargetWidth = 110, partyTargetHeight = 55, showKeys = true,
+    shieldBar = true, shieldWidth = 220, shieldHeight = 22, shieldColor = "spell", shieldText = "both", shieldIcon = true, shieldTimer = true, shieldAnim = true, shieldSound = false,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
     ahTooltip = true, ahAutoScan = false, ahTooltipNeutral = true, ahCompare = "shift", panelEsc = true,
     censusPassive = true, censusWho = true,
@@ -195,6 +196,7 @@ local defaults = {
     threat = { point = "TOP", x = 330, y = -40 },
     growl  = { point = "CENTER", x = 0, y = 230 },
     ready  = { point = "CENTER", x = 0, y = 150 },
+    shieldPos = { point = "CENTER", x = 0, y = -170 },
     panel = { point = "CENTER", x = 0, y = 40 },
 }
 ns.defaults = defaults
@@ -377,6 +379,7 @@ function ns.ApplyHudSettings()
     if ns.RefreshReady then ns.RefreshReady() end
     if ns.PlacePartyTargets then ns.PlacePartyTargets() end
     if ns.ApplyPartySolo then ns.ApplyPartySolo() end
+    if ns.ApplyShield then ns.ApplyShield() end
 end
 
 ----------------------------------------------------------------------
@@ -549,6 +552,32 @@ function ns.dump(v, depth, budget)
     elseif t == "function" then return "<fn>"
     else return tostring(v) end
 end
+-- protected actions the game refused this addon (it names the function): kept for the client checks page,
+-- and said once per function and session in the feed
+local saidBlocked = {}
+local function onBlocked(addon, fn)
+    if ns.S(addon) ~= ADDON then return end
+    fn = ns.S(fn) or "?"
+    local d = ns.db and ns.db.diag
+    if not d then return end
+    d.blocked = type(d.blocked) == "table" and d.blocked or {}
+    local e, kinds = d.blocked[fn], 0
+    for _ in pairs(d.blocked) do kinds = kinds + 1 end
+    if not e then
+        if kinds >= 20 then return end
+        e = { n = 0 }; d.blocked[fn] = e
+    end
+    e.n, e.at = e.n + 1, time()
+    e.combat = (InCombatLockdown and InCombatLockdown()) and true or false
+    e.version = ns.version
+    if not saidBlocked[fn] and not fn:lower():find("who", 1, true) and ns.Feed then
+        saidBlocked[fn] = true
+        ns.Feed(ns.LABEL .. "The game refused the addon an action|r  " .. ns.WHITE .. fn .. "|r" .. ns.LABEL .. "  ·  /dls check|r", { key = "blocked", hold = 10 })
+    end
+end
+ns.On("ADDON_ACTION_BLOCKED", onBlocked, "core:blocked")
+ns.On("ADDON_ACTION_FORBIDDEN", onBlocked, "core:blocked")
+
 function ns.diagOnce(key, producer)
     local d = ns.db and ns.db.diag
     if not d or d[key] ~= nil then return end

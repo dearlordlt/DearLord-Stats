@@ -9,7 +9,7 @@ local function toggle(key, after)
 end
 local function resetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "growl", "ready", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.scale, db.alpha, db.fontSize = d.scale, d.alpha, d.fontSize
     db.panelSize = nil
     ns.ApplyHudSettings()
@@ -69,7 +69,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | shield | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -90,6 +90,8 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "check" or cmd == "checks" or cmd == "health" then
             ns.say("client checks: " .. (ns.HealthSummary()))
             ns.OpenChecks()
+        elseif cmd == "shield" then
+            ns.ShieldPreview(20); ns.say("shield bar preview for 20 s: drag it where you want it (it can also be moved in the game's Edit Mode)")
         elseif cmd == "ready" then
             local missing = ns.ReadyShow(30)
             ns.say(missing == 0 and "ready: nothing missing" or ("ready: " .. missing .. " thing" .. (missing == 1 and "" or "s") .. " missing"))

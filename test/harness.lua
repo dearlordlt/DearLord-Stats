@@ -376,9 +376,28 @@ function GetWeaponEnchantInfo() return unpack(world.enchant or { false, 0, 0, 0,
 function GetInventoryItemID() return nil end
 function UnitCreatureFamily(u) return u == "pet" and world.petFamily or nil end
 strsplit = strsplit or function(sep, s) local out = {}; for part in (s .. sep):gmatch("(.-)%" .. sep) do out[#out + 1] = part end; return unpack(out) end
+-- absorb shields: the total left on a unit (hidden in combat, like other numbers) and the buff behind it
+function UnitGetTotalAbsorbs() if world.absorbApi == false then return nil end return hide(world.absorb or 0) end
+C_UnitAuras = {
+    GetAuraDataByIndex = function(_, i)
+        local a = (world.auras or {})[i]
+        if not a then return nil end
+        if world.aurasHidden then return { spellId = secret(), name = secret(), icon = secret(), expirationTime = secret(), duration = secret(), auraInstanceID = a.auraInstanceID } end
+        return a
+    end,
+    GetPlayerAuraBySpellID = function(id)
+        for _, a in ipairs(world.auras or {}) do
+            if a.spellId == id then return world.aurasHidden and { auraInstanceID = a.auraInstanceID } or a end
+        end
+    end,
+}
+EventRegistry = { callbacks = {},
+    RegisterCallback = function(self, event, fn, owner) self.callbacks[event] = self.callbacks[event] or {}; table.insert(self.callbacks[event], { fn, owner }) end,
+    TriggerEvent = function(self, event, ...) for _, c in ipairs(self.callbacks[event] or {}) do c[1](c[2], ...) end end }
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
 local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
+    UnitGetTotalAbsorbs, C_UnitAuras, EventRegistry = nil, nil, nil
     C_DamageMeter, C_TradeSkillUI, C_SpellBook, GetProfessions, GetProfessionInfo, MenuUtil = nil, nil, nil, nil, nil, nil
     GetActionInfo, GetNumTrainerServices, C_Item, issecretvalue_real = nil, nil, nil, issecretvalue
     C_AuctionHouse, TooltipDataProcessor, hooksecurefunc, GetNormalizedRealmName, DearLordAuctionDB = nil, nil, nil, nil, nil
@@ -801,6 +820,12 @@ if MODE ~= "bare" then
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     scanResult.lateTaken = DearLordAuctionDB.lastRead ~= before and DearLordAuctionDB.lastRead == DearLordAuctionDB.lastRequest
     scanResult.silentLogged = ns.db.diag.ah.log[1].out == "no answer" and ns.db.diag.ah.log[1].how == "slash" and ns.db.diag.ah.log[1].late ~= nil
+    fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
+    -- the price browser: trend, search, history
+    scanResult.trend = ns.AuctionTrend(2140)
+    scanResult.search = ns.AuctionSearch("carv")
+    GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 2140, dataInstanceID = 18 }); scanResult.tipTrend = { unpack(GameTooltip.lines) }
+    world.npc, world.npcFaction = true, nil; fire("AUCTION_HOUSE_SHOW"); advance(2)
     -- a click while the auction house is busy (just opened, or a search running): nothing is sent until the
     -- house says it is free; a request the house throws away is sent again
     world.ahBusy = true
@@ -823,10 +848,6 @@ if MODE ~= "bare" then
     scanResult.queueCap = stillHeld and C_AuctionHouse.requests - reqBefore == 1
     world.ahBusy = nil; fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
-    -- the price browser: trend, search, history
-    scanResult.trend = ns.AuctionTrend(2140)
-    scanResult.search = ns.AuctionSearch("carv")
-    GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 2140, dataInstanceID = 18 }); scanResult.tipTrend = { unpack(GameTooltip.lines) }
     ns.OpenPanel("prices", "carv"); panelText("Prices / search")
     for _, f in ipairs(frames) do if rawget(f, "onClick") and f.shown and f.link == "item:2140" then f.onClick(); break end end
     -- the history list starts collapsed to the newest day; a click on its header shows both days
@@ -1100,6 +1121,71 @@ if MODE ~= "bare" then
     table.remove(ns.db.errors)
     ns.OpenPanel("combat")
 end
+-- the shield bar: a readable shield, hits, a break, a hidden amount, hidden buffs, no amount at all, moving it
+local shield = {}
+if MODE ~= "bare" and not os.getenv("SV") then
+    local sf, st = DearLordStats_Shield, ns.shield
+    local function pws(instance) return { spellId = 17, name = "Power Word: Shield", icon = 135940, expirationTime = GetTime() + 30, duration = 30, points = { 44 }, auraInstanceID = instance } end
+    world.combat = false; world.absorb, world.auras = 0, {}
+    st.demoUntil = 0; ns.ApplyShield()                           -- the settings page's preview button was clicked earlier
+    advance(1); shield.idle = not sf.shown
+    world.auras, world.absorb = { pws(501) }, 44
+    fire("UNIT_AURA", "player"); advance(0.5)
+    shield.up = sf.shown and st.mode == "amount" and st.max == 44 and sf.amount.text == "44" and sf.full.text == "/ 44"
+    shield.time = sf.time.text
+    world.absorb = 20; fire("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+    shield.hit = st.amount == 20 and st.flash > 0 and sf.amount.text == "20" and st.max == 44
+    ns.db.shieldText = "percent"; ns.ApplyShield(); shield.percent = sf.amount.text
+    ns.db.shieldText = "both"; ns.ApplyShield()
+    world.absorb, world.auras = 0, {}; fire("UNIT_AURA", "player")
+    shield.broken = st.goneKind == "broken" and sf.shown
+    advance(2); shield.gone = not sf.shown
+    shield.learned = ns.db.shieldLearned[17]
+    -- in a fight the amount is hidden: the bar still shows, against the 44 learned above
+    world.combat = true; world.auras, world.absorb = { pws(502) }, 44
+    fire("UNIT_AURA", "player"); advance(0.5)
+    shield.hidden = sf.shown and st.mode == "hidden" and st.max == 44 and st.maxKind == "learned" and sf.full.text == "/ 44"
+    world.aurasHidden = true; fire("UNIT_AURA", "player"); advance(0.5)
+    shield.byId = sf.shown and st.aura ~= nil and st.aura.how == "byid" and st.aura.id == 17
+    -- no answer by spell id either: the shield is followed by its clock until the game says the buff is gone
+    local byId = C_UnitAuras.GetPlayerAuraBySpellID
+    C_UnitAuras.GetPlayerAuraBySpellID = function() return nil end
+    fire("UNIT_AURA", "player"); advance(0.5)
+    local blindShown = sf.shown and st.present
+    fire("UNIT_AURA", "player", { removedAuraInstanceIDs = { 502 } }); advance(0.25)
+    shield.blind = blindShown and not st.present and st.goneKind == "broken"
+    C_UnitAuras.GetPlayerAuraBySpellID = byId
+    world.aurasHidden = nil; world.combat = false
+    world.auras = { pws(504) }; fire("UNIT_AURA", "player"); advance(0.5)
+    advance(31); world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player")
+    shield.faded = st.goneKind == "faded"
+    advance(2)
+    -- a client that gives no amount: the bar shows the time left
+    world.auras = { pws(503) }; fire("UNIT_AURA", "player"); advance(0.5)
+    shield.timer = sf.shown and st.mode == "timer" and sf.amount.text == "~44"
+    ns.db.shieldBar = false; ns.ApplyShield(); shield.off = not sf.shown
+    ns.db.shieldBar = true; world.auras = {}; ns.ApplyShield(); advance(2)
+    -- Edit Mode: the bar shows itself with its preview, can be dragged, and remembers where
+    EventRegistry:TriggerEvent("EditMode.Enter"); advance(0.5)
+    shield.edit = sf.shown and sf.mover.shown and st.mode == "amount" and st.max == 480
+    sf.scripts.OnDragStart(sf); sf.scripts.OnDragStop(sf)
+    shield.moved = ns.db.shieldPos.point == "TOP" and ns.db.shieldPos.y == -12
+    advance(4.5); shield.editBroken = st.goneKind == "broken" and sf.shown
+    EventRegistry:TriggerEvent("EditMode.Exit"); advance(0.5)
+    shield.editOff = not sf.shown and not sf.mover.shown
+    sf.scripts.OnDragStart(sf); shield.fixed = st.dragging == nil
+    SlashCmdList["DEARLORDSTATS"]("shield"); advance(1); shield.preview = sf.shown and sf.mover.shown
+    advance(21); shield.previewOver = not sf.shown
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Shield bar" then shield.health = r.state .. ": " .. r.detail end end
+    shield.note = ns.db.diag.shield.calm
+    -- a refused action that is not /who is logged, and leaves the census alone
+    local keep = ns.db.diag.census.blocked
+    ns.db.diag.census.blocked = nil
+    fire("ADDON_ACTION_BLOCKED", "DearLordStats", "CompactPartyFrame:Show()")
+    shield.refused = ns.db.diag.blocked["CompactPartyFrame:Show()"] ~= nil and ns.db.diag.blocked["CompactPartyFrame:Show()"].n == 1 and ns.db.diag.census.blocked == nil
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Refused actions" then shield.refusedRow = r.state end end
+    ns.db.diag.census.blocked = keep
+end
 local function check(name, ok) io.write(string.format("   [%s] %s\n", ok and "ok" or "FAIL", name)); if not ok then os.exit_code = 1 end end
 local c = ns.char.combat
 if MODE == "bare" then
@@ -1334,6 +1420,18 @@ local function escListed() for _, n in ipairs(UISpecialFrames) do if n == "DearL
 local escOn = escListed(); ns.db.panelEsc = false; ns.ApplyPanelStyle(); local escOff = escListed(); ns.db.panelEsc = true; ns.ApplyPanelStyle()
 check("Escape closes the report by default; the setting takes it off the list and back", escOn and not escOff and escListed())
 check("Concussive Shot flagged as not on bars", (function() for _, n in ipairs(ns.spells.missing) do if n == "Concussive Shot" then return true end end end)())
+check("shield bar: hidden with no shield, shown with one: 44 / 44 and the time left (" .. tostring(shield.time) .. ")", shield.idle and shield.up and shield.time == "30")
+check("shield bar: a hit lowers it, blinks and keeps the full size; percent on request (" .. tostring(shield.percent) .. ")", shield.hit and shield.percent == "45%")
+check("shield bar: gone before its time is a break, and the bar leaves; its full size is remembered (" .. tostring(shield.learned) .. ")", shield.broken and shield.gone and shield.learned == 44)
+check("shield bar: a hidden amount in a fight still shows, against the remembered size", shield.hidden)
+check("shield bar: with buffs hidden too the shield is found by its spell id", shield.byId)
+check("shield bar: a shield that runs its time fades instead of breaking", shield.faded)
+check("shield bar: with nothing readable in a fight it is followed by its clock, and leaves when the buff is removed", shield.blind)
+check("shield bar: with no amount from the client the bar shows the time left; the setting switches it off", shield.timer and shield.off)
+check("shield bar: Edit Mode shows it with a running preview and it can be dragged there, not outside", shield.edit and shield.moved and shield.editBroken and shield.editOff and shield.fixed)
+check("shield bar: /dls shield previews it for 20 s", shield.preview and shield.previewOver)
+check("shield bar: client checks say what the client gave (" .. tostring(shield.health) .. ")", shield.health ~= nil and shield.health:find("^ok") ~= nil and shield.note ~= nil)
+check("refused actions: one that is not /who is logged and leaves the census on (" .. tostring(shield.refusedRow) .. ")", shield.refused and shield.refusedRow == "limited")
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")
     for _, e in ipairs(ns.db.errors) do io.write("   x" .. e.count .. " [" .. e.where .. "] " .. e.msg .. "\n") end
