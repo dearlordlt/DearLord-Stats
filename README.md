@@ -30,7 +30,9 @@ Bars are in class colours with class crests (pet portraits for pets), 100% means
 aggro, the holder is marked `aggro`, and a coloured edge shows the state (green safe, yellow above
 the tank, orange or red holding aggro). `/dls threat` shows or hides it, `/dls threat test` shows a
 20-second preview to move it, `/dls threat off` turns it off. If the client hides threat numbers in a fight, the bars still
-fill but are not sorted.
+fill but are not sorted. When your own bar passes 90% while someone else holds aggro, the window's border pulses red, the
+title reads "Ease off" and a warning sound plays once (level and sound in Settings; no warning for a
+character with the tank role).
 
 **Growl reminder** (hunters): grouped inside a dungeon or raid with Growl on autocast, or alone
 in the world with it off, the pet line says so and a small banner offers the switch. Click its

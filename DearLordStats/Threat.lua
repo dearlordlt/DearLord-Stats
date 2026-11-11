@@ -2,6 +2,8 @@
 -- One bar per member of your group on the mob you are fighting: you and your pet when solo,
 -- the party and their pets in a dungeon, the top of the list in a raid. 100% means that unit
 -- pulls aggro (the game's scaled threat); the unit holding aggro is marked.
+-- When your own bar passes the warning level (90% by default) while someone else holds aggro, the
+-- window's border pulses red, its title says so and a sound plays once: time to ease off.
 -- On this client threat values may be secret in combat. Bars still fill (a status bar takes a
 -- secret value), but then there is no sorting and no percentage text, only the threat state.
 local ADDON, ns = ...
@@ -56,6 +58,20 @@ close:SetScript("OnEnter", function(self) self.tex:SetVertexColor(1, 0.35, 0.35)
 close:SetScript("OnLeave", function(self) self.tex:SetVertexColor(0.65, 0.65, 0.65) end)
 close:SetScript("OnClick", function() ns.CloseThreat() end)
 tw.close = close
+
+-- the warning: a red border that pulses while you are about to pull
+local warn = CreateFrame("Frame", nil, tw)
+warn:SetAllPoints(tw)
+warn:Hide()
+for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT", nil, 2 }, { "BOTTOMLEFT", "BOTTOMRIGHT", nil, 2 }, { "TOPLEFT", "BOTTOMLEFT", 2, nil }, { "TOPRIGHT", "BOTTOMRIGHT", 2, nil } }) do
+    local t = warn:CreateTexture(nil, "OVERLAY")
+    t:SetTexture("Interface\\Buttons\\WHITE8X8")
+    t:SetVertexColor(1, 0.25, 0.25, 1)
+    t:SetPoint(side[1], warn, side[1], 0, 0); t:SetPoint(side[2], warn, side[2], 0, 0)
+    if side[3] then t:SetWidth(side[3]) else t:SetHeight(side[4]) end
+end
+warn:SetScript("OnUpdate", function(self) self:SetAlpha(0.3 + 0.7 * math.abs(math.sin(GetTime() * 5))) end)
+tw.warn = warn
 
 local function row(i)
     if rows[i] then return rows[i] end
@@ -260,6 +276,37 @@ function tw:Layout()
 end
 function tw:Fit() self:Layout() end
 
+-- a tank is meant to be on top: no warning for one
+local function isTank()
+    return UnitGroupRolesAssigned ~= nil and S(UnitGroupRolesAssigned("player")) == "TANK"
+end
+
+-- about to pull: your bar at the warning level while someone else has the mob
+local function pulling(list, demo)
+    local db = ns.db
+    if db.threatWarn == false then return false end
+    local me, holder
+    for _, e in ipairs(list) do
+        if e.isPlayer then me = e elseif B(e.tanking) then holder = e end
+    end
+    local scaled = me and N(me.scaled)
+    if not (scaled and holder) or B(me.tanking) then return false, scaled end
+    if not demo and isTank() then return false, scaled end
+    return scaled >= (db.threatWarnAt or 90), scaled
+end
+
+local function setWarning(on, scaled, demo)
+    local at = ns.db.threatWarnAt or 90
+    if not on and state.warnPlayed and (not scaled or scaled < at - 10) then state.warnPlayed = false end   -- dropped well below: armed again
+    if on and not state.warnPlayed and not demo then
+        state.warnPlayed = true
+        state.warnings = (state.warnings or 0) + 1
+        if ns.db.threatSound ~= false and PlaySound then pcall(PlaySound, SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master") end
+    end
+    state.warn = on and true or false
+    warn:SetShown(state.warn)
+end
+
 local function show(list, demo, mobName)
     local n = 0
     for i, e in ipairs(list) do
@@ -271,7 +318,9 @@ local function show(list, demo, mobName)
     end
     for i = n + 1, #rows do rows[i]:Hide() end
     tw.count = n
-    tw.title:SetText(ns.WHITE .. "Threat|r")
+    local on, scaled = pulling(list, demo)
+    setWarning(on, scaled, demo)
+    tw.title:SetText(on and (ns.RED .. "Ease off|r") or (ns.WHITE .. "Threat|r"))
     -- the mob's name goes straight to its own font string: it may be a secret string
     tw.sub:SetTextColor(0.75, 0.75, 0.75)
     if mobName ~= nil then tw.sub:SetText(mobName) else tw.sub:SetText("") end
@@ -289,6 +338,9 @@ end
 local function goStale()
     if state.stale then return end
     state.stale = true
+    setWarning(false)
+    state.warnPlayed = false
+    tw.title:SetText(ns.WHITE .. "Threat|r")
     for i = 1, tw.count or 0 do rows[i]:SetAlpha(0.5) end
 end
 
@@ -357,6 +409,9 @@ tw:SetScript("OnEnter", function(self)
     GameTooltip:AddLine("DearLord Stats: threat")
     GameTooltip:AddLine("100% = that unit pulls aggro from whoever has it.", 0.8, 0.8, 0.8, true)
     GameTooltip:AddLine("Edge colour: green safe, yellow above the tank, orange has aggro barely, red has aggro.", 0.8, 0.8, 0.8, true)
+    if ns.db.threatWarn ~= false then
+        GameTooltip:AddLine("The border pulses red when you pass " .. (ns.db.threatWarnAt or 90) .. "% while someone else has aggro.", 0.8, 0.8, 0.8, true)
+    end
     if state.sorted == false then
         GameTooltip:AddLine("This client hides threat numbers in this fight, so the bars are not sorted.", 1, 0.82, 0.4, true)
     end

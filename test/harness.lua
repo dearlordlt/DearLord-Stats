@@ -184,6 +184,8 @@ function UnitFactionGroup(u) if u == "npc" then return world.npcFaction end if u
 function IsAltKeyDown() return world.alt end
 function IsShiftKeyDown() return false end
 function IsControlKeyDown() return false end
+soundsPlayed = {}
+function PlaySound(id) soundsPlayed[#soundsPlayed + 1] = id end
 function hooksecurefunc(obj, name, fn) local orig = obj[name]; obj[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end end
 -- the modern auction house: a replicated list of every auction (itemID, count, buyout), 0-based
 local REPLICATE = { { 783, 2, 500 }, { 783, 1, 400 }, { 2140, 1, 150 }, { 2770, 20, 600 }, { 2770, 5, 0 }, { 2835, 10, 30 } }
@@ -484,8 +486,10 @@ local function threatRows()
 end
 local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview, threatDim, threatClosed
 world.tlist = { player = { false, 1, 92, 110, 16900 }, pet = { true, 3, 100, 100, 18400 } }
+local threatWarned, threatWarnSounds, threatWarnTitle, threatWarnCount, threatWarnAfter
 runFight({ during = function()
     threatSolo = threatRows()
+    threatWarned, threatWarnSounds, threatWarnTitle, threatWarnCount = ns.threat.warn, #soundsPlayed, strip(ns.huds.threat.title.text or ""), ns.threat.warnings
     local r = ns.huds.threat.rows[2]
     threatSoloEdge = r ~= nil and r.edge.shown
 end, name = "Dire Mottled Boar", dmg = 120, petDmg = 90, petSpells = { { 17253, 60 }, { 16827, 30 } }, taken = 20, duration = 14, spells = { { 75, 120 } } })
@@ -555,6 +559,7 @@ world.xp = (world.xp + 450) - world.xpMax; world.xpMax = 1400; fire("PLAYER_XP_U
 
 -- two fights at the new level against the same higher-level mob
 threatAfter = threatRows()
+threatWarnAfter = ns.threat.warn == false and ns.huds.threat.warn.shown == false and strip(ns.huds.threat.title.text or "") == "Threat"
 threatDim = ns.huds.threat.rows[1] and ns.huds.threat.rows[1].alpha
 ns.huds.threat.close.scripts.OnClick(ns.huds.threat.close); advance(1)
 threatClosed = ns.huds.threat.shown
@@ -957,6 +962,9 @@ check("pet calls probed once (" .. tostring(petProbe) .. ")", type(petProbe) == 
 check("pet damage counted (90)", c.petDmg == 90)
 check("threat solo: pet holding aggro first, then you at 92% (" .. tostring(threatSolo) .. ")", threatSolo == "Humar=aggro, Tess Ter=169  92%")
 check("threat edge shows your state colour", threatSoloEdge == true)
+check("threat warning: at 92% behind the pet the border shows, the title says ease off, one sound (" .. tostring(threatWarnTitle) .. ", " .. tostring(threatWarnSounds) .. ")",
+    threatWarned == true and threatWarnTitle == "Ease off" and threatWarnSounds == 1 and threatWarnCount == 1)
+check("threat warning: gone once the fight is over", threatWarnAfter == true)
 check("no threat window solo without a pet", threatNoPet == false)
 check("threat window stays after the fight, dimmed (" .. tostring(threatAfter) .. ")", threatAfter == "Humar=aggro, Tess Ter=169  92%" and threatDim == 0.5)
 check("the x closes it", threatClosed == false)
