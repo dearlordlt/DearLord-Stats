@@ -62,7 +62,12 @@ function ns.HealthRows()
 
     local ah = type(d.ah) == "table" and d.ah or {}
     local last = type(ah.lastScan) == "table" and ah.lastScan or nil
-    if last then add("Auction scan", "ok", (last.items or "?") .. " items from " .. (last.rows or "?") .. " auctions, " .. ago(last.at))
+    -- the newest request, when it ended without a list and nothing was read since
+    local req = ah.log and ah.log[1]
+    if req and req.out and not req.out:find("^read") and not req.late and (not last or (last.at or 0) < req.at) then
+        add("Auction scan", "limited", "the last request (" .. ago(req.at) .. ") ended with: " .. req.out
+            .. (last and ("; prices are from " .. ago(last.at)) or ""))
+    elseif last then add("Auction scan", "ok", (last.items or "?") .. " items from " .. (last.rows or "?") .. " auctions, " .. ago(last.at))
     else add("Auction scan", "wait", "not scanned yet: Scan prices at an auction house") end
     if (ah.sights or 0) > 0 then add("Prices from searches", "ok", ah.sights .. " update" .. (ah.sights == 1 and "" or "s") .. " from auction house searches")
     else add("Prices from searches", "wait", "search for an item at the auction house, or put one in the sell tab") end

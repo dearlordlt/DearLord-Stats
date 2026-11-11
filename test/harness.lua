@@ -198,7 +198,7 @@ C_AuctionHouse = { requests = 0,
     GetReplicateItemInfo = function(i) local r = REPLICATE[i + 1]; if not r then return nil end
         return ITEMS[r[1]] and ITEMS[r[1]][1] or nil, 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end,
     GetReplicateItemLink = function(i) return REPLICATE[i + 1] and ("|Hitem:" .. REPLICATE[i + 1][1] .. "::|h[Thing]|h") end,
-    IsThrottledMessageSystemReady = function() return true end,
+    IsThrottledMessageSystemReady = function() return world.ahBusy ~= true end,
     -- searches: the listings of one item, of one stackable item, and the search list itself
     GetNumItemSearchResults = function() return #(world.itemRows or {}) end,
     GetItemSearchResultInfo = function(_, i) return (world.itemRows or {})[i] end,
@@ -800,6 +800,28 @@ if MODE ~= "bare" then
     local before = DearLordAuctionDB.lastRead
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     scanResult.lateTaken = DearLordAuctionDB.lastRead ~= before and DearLordAuctionDB.lastRead == DearLordAuctionDB.lastRequest
+    scanResult.silentLogged = ns.db.diag.ah.log[1].out == "no answer" and ns.db.diag.ah.log[1].how == "slash" and ns.db.diag.ah.log[1].late ~= nil
+    -- a click while the auction house is busy (just opened, or a search running): nothing is sent until the
+    -- house says it is free; a request the house throws away is sent again
+    world.ahBusy = true
+    reqBefore = C_AuctionHouse.requests
+    DearLordStatsScanButton.scripts.OnClick(DearLordStatsScanButton); advance(1)
+    local held = C_AuctionHouse.requests - reqBefore == 0 and ns.AuctionStatus().state == "queued" and DearLordStatsScanButton.label == "Auction house busy..."
+    world.ahBusy = nil; fire("AUCTION_HOUSE_THROTTLED_SYSTEM_READY")
+    scanResult.queued = held and C_AuctionHouse.requests - reqBefore == 1 and ns.AuctionStatus().state == "requested"
+    fire("AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED"); advance(1)
+    scanResult.resent = C_AuctionHouse.requests - reqBefore == 2 and ns.AuctionStatus().state == "requested"
+    fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
+    local entry = ns.db.diag.ah.log[1]
+    scanResult.logged = entry.how == "button" and entry.ready == "no" and entry.out == "read" and entry.ev:find("D") ~= nil and entry.resent == 1
+    scanResult.logEntry = entry.how .. " ready=" .. entry.ready .. " ev=" .. entry.ev .. " out=" .. tostring(entry.out)
+    -- the signal never comes: sent anyway after ten seconds
+    world.ahBusy = true; reqBefore = C_AuctionHouse.requests
+    SlashCmdList["DEARLORDSTATS"]("scan force"); advance(5)
+    local stillHeld = C_AuctionHouse.requests - reqBefore == 0
+    advance(7)
+    scanResult.queueCap = stillHeld and C_AuctionHouse.requests - reqBefore == 1
+    world.ahBusy = nil; fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
     -- the price browser: trend, search, history
     scanResult.trend = ns.AuctionTrend(2140)
@@ -1223,6 +1245,10 @@ if MODE ~= "bare" then
     check("scan: the automatic scan, when switched on, waits for a key press (not Escape) instead of a timer", scanResult.heldBack)
     check("scan: the button on the auction house window sends a request", scanResult.ahButton)
     check("scan: a minute without the list stops the wait, and a list arriving later is still taken", scanResult.gaveUp and scanResult.lateTaken)
+    check("scan: asked while the auction house is busy, the request waits for the house to be free", scanResult.queued)
+    check("scan: a request the auction house throws away is sent again", scanResult.resent)
+    check("scan: with no ready signal the request goes out after ten seconds", scanResult.queueCap)
+    check("scan: each request is logged with how it was asked and how it ended (" .. tostring(scanResult.logEntry) .. ")", scanResult.logged and scanResult.silentLogged)
     check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
     check("tooltip: with two days known there is no usual row yet (" .. norm(scanResult.tipTrend[2]) .. ")", (function() for _, l in ipairs(scanResult.tipTrend) do if l:find("usual") then return false end end; return true end)() and norm(scanResult.tipTrend[2]) == "Horde AH lowest 1s 50c | 1 seen · just now")

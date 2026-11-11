@@ -120,7 +120,7 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "prices" or cmd == "price" or cmd == "ah" then ns.OpenPanel("prices", arg ~= "" and arg or nil)
         elseif cmd == "resetloot" then ns.ResetLoot()
         elseif cmd == "scan" then
-            local ok, why, wait = ns.AuctionScan(arg == "force")
+            local ok, why, wait = ns.AuctionScan(arg == "force", "slash")
             if ok then ns.say("auction scan requested")
             elseif why == "noapi" then ns.say("this client has no auction house scan API")
             elseif why == "closed" then ns.say("open the auction house first")

@@ -112,7 +112,8 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   - **History**: one line per earlier loot session, with the total and the average per hour.
 - **Auction prices**: the addon scans the auction house itself: click **Scan prices** under the
   auction house window (it shows the progress; keep the window open until it is done, about 10
-  seconds), or type `/dls scan`. Settings can make it start on your first key press at the auction
+  seconds), or type `/dls scan`. A scan asked for while the auction house is busy (just opened, or in
+  the middle of a search) waits until the house is free, so the request is not lost. Settings can make it start on your first key press at the auction
   house instead (once every 15 minutes for the whole account, the game's limit, shared with other
   addons: an Auctionator Full Scan counts, and the list it brings in is read here too) and remembers the lowest and median buyout per item and the
   stack size most sellers use, per realm and faction (Horde and Alliance auction houses are separate on

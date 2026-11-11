@@ -787,7 +787,8 @@ local function scanStatusRow()
     if #parts == 0 then parts[1] = L .. "no house scanned yet|r" end
     local status
     if st.state ~= "idle" then
-        status = W .. (st.state == "requested" and "waiting for the list" or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
+        status = W .. (st.state == "queued" and "waiting for the auction house to be free" or st.state == "requested" and "waiting for the list"
+            or ("scanning " .. st.done .. " / " .. st.total)) .. "|r"
     elseif st.armed then
         status = W .. "scans on your next key press|r"
     elseif st.silent and st.ahOpen then
@@ -809,7 +810,7 @@ local function scanStatusRow()
         b.color = { 0.5, 0.7, 1 }; b:SetActive(false)
         b:SetPoint("RIGHT", r, "RIGHT", -4, 0)
         b.onToggle = function()
-            local ok, why = ns.AuctionScan(true)
+            local ok, why = ns.AuctionScan(true, "panel")
             if ok then ns.say("auction scan requested" .. (st.nextIn > 0 and " (before the 15 minutes are over: the server may not answer)" or ""))
             elseif why == "busy" then ns.say("a scan is already running") end
             renderNow()
