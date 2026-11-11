@@ -202,14 +202,57 @@ local function refresh()
 end
 ns.RefreshPartyTargets = refresh
 
-for _, ev in ipairs({ "GROUP_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do
-    ns.On(ev, function() attach() end, "partyTargets:" .. ev)
+----------------------------------------------------------------------
+-- the party frame while you are alone (a setting, off by default)
+----------------------------------------------------------------------
+-- With raid-style party frames the game draws your own frame among the party's, and hides the
+-- whole party frame when you are in no group. This keeps it up: whenever the game hides it, it
+-- is shown again. Only out of combat, because an addon may not show that frame in a fight, and
+-- only by showing it: nothing of the frame's own is called or changed.
+local solo = { hooked = false, shownByUs = false }
+state.solo = solo
+
+local function raidStyle()
+    local em = _G.EditModeManagerFrame
+    if type(em) == "table" and em.UseRaidStylePartyFrames then
+        local ok, v = pcall(em.UseRaidStylePartyFrames, em)
+        if ok then return B(v) == true end
+    end
+    return true                                                 -- cannot ask: the raid-style frame is the one with a place for you
 end
+
+local function applySolo()
+    local db, f = ns.db, _G.CompactPartyFrame
+    if not db or type(f) ~= "table" or not f.Show then solo.missing = true; return end
+    solo.missing = false
+    if db.partySolo and not solo.hooked and hooksecurefunc and f.UpdateVisibility then
+        solo.hooked = true
+        hooksecurefunc(f, "UpdateVisibility", function() ns.ApplyPartySolo() end)     -- the game hid or showed it: look again
+    end
+    if inCombat() then return end                               -- after the fight
+    local grouped = (IsInGroup and B(IsInGroup())) or (IsInRaid and B(IsInRaid())) or false
+    if grouped then solo.shownByUs = false; return end          -- in a group it is the game's own business
+    if db.partySolo and raidStyle() then
+        if not f:IsShown() then f:Show(); solo.shows = (solo.shows or 0) + 1 end
+        solo.shownByUs = true
+        ns.diagOnce("partySoloProbe", function() return "shown=" .. tostring(f:IsShown() and true or false) .. " hooked=" .. tostring(solo.hooked) end)
+    elseif solo.shownByUs then
+        f:Hide()
+        solo.shownByUs = false
+    end
+end
+ns.ApplyPartySolo = applySolo
+
+for _, ev in ipairs({ "GROUP_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do
+    ns.On(ev, function() attach(); applySolo() end, "partyTargets:" .. ev)
+end
+ns.Every(1, function() if ns.db and (ns.db.partySolo or solo.shownByUs) then applySolo() end end, "partySolo:tick")
 ns.On("PLAYER_TARGET_CHANGED", refresh, "partyTargets:target")
 ns.Every(0.2, refresh, "partyTargets:tick")
 -- the party frames can be moved or resized in Edit Mode at any time: look again once a second
 ns.Every(1, function() if (IsInGroup and B(IsInGroup())) or state.on ~= (ns.db and ns.db.partyTargets ~= false) then attach() end end, "partyTargets:place")
 ns.OnLogin(function()
-    if ns.db.diag then ns.db.diag.partyTargetProbe = nil end
+    if ns.db.diag then ns.db.diag.partyTargetProbe, ns.db.diag.partySoloProbe = nil, nil end
     attach(true)
+    applySolo()
 end, "partyTargets:login")

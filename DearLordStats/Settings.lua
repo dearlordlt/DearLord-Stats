@@ -30,6 +30,7 @@ local CONTROLS = {
     { type = "check", key = "partyTargets", label = "Party targets: beside each party frame, what that member is targeting (click to target it)" },
     { type = "choice", key = "partyTargetSide", label = "Party targets sit", options = function() return ns.PARTY_TARGET_SIDES end },
     { type = "slider", key = "partyTargetWidth", label = "Party target width", min = 60, max = 180, step = 4 },
+    { type = "check", key = "partySolo", label = "Keep the raid-style party frame on screen when you are in no group (experimental)" },
     { type = "check", key = "readyCheck", label = "Ready check: what you are missing when you join a group or enter a dungeon" },
     { type = "check", key = "showKeys", label = "Key bindings on the game's cooldown manager icons" },
     { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },

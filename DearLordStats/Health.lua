@@ -106,6 +106,13 @@ function ns.HealthRows()
             .. (secure and "" or "; no secure button here, so a click cannot target") .. (driver and "" or "; shown and hidden by hand, out of fights only"))
     end
 
+    if db and db.partySolo then
+        local solo = ns.partyTargets and ns.partyTargets.solo or {}
+        if solo.missing then add("Party frame when alone", "bad", "this client has no raid-style party frame by the usual name")
+        elseif d.partySoloProbe then add("Party frame when alone", "ok", "shown while you are in no group, out of combat")
+        else add("Party frame when alone", "wait", "leave your group, out of combat, with raid-style party frames on") end
+    end
+
     if GetBuildInfo then
         local version, build, _, interface = GetBuildInfo()
         add("Game client", "ok", "version " .. tostring(S(version) or "?") .. ", build " .. tostring(S(build) or "?") .. ", interface " .. tostring(N(interface) or "?"))

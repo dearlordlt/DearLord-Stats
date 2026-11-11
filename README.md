@@ -47,6 +47,10 @@ frames, raid-style or classic, at their size; Settings picks the side (right, le
 the width. Not shown in a raid. Placing happens out of combat, so after a change mid-fight they
 catch up when the fight ends.
 
+**Party frame when alone** (Settings, off by default, experimental): with raid-style party frames,
+keeps the party frame, and so your own frame in it, on screen when you are in no group. The game
+hides that frame whenever you are alone; the addon shows it again, out of combat only.
+
 **Ready check**: when you join a group, or walk into a dungeon or raid with one, a small banner lists
 what you are missing: free bag slots, worn gear, food, water (classes with mana), ammunition, a pet
 that is away, dead or unhappy (or a warlock's Voidwalker, which taunts off the tank), and what your class burns or wears: an Ankh, seeds for Rebirth,

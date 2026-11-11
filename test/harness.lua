@@ -671,6 +671,18 @@ ns.db.partyTargets = false; ns.PlacePartyTargets(); advance(1); partyT.off = pb.
 ns.db.partyTargets = true; ns.PlacePartyTargets(); advance(1); partyT.onAgain = pb.shown
 world.party, world.threat.party1target = nil, nil; fire("GROUP_ROSTER_UPDATE"); advance(1); partyT.solo = pb.shown == false
 CompactPartyFrameMember2:Hide()
+-- the party frame while alone: off by default; on, it is shown again whenever the game hides it, never in a fight
+local soloT = {}
+CompactPartyFrame = CreateFrame("Frame", "CompactPartyFrame"); CompactPartyFrame:Hide()
+CompactPartyFrame.UpdateVisibility = function(self) self:SetShown(world.party ~= nil) end
+ns.ApplyPartySolo(); soloT.offByDefault = ns.db.partySolo == false and CompactPartyFrame.shown == false
+ns.db.partySolo = true; ns.ApplyPartySolo(); soloT.on = CompactPartyFrame.shown
+CompactPartyFrame:UpdateVisibility(); soloT.afterGameHid = CompactPartyFrame.shown
+world.combat = true; CompactPartyFrame:UpdateVisibility(); soloT.inFight = CompactPartyFrame.shown
+world.combat = false; advance(2); soloT.afterFight = CompactPartyFrame.shown
+world.party = { party1 = { name = "Tankard", class = "Warrior" } }; CompactPartyFrame:UpdateVisibility(); fire("GROUP_ROSTER_UPDATE"); soloT.grouped = CompactPartyFrame.shown
+world.party = nil; CompactPartyFrame:UpdateVisibility(); fire("GROUP_ROSTER_UPDATE"); soloT.leftGroup = CompactPartyFrame.shown
+ns.db.partySolo = false; ns.ApplyPartySolo(); soloT.offAgain = CompactPartyFrame.shown == false
 -- a warlock: a Voidwalker is fine alone and flagged in a group; another demon is fine there
 world.class, world.spells, world.petFamily = "Warlock", { [688] = true }, "Voidwalker"
 ready.voidSolo = readyItem("pet")
@@ -1120,6 +1132,9 @@ check("party targets: beside party1's frame, named, sized to it, for party1targe
 check("party targets: hidden health gives a bar and no percentage; no edge unless it is your target; gone with the target", partyT.pct == "" and not partyT.notMine and partyT.gone)
 check("party targets: not resized in a fight, resized after it (" .. tostring(partyT.inFight) .. " -> " .. tostring(partyT.afterFight) .. ")", partyT.inFight == 96 and partyT.afterFight == 140)
 check("party targets: the setting turns them off and on, and nothing shows alone", partyT.off and partyT.onAgain == true and partyT.solo)
+check("party frame alone: off by default; switched on it shows, and comes back when the game hides it", soloT.offByDefault and soloT.on == true and soloT.afterGameHid == true)
+check("party frame alone: left hidden in a fight, shown after it; untouched in a group; hidden again when switched off",
+    soloT.inFight == false and soloT.afterFight == true and soloT.grouped == true and soloT.leftGroup == true and soloT.offAgain)
 check("Growl on while alone: no reminder", growlSolo)
 check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
 check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)
