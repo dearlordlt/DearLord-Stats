@@ -1,8 +1,10 @@
 -- DearLord Stats : party targets
--- Beside each frame of the game's party frame, a small frame for what that unit is targeting:
--- its name and health, coloured red for something you can attack, by class for a player. A click
--- targets it, so you can pick up the tank's mob or the healer's patient. Your own frame and your
--- pet's get one too (your target, and what the pet is on), next to the party members'.
+-- Beside each frame of the game's party frame, a small target frame for what that unit is
+-- targeting: name, health bar and percentage, a thin power bar under it; red for something you can
+-- attack, class colour for a player. A click targets it, so you can pick up the tank's mob or the
+-- healer's patient. Your own frame and your pet's get one too (your target, and what the pet is on).
+-- In a fight a badge at its end shows your own threat on that target: the percentage in the threat
+-- colours (green safe, yellow close, orange and red holding it), or "aggro".
 -- Each is a secure unit button for "target", "pettarget" or "partyNtarget": the game shows and
 -- hides it by itself, also in a fight, and takes the click. It is made a child of the party
 -- member's frame, so it has that frame's size setting and disappears with it. Placing can only be
@@ -12,6 +14,9 @@ local ADDON, ns = ...
 local N, S, B = ns.N, ns.S, ns.B
 
 local GAP = 2
+-- your threat state on a target: 0 below the holder, 1 about to pull, 2 holding it barely, 3 holding it
+local THREAT_RGB = { [0] = { 0.62, 0.85, 0.62 }, [1] = { 1, 0.82, 0.4 }, [2] = { 1, 0.6, 0.24 }, [3] = { 1, 0.35, 0.35 } }
+local POWER_RGB = { [0] = { 0.25, 0.45, 0.95 }, [1] = { 0.85, 0.2, 0.2 }, [2] = { 0.9, 0.55, 0.25 }, [3] = { 0.95, 0.85, 0.3 } }
 -- whose frame, and the unit shown beside it
 local SLOTS = { { key = "player", unit = "target", own = true }, { key = "pet", unit = "pettarget", own = true },
     { key = "party1", unit = "party1target" }, { key = "party2", unit = "party2target" }, { key = "party3", unit = "party3target" }, { key = "party4", unit = "party4target" } }
@@ -36,11 +41,26 @@ local function create(slot)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
     b.bg:SetColorTexture(0, 0, 0, 0.75)
-    b.bar = CreateFrame("StatusBar", nil, b)
-    b.bar:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1); b.bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    b.bar = CreateFrame("StatusBar", nil, b)                    -- health
     b.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     b.bar:SetMinMaxValues(0, 100)
     b.bar:EnableMouse(false)                                    -- the click belongs to the button under it
+    b.power = CreateFrame("StatusBar", nil, b)                  -- mana, rage, energy: a thin bar under the health
+    b.power:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    b.power:SetMinMaxValues(0, 100)
+    b.power:EnableMouse(false)
+    b.strip = b.bar:CreateTexture(nil, "OVERLAY")               -- your threat state, as a coloured strip
+    b.strip:SetTexture("Interface\\Buttons\\WHITE8X8")
+    b.strip:Hide()
+    b.badge = CreateFrame("Frame", nil, b)                      -- your threat on it, beyond the frame's end
+    b.badge:EnableMouse(false)
+    b.badge:Hide()
+    b.badge.bg = b.badge:CreateTexture(nil, "BACKGROUND")
+    b.badge.bg:SetAllPoints()
+    b.badge.bg:SetColorTexture(0, 0, 0, 0.75)
+    b.threat = b.badge:CreateFontString(nil, "OVERLAY")
+    b.threat:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    b.threat:SetPoint("CENTER", b.badge, "CENTER", 0, 0)
     b.name = b.bar:CreateFontString(nil, "OVERLAY")
     b.name:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
     b.name:SetJustifyH("LEFT")
@@ -99,9 +119,10 @@ local function unitFrames()
     return out, found
 end
 
+-- top-aligned with the party member's frame, and lower than it
 local POINTS = {
-    right = { "LEFT", "RIGHT", GAP, 0 }, left = { "RIGHT", "LEFT", -GAP, 0 },
-    below = { "TOP", "BOTTOM", 0, -GAP }, above = { "BOTTOM", "TOP", 0, GAP },
+    right = { "TOPLEFT", "TOPRIGHT", GAP, 0 }, left = { "TOPRIGHT", "TOPLEFT", -GAP, 0 },
+    below = { "TOPLEFT", "BOTTOMLEFT", 0, -GAP }, above = { "BOTTOMLEFT", "TOPLEFT", 0, GAP },
 }
 
 -- show and hide: the game does it from the unit, also in a fight
@@ -130,7 +151,7 @@ local function attach(force)
     if not db or inCombat() then return end
     local side = POINTS[db.partyTargetSide] and db.partyTargetSide or "right"
     local frames, found = unitFrames()
-    local parts = { tostring(db.partyTargets ~= false), tostring(db.partyTargetsSelf ~= false), side, tostring(db.partyTargetWidth) }
+    local parts = { tostring(db.partyTargets ~= false), tostring(db.partyTargetsSelf ~= false), side, tostring(db.partyTargetWidth), tostring(db.partyTargetHeight) }
     for _, slot in ipairs(SLOTS) do
         local f = frames[slot.key]
         parts[#parts + 1] = f and (tostring(f) .. ":" .. tostring(N(f:GetHeight())) .. ":" .. tostring(N(f:GetWidth()))) or "-"
@@ -152,7 +173,8 @@ local function attach(force)
                 b:SetParent(f)
                 b:SetScale(1)
                 local fh, fw = N(f:GetHeight()) or 36, N(f:GetWidth()) or 72
-                if sideways then b:SetSize(db.partyTargetWidth or 96, fh) else b:SetSize(fw, math.max(14, math.floor(fh * 0.4))) end
+                local h = math.max(14, math.floor(fh * (db.partyTargetHeight or 55) / 100))
+                b:SetSize(sideways and (db.partyTargetWidth or 110) or fw, h)
                 b:ClearAllPoints()
                 b:SetPoint(p[1], f, p[2], p[3], p[4])
                 b.placed = "frame"
@@ -160,17 +182,25 @@ local function attach(force)
                 -- none of the game's party frames found: a plain column at the left of the screen
                 b:SetParent(UIParent)
                 b:SetScale(1)
-                b:SetSize(db.partyTargetWidth or 96, 22)
+                b:SetSize(db.partyTargetWidth or 110, 22)
                 b:ClearAllPoints()
                 b:SetPoint("LEFT", UIParent, "LEFT", 220, 60 - column * 24)
                 b.placed = "column"
             end
             if slot.own == nil then column = column + 1 end
+            -- inside: the health bar with name and percentage, a thin power bar under it; the threat badge beyond the far end
             local h = N(b:GetHeight()) or 22
-            local size = math.max(8, math.min(12, math.floor(h * 0.42)))
-            b.name:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE"); b.pct:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+            local powerH = math.max(3, math.floor(h * 0.16))
+            local barH = h - 3 - powerH
+            b.power:ClearAllPoints(); b.power:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 1, 1); b.power:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1); b.power:SetHeight(powerH)
+            b.bar:ClearAllPoints(); b.bar:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1); b.bar:SetPoint("TOPRIGHT", b, "TOPRIGHT", -1, -1); b.bar:SetHeight(barH)
+            b.strip:ClearAllPoints(); b.strip:SetPoint("TOPLEFT", b.bar, "TOPLEFT", 0, 0); b.strip:SetSize(3, barH)
+            local size = math.max(8, math.min(12, math.floor(barH * 0.62)))
+            b.name:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE"); b.pct:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE"); b.threat:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
             b.pct:ClearAllPoints(); b.pct:SetPoint("RIGHT", b.bar, "RIGHT", -3, 0)
-            b.name:ClearAllPoints(); b.name:SetPoint("LEFT", b.bar, "LEFT", 3, 0); b.name:SetPoint("RIGHT", b.pct, "LEFT", -2, 0)
+            b.name:ClearAllPoints(); b.name:SetPoint("LEFT", b.bar, "LEFT", 6, 0); b.name:SetPoint("RIGHT", b.pct, "LEFT", -2, 0)
+            b.badge:ClearAllPoints(); b.badge:SetSize(size * 3.6, h)
+            if side == "left" then b.badge:SetPoint("RIGHT", b, "LEFT", -1, 0) else b.badge:SetPoint("LEFT", b, "RIGHT", 1, 0) end
         end
     end
     state.on = db.partyTargets ~= false
@@ -187,6 +217,39 @@ local function attach(force)
 end
 ns.PlacePartyTargets = function() attach(true) end
 
+-- the health percentage: plain when the client gives numbers; otherwise the client's own
+-- percentage, which may be hidden from addons but can still be written into a text
+local function healthText(b, unit, hp, max)
+    local h, m = N(hp), N(max)
+    if h and m and m > 0 then b.pct:SetText(math.floor(h / m * 100 + 0.5) .. "%"); return "plain" end
+    if UnitHealthPercent and CurveConstants and CurveConstants.ScaleTo100 then
+        local ok, v = pcall(UnitHealthPercent, unit, true, CurveConstants.ScaleTo100)
+        if ok and v ~= nil and pcall(b.pct.SetFormattedText, b.pct, "%.0f%%", v) then return "percent" end
+    end
+    b.pct:SetText("")
+    return "hidden"
+end
+
+-- your own threat on this target: a strip in the state's colour, and the percentage (or "aggro") in a badge
+local function threatMark(b, unit, attackable)
+    local shown = false
+    if attackable and UnitDetailedThreatSituation then
+        local ok, tanking, status, scaled = pcall(UnitDetailedThreatSituation, "player", unit)
+        if ok and ns.exists(status) then
+            local c = THREAT_RGB[N(status) or -1] or { 0.8, 0.8, 0.8 }
+            b.strip:SetVertexColor(c[1], c[2], c[3], 1)
+            b.threat:SetTextColor(c[1], c[2], c[3])
+            if B(tanking) then b.threat:SetText("aggro"); shown = true
+            elseif N(scaled) then b.threat:SetText(math.floor(N(scaled) + 0.5) .. "%"); shown = true
+            else shown = pcall(b.threat.SetFormattedText, b.threat, "%.0f%%", scaled) end      -- a hidden number
+        end
+    end
+    if b.threatShown ~= shown then
+        b.threatShown = shown
+        b.strip:SetShown(shown); b.badge:SetShown(shown)
+    end
+end
+
 local function paint(b)
     local unit = b.unit
     local name = UnitName and UnitName(unit)
@@ -196,15 +259,30 @@ local function paint(b)
         pcall(b.bar.SetMinMaxValues, b.bar, 0, max)             -- a status bar takes hidden numbers
         pcall(b.bar.SetValue, b.bar, hp)
     end
-    local h, m = N(hp), N(max)
-    b.pct:SetText((h and m and m > 0) and (math.floor(h / m * 100 + 0.5) .. "%") or "")
-    local r, g, bl = 0.35, 0.75, 0.35                           -- friendly
+    local how = healthText(b, unit, hp, max)
+    if not state.healthNoted then
+        state.healthNoted = true
+        ns.diagOnce("partyTargetHealth", function() return how end)
+    end
+    -- power: hidden for things that have none
+    local pw, pmax = UnitPower and UnitPower(unit), UnitPowerMax and UnitPowerMax(unit)
+    local has = pw ~= nil and pmax ~= nil and N(pmax) ~= 0
+    if has then
+        pcall(b.power.SetMinMaxValues, b.power, 0, pmax)
+        pcall(b.power.SetValue, b.power, pw)
+        local c = POWER_RGB[UnitPowerType and N((UnitPowerType(unit))) or 0] or POWER_RGB[0]
+        b.power:SetStatusBarColor(c[1], c[2], c[3])
+    end
+    if b.powerShown ~= has then b.powerShown = has; b.power:SetShown(has) end
+    local attackable = UnitCanAttack and B(UnitCanAttack("player", unit)) or false
+    local r, g, bl = 0.3, 0.68, 0.3                             -- friendly
     if UnitIsDead and B(UnitIsDead(unit)) then r, g, bl = 0.45, 0.45, 0.45
     elseif UnitIsPlayer and B(UnitIsPlayer(unit)) then
         local class = UnitClass and S((select(2, UnitClass(unit))))
         if class and ns.CensusClassColor then r, g, bl = ns.CensusClassColor(class) end
-    elseif UnitCanAttack and B(UnitCanAttack("player", unit)) then r, g, bl = 0.8, 0.25, 0.22 end
+    elseif attackable then r, g, bl = 0.8, 0.25, 0.22 end
     b.bar:SetStatusBarColor(r, g, bl)
+    threatMark(b, unit, attackable)
     -- the edge marks "also your target": pointless on your own target's frame
     local mine = b.owner ~= "player" and UnitIsUnit and B(UnitIsUnit(unit, "target")) or false
     if b.mine ~= mine then

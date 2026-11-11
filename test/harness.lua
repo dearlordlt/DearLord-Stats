@@ -666,7 +666,13 @@ world.party.party1target = nil; advance(1); partyT.gone = pb.shown == false
 world.party.party1target = { name = "Kolkar Stormer", class = "Warrior" }; advance(1)
 world.combat = true; ns.db.partyTargetWidth = 140; ns.PlacePartyTargets(); partyT.inFight = pb.w
 world.combat = false; ns.PlacePartyTargets(); partyT.afterFight = pb.w
-ns.db.partyTargetWidth = 96
+ns.db.partyTargetWidth = 110
+-- your threat on that target: a badge with the percentage, or "aggro"; a power bar under the health
+local keepList = world.tlist
+partyT.noThreat = pb.badge.shown == false and pb.power.shown == true
+world.tlist = { player = { false, 1, 92, 95, 9000 } }; advance(1); partyT.threat = tostring(pb.badge.shown) .. " " .. tostring(pb.threat.text) .. " " .. tostring(pb.strip.shown)
+world.tlist = { player = { true, 3, 100, 100, 12000 } }; advance(1); partyT.aggro = pb.threat.text
+world.tlist = keepList; advance(1); partyT.threatGone = pb.badge.shown == false
 ns.db.partyTargets = false; ns.PlacePartyTargets(); advance(1); partyT.off = pb.shown == false
 ns.db.partyTargets = true; ns.PlacePartyTargets(); advance(1); partyT.onAgain = pb.shown
 world.party, world.threat.party1target = nil, nil; fire("GROUP_ROSTER_UPDATE"); advance(1); partyT.solo = pb.shown == false
@@ -1142,10 +1148,12 @@ end
 check("ready check: a warlock's Voidwalker is fine alone and flagged in a group (" .. tostring(ready.voidGroup) .. ")",
     ready.voidSolo == "ok: Demon is out" and ready.voidGroup == "missing: Voidwalker out: it taunts mobs off the tank" and ready.impGroup == "ok: Demon is out")
 check("party targets: beside party1's frame, named, sized to it, for party1target (" .. tostring(partyT.name) .. ", " .. tostring(partyT.size) .. ")",
-    partyT.shown == true and partyT.unit == "party1target" and partyT.name == "Kolkar Stormer" and partyT.size == "96x36" and partyT.placed == "frame" and not partyT.others)
+    partyT.shown == true and partyT.unit == "party1target" and partyT.name == "Kolkar Stormer" and partyT.size == "110x19" and partyT.placed == "frame" and not partyT.others)
 check("party targets: hidden health gives a bar and no percentage; no edge unless it is your target; gone with the target", partyT.pct == "" and not partyT.notMine and partyT.gone)
-check("party targets: not resized in a fight, resized after it (" .. tostring(partyT.inFight) .. " -> " .. tostring(partyT.afterFight) .. ")", partyT.inFight == 96 and partyT.afterFight == 140)
+check("party targets: not resized in a fight, resized after it (" .. tostring(partyT.inFight) .. " -> " .. tostring(partyT.afterFight) .. ")", partyT.inFight == 110 and partyT.afterFight == 140)
 check("party targets: the setting turns them off and on, and nothing shows alone", partyT.off and partyT.onAgain == true and partyT.solo)
+check("party targets: your threat on it shows in a badge (" .. tostring(partyT.threat) .. ", " .. tostring(partyT.aggro) .. "), gone without threat; power bar under the health",
+    partyT.noThreat and partyT.threat == "true 92% true" and partyT.aggro == "aggro" and partyT.threatGone)
 check("party targets: your own frame gets your target beside it (" .. tostring(partyT.own) .. "), without the same-target edge; its own switch hides it",
     partyT.own == "true target Thunderhawk Hatchling frame" and not partyT.ownEdge and partyT.petUnplaced and partyT.ownOff)
 check("party frame alone: off by default; switched on it shows, and comes back when the game hides it", soloT.offByDefault and soloT.on == true and soloT.afterGameHid == true)

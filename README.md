@@ -40,13 +40,14 @@ in the world with it off, the pet line says so and a small banner offers the swi
 text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
 icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
 
-**Party targets**: beside each party member's frame, a small frame for what that member is
-targeting, with its name and a health bar (red for something you can attack, class colour for a
-player, a white edge when it is your target too). A click targets it. Your own frame and your pet's
-frame in the party frame get one too: your target, and what your pet is on (its own switch in Settings). They follow the game's party
-frames, raid-style or classic, at their size; Settings picks the side (right, left, below, above) and
-the width. Not shown in a raid. Placing happens out of combat, so after a change mid-fight they
-catch up when the fight ends.
+**Party targets**: beside each party member's frame, a small target frame for what that member is
+targeting: name, health bar with percentage and a thin power bar (red for something you can attack,
+class colour for a player, a white edge when it is your target too). A click targets it. Your own
+frame and your pet's frame in the party frame get one too: your target, and what your pet is on (its
+own switch in Settings). In a fight a badge at the frame's end shows your own threat on that target:
+the percentage in the threat colours, or `aggro`. They follow the game's party frames, raid-style or
+classic; Settings picks the side (right, left, below, above), the width and the height. Placing
+happens out of combat, so after a change mid-fight they catch up when the fight ends.
 
 **Party frame when alone** (Settings, off by default, experimental): with raid-style party frames,
 keeps the party frame, and so your own frame in it, on screen when you are in no group. The game
