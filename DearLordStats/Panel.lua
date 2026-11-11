@@ -1008,15 +1008,15 @@ function render.prices()
         H(name or ("item " .. id))
         -- every house in one table: lowest, median, how many were up, the move since the day before, the scan's age
         local widths = { fsize() * 6, fsize() * 6, fsize() * 4, fsize() * 4, fsize() * 6.5 }
-        CELLS(L .. "House|r", { L .. "lowest|r", L .. "median|r", L .. "on AH|r", L .. "trend|r", L .. "scanned|r" }, { widths = widths, small = true, rule = true })
+        CELLS(L .. "House|r", { L .. "lowest|r", L .. "median|r", L .. "on AH|r", L .. "trend|r", L .. "seen|r" }, { widths = widths, small = true, rule = true })
         local sv = ns.SellPrice and ns.SellPrice(id)
         for _, house in ipairs(houses) do
-            local p, age, seen = ns.AuctionPriceByID(id, house[2])
+            local p, age, seen, secs = ns.AuctionPriceByID(id, house[2])
             if p then
                 local hh = ns.AuctionHistory(id, house[2])
                 CELLS(W .. house[1] .. "|r", { W .. m(p) .. "|r", L .. (hh[1] and hh[1].med and m(hh[1].med) or "-") .. "|r", L .. (seen or 0) .. "|r",
-                    ns.AuctionTrendText((ns.AuctionTrend(id, house[2]))) or " ", L .. ns.AuctionAgeText(age) .. "|r" },
-                    { widths = widths, link = "item:" .. id, tip = "Lowest and median buyout per unit at this house's last scan, units up for sale, and the lowest price's move since the scan day before." })
+                    ns.AuctionTrendText((ns.AuctionTrend(id, house[2]))) or " ", L .. ns.AuctionAgeText(age, secs) .. "|r" },
+                    { widths = widths, link = "item:" .. id, tip = "Lowest and median buyout per unit when this house was last scanned or the item was last looked up there, units up for sale, and the lowest price's move since the scan day before." })
             end
         end
         if sv and sv > 0 then CELLS(L .. "Vendor pays|r", { W .. m(sv) .. "|r", "", "", "", "" }, { widths = widths }) end

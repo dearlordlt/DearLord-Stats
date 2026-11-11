@@ -193,7 +193,18 @@ C_AuctionHouse = { requests = 0,
     GetReplicateItemInfo = function(i) local r = REPLICATE[i + 1]; if not r then return nil end
         return ITEMS[r[1]] and ITEMS[r[1]][1] or nil, 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end,
     GetReplicateItemLink = function(i) return REPLICATE[i + 1] and ("|Hitem:" .. REPLICATE[i + 1][1] .. "::|h[Thing]|h") end,
-    IsThrottledMessageSystemReady = function() return true end }
+    IsThrottledMessageSystemReady = function() return true end,
+    -- searches: the listings of one item, of one stackable item, and the search list itself
+    GetNumItemSearchResults = function() return #(world.itemRows or {}) end,
+    GetItemSearchResultInfo = function(_, i) return (world.itemRows or {})[i] end,
+    HasFullItemSearchResults = function() return world.full ~= false end,
+    GetNumCommoditySearchResults = function() return #(world.commodityRows or {}) end,
+    GetCommoditySearchResultInfo = function(_, i) return (world.commodityRows or {})[i] end,
+    HasFullCommoditySearchResults = function() return world.full ~= false end,
+    GetBrowseResults = function() return world.browse or {} end }
+-- the old auction house: one page of auctions (itemID, count, buyout) out of world.pageTotal
+function GetNumAuctionItems() return #(world.page or {}), world.pageTotal or #(world.page or {}) end
+function GetAuctionItemInfo(_, i) local r = world.page[i]; return "Thing " .. r[1], 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end
 TooltipDataProcessor = { calls = {}, AddTooltipPostCall = function(kind, fn) TooltipDataProcessor.calls[kind] = fn end }
 function GetCursorPosition() return 380, 200 end
 C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
@@ -671,6 +682,47 @@ if MODE ~= "bare" then
     scanResult.expandedRows = dayRows()
     panelText("Prices / Carving Knife history")
     scanResult.historyRows = ns.AuctionHistory(2140)
+    -- prices seen on screen between scans: a search brings one item up to date
+    local house = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"]
+    local countBefore, sight = house.count, {}
+    local function at(id) local e = house.items[id]; return e and (e.p .. "/" .. e.n) or "none" end
+    world.npc = nil; fire("AUCTION_HOUSE_SHOW")
+    local crate = { itemID = 9101 }
+    world.full, world.itemRows = true, { { buyoutAmount = 350, quantity = 1 }, { buyoutAmount = 300, quantity = 1 }, { bidAmount = 5, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.first = at(9101)
+    GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 9101, dataInstanceID = 31 }); sight.tip = { unpack(GameTooltip.lines) }
+    -- a tooltip that is up while the listings arrive is drawn again
+    local redrawn = 0
+    local owner = { GetScript = function() return function() redrawn = redrawn + 1 end end }
+    local tipWas = world.tooltip; world.tooltip = "Crate"; GameTooltip.GetOwner = function() return owner end
+    world.full, world.itemRows = false, { { buyoutAmount = 500, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.partialHigher, sight.redrawnUnchanged = at(9101), redrawn
+    world.itemRows = { { buyoutAmount = 250, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.partialLower, sight.redrawn = at(9101), redrawn
+    world.full, world.itemRows = true, { { buyoutAmount = 400, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.completeHigher = at(9101)
+    world.tooltip = tipWas; GameTooltip.GetOwner = nil
+    world.commodityRows = { { unitPrice = 20, quantity = 50 }, { unitPrice = 25, quantity = 10 } }
+    fire("COMMODITY_SEARCH_RESULTS_UPDATED", 9102); sight.commodity = at(9102)
+    world.browse = { { itemKey = { itemID = 9103 }, minPrice = 7, totalQuantity = 4 }, { itemKey = { itemID = 9104, itemSuffix = 12 }, minPrice = 90, totalQuantity = 1 } }
+    fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED"); sight.browse = at(9103) .. " " .. at(9104)
+    fire("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", { { itemKey = { itemID = 9104, itemSuffix = 13 }, minPrice = 120, totalQuantity = 1 } }); sight.variant = at(9104)
+    world.page = { { 9105, 5, 500 }, { 9105, 1, 80 } }
+    fire("AUCTION_ITEM_LIST_UPDATE"); sight.page = at(9105)
+    world.page, world.pageTotal = { { 9105, 1, 300 } }, 120
+    fire("AUCTION_ITEM_LIST_UPDATE"); sight.pagePartial = at(9105)
+    world.page, world.pageTotal = nil, nil
+    -- the usual price: the middle of the daily lows, shown beside the price
+    house.items[9101].h = AH_DAY .. ":400:400 " .. (AH_DAY - 1) .. ":354:400 " .. (AH_DAY - 2) .. ":1818:1900 " .. (AH_DAY - 3) .. ":452:500 " .. (AH_DAY - 4) .. ":2399:2500"
+    sight.usual = ns.AuctionUsual(9101)
+    GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 9101, dataInstanceID = 32 }); sight.tipUsual = { unpack(GameTooltip.lines) }
+    sight.ages = ns.AuctionAgeText(0, 30) .. ", " .. ns.AuctionAgeText(0, 300) .. ", " .. ns.AuctionAgeText(1, 7200) .. ", " .. ns.AuctionAgeText(3, 3 * 86400) .. ", " .. ns.AuctionAgeText(0)
+    fire("AUCTION_HOUSE_CLOSED")
+    world.itemRows = { { buyoutAmount = 1, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.closed = at(9101)
+    sight.probe = ns.db.diag.ahSight
+    for id = 9101, 9105 do house.items[id] = nil end; house.count = countBefore       -- leave the house as the checks below expect it
+    scanResult.sight = sight
 end
 
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
@@ -983,7 +1035,20 @@ if MODE ~= "bare" then
     check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 5 and norm(scanResult.tipAlways[3]) == "Alliance AH 3s 0c |")
     check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
-        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · today")
+        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · just now")
+    local sg = scanResult.sight
+    check("seen on screen: a full listing sets lowest and count, ignoring bid-only auctions (" .. tostring(sg.first) .. ")", sg.first == "300/2")
+    check("seen on screen: the tooltip shows it at once with a fresh age (" .. norm(sg.tip[#sg.tip]) .. ")", norm(sg.tip[1]) == "Horde AH 3s 0c |" and norm(sg.tip[2]) == "Horde: 2 seen · just now")
+    check("seen on screen: a partial listing only lowers the price (" .. sg.partialHigher .. " -> " .. sg.partialLower .. ")", sg.partialHigher == "300/2" and sg.partialLower == "250/2")
+    check("seen on screen: a full listing may raise it once the cheap ones are gone (" .. sg.completeHigher .. ")", sg.completeHigher == "400/1")
+    check("seen on screen: an open tooltip of that item is redrawn only when the price moved", sg.redrawnUnchanged == 0 and sg.redrawn == 1)
+    check("seen on screen: stackable items, one row per price (" .. sg.commodity .. ")", sg.commodity == "20/60")
+    check("seen on screen: the search list itself (" .. sg.browse .. "), a second suffix cannot raise the first (" .. sg.variant .. ")", sg.browse == "7/4 90/1" and sg.variant == "90/1")
+    check("seen on screen: old auction house, a single page is complete, one page of many only lowers (" .. sg.page .. ", " .. sg.pagePartial .. ")", sg.page == "80/6" and sg.pagePartial == "80/6")
+    check("seen on screen: nothing is taken with the auction house closed", sg.closed == "400/1")
+    check("seen on screen: first sighting recorded (" .. tostring(sg.probe) .. ")", sg.probe == "item item=9101 unit=300 units=2 complete=true")
+    check("usual price: middle of five daily lows is 4s 52c, shown beside the price (" .. norm(sg.tipUsual[1]) .. ")", sg.usual == 452 and norm(sg.tipUsual[1]) == "Horde AH 4s 0c | usual 4s 52c")
+    check("age text (" .. sg.ages .. ")", sg.ages == "just now, 5 min ago, 2 h ago, 3 days ago, today")
     local function find(list, id) for _, e in ipairs(list or {}) do if e.id == id then return e end end end
     local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
     check("advisor: Rough Blasting Powder +1s 87c to AH, 14 craftable (" .. tostring(powder and strip(powder.right)) .. ")",

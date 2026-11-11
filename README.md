@@ -84,11 +84,16 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   house instead (once every 15 minutes for the whole account, the game's limit, shared with other
   addons: an Auctionator Full Scan counts, and the list it brings in is read here too) and remembers the lowest and median buyout per item and the
   stack size most sellers use, per realm and faction (Horde and Alliance auction houses are separate on
-  Forever; goblin houses are neutral). The price shows in item tooltips as `Horde AH 9s 31c` plus
-  `Horde: 19 seen · 2 days ago`, with the stack total when you hover a stack. Every house you have
-  scanned is listed: yours, the other faction's (by default always; Settings can tie it to Alt, Shift or
-  Ctrl) and the neutral one. A trend (`+12%` / `-8%`) shows how the lowest buyout moved since the
-  previous scan day. The **Prices** tab starts with one line for the scans (each house's age, and Scan
+  Forever; goblin houses are neutral). Between scans the price of an item is brought up to date
+  whenever the auction house shows its listings: placing it in the sell tab, clicking it in a search, or
+  the search list itself. A complete listing replaces the stored price; a partial one can only lower it.
+  The price shows in item tooltips as `Horde AH 9s 31c` plus `Horde: 19 seen · 5 min ago`, with the
+  stack total when you hover a stack; a tooltip that is open while the listings arrive is redrawn.
+  Every house you have scanned is listed: yours, the other faction's (by default always; Settings can
+  tie it to Alt, Shift or Ctrl) and the neutral one. Beside the price stands the usual price
+  (`usual 24s`), the middle one of the last week's daily lows, so a single odd listing does not
+  mislead; until three days are known, a trend (`+12%` / `-8%`) shows how the lowest buyout moved
+  since the previous scan day instead. The **Prices** tab starts with one line for the scans (each house's age, and Scan
   now), then a browser: search by name across every house, one labelled column per house, click an item
   for a table of every house (lowest, median, units up, trend, age, and what a vendor pays) and a line
   chart per house, green where the price rose and red where it fell. Both the tooltip line and the
