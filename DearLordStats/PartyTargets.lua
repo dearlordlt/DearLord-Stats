@@ -221,9 +221,48 @@ local function raidStyle()
     return true                                                 -- cannot ask: the raid-style frame is the one with a place for you
 end
 
+-- what the client's party frame looks like right now, for the saved variables: written on every
+-- change while the setting is on, so a frame that will not show can be diagnosed from one reload
+local function soloProbe(f, note)
+    local d = ns.db and ns.db.diag
+    if not d then return end
+    local function yn(v) return v and "y" or "n" end
+    local function frameInfo(x)
+        if type(x) ~= "table" or not x.IsShown then return "none" end
+        return yn(x:IsShown()) .. yn(x.IsVisible and x:IsVisible()) .. " " .. tostring(N(x:GetWidth()) and math.floor(N(x:GetWidth()))) .. "x" .. tostring(N(x:GetHeight()) and math.floor(N(x:GetHeight())))
+            .. " a" .. tostring(x.GetAlpha and N(x:GetAlpha()))
+    end
+    local parts = { note, "setting=" .. tostring(ns.db.partySolo), "hooked=" .. tostring(solo.hooked), "shows=" .. tostring(solo.shows or 0) }
+    if type(f) ~= "table" then parts[#parts + 1] = "CompactPartyFrame=" .. type(f)
+    else
+        parts[#parts + 1] = "frame=" .. frameInfo(f)
+        local chain, p = {}, f.GetParent and f:GetParent()
+        while type(p) == "table" and #chain < 4 do
+            chain[#chain + 1] = tostring(p.GetName and p:GetName()) .. ":" .. yn(p.IsShown and p:IsShown())
+            p = p.GetParent and p:GetParent()
+        end
+        parts[#parts + 1] = "parents=" .. table.concat(chain, ">")
+        for i = 1, 5 do
+            local m = _G["CompactPartyFrameMember" .. i]
+            if type(m) == "table" then parts[#parts + 1] = "m" .. i .. "=" .. tostring(S(m.unit)) .. "/" .. tostring(S(m.displayedUnit)) .. " " .. frameInfo(m) end
+        end
+        parts[#parts + 1] = "children=" .. tostring(f.GetNumChildren and N(f:GetNumChildren()))
+    end
+    local em = _G.EditModeManagerFrame
+    if type(em) == "table" then
+        for _, fn in ipairs({ "UseRaidStylePartyFrames", "ArePartyFramesForcedShown" }) do
+            local ok, v = pcall(function() return em[fn](em) end)
+            parts[#parts + 1] = fn .. "=" .. (ok and tostring(B(v)) or "error")
+        end
+    else parts[#parts + 1] = "EditModeManagerFrame=" .. type(em) end
+    parts[#parts + 1] = "PartyFrame=" .. frameInfo(_G.PartyFrame)
+    local text = table.concat(parts, " ")
+    if text ~= solo.lastProbe then solo.lastProbe = text; d.partySoloProbe = text end
+end
+
 local function applySolo()
     local db, f = ns.db, _G.CompactPartyFrame
-    if not db or type(f) ~= "table" or not f.Show then solo.missing = true; return end
+    if not db or type(f) ~= "table" or not f.Show then solo.missing = true; if db and db.partySolo then soloProbe(f, "missing") end; return end
     solo.missing = false
     if db.partySolo and not solo.hooked and hooksecurefunc and f.UpdateVisibility then
         solo.hooked = true
@@ -234,11 +273,24 @@ local function applySolo()
     if grouped then solo.shownByUs = false; return end          -- in a group it is the game's own business
     if db.partySolo and raidStyle() then
         if not f:IsShown() then f:Show(); solo.shows = (solo.shows or 0) + 1 end
+        -- a hidden frame around it keeps it off screen all the same: those are shown too, and remembered
+        local p, depth = f.GetParent and f:GetParent(), 0
+        while type(p) == "table" and p ~= UIParent and depth < 4 do
+            if p.IsShown and not p:IsShown() and p.Show then
+                p:Show()
+                solo.parents = solo.parents or {}
+                solo.parents[#solo.parents + 1] = p
+            end
+            p, depth = p.GetParent and p:GetParent(), depth + 1
+        end
         solo.shownByUs = true
-        ns.diagOnce("partySoloProbe", function() return "shown=" .. tostring(f:IsShown() and true or false) .. " hooked=" .. tostring(solo.hooked) end)
+        soloProbe(f, "applied")
     elseif solo.shownByUs then
         f:Hide()
-        solo.shownByUs = false
+        for _, p in ipairs(solo.parents or {}) do p:Hide() end
+        solo.parents, solo.shownByUs = nil, false
+    elseif db.partySolo then
+        soloProbe(f, "not-raid-style")
     end
 end
 ns.ApplyPartySolo = applySolo

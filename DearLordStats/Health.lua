@@ -109,7 +109,9 @@ function ns.HealthRows()
     if db and db.partySolo then
         local solo = ns.partyTargets and ns.partyTargets.solo or {}
         if solo.missing then add("Party frame when alone", "bad", "this client has no raid-style party frame by the usual name")
-        elseif d.partySoloProbe then add("Party frame when alone", "ok", "shown while you are in no group, out of combat")
+        elseif S(d.partySoloProbe) and d.partySoloProbe:find("^applied") then
+            local visible = d.partySoloProbe:match("frame=y(%a)") == "y"
+            add("Party frame when alone", visible and "ok" or "limited", visible and "shown while you are in no group, out of combat" or "asked to show, but the client keeps it off screen")
         else add("Party frame when alone", "wait", "leave your group, out of combat, with raid-style party frames on") end
     end
 
