@@ -98,6 +98,14 @@ function ns.HealthRows()
         add("Ready check", limited and "limited" or "ok", table.concat(parts, ", "))
     end
 
+    local pt = S(d.partyTargetProbe)
+    if not pt then add("Party targets", "wait", "join a party with its frames on screen")
+    else
+        local secure, driver = pt:find("secure=true", 1, true) ~= nil, pt:find("mode=manual", 1, true) == nil
+        add("Party targets", (secure and driver) and "ok" or "limited", "placed beside the game's party frames (" .. (pt:match("first=(%S+)") or "?") .. ")"
+            .. (secure and "" or "; no secure button here, so a click cannot target") .. (driver and "" or "; shown and hidden by hand, out of fights only"))
+    end
+
     if GetBuildInfo then
         local version, build, _, interface = GetBuildInfo()
         add("Game client", "ok", "version " .. tostring(S(version) or "?") .. ", build " .. tostring(S(build) or "?") .. ", interface " .. tostring(N(interface) or "?"))

@@ -40,6 +40,13 @@ in the world with it off, the pet line says so and a small banner offers the swi
 text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
 icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
 
+**Party targets**: beside each party member's frame, a small frame for what that member is
+targeting, with its name and a health bar (red for something you can attack, class colour for a
+player, a white edge when it is your target too). A click targets it. They follow the game's party
+frames, raid-style or classic, at their size; Settings picks the side (right, left, below, above) and
+the width. Not shown in a raid. Placing happens out of combat, so after a change mid-fight they
+catch up when the fight ends.
+
 **Ready check**: when you join a group, or walk into a dungeon or raid with one, a small banner lists
 what you are missing: free bag slots, worn gear, food, water (classes with mana), ammunition, a pet
 that is away, dead or unhappy (or a warlock's Voidwalker, which taunts off the tank), and what your class burns or wears: an Ankh, seeds for Rebirth,

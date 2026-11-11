@@ -650,6 +650,27 @@ world.enchant = nil
 world.class, world.bag1, world.spells = "Shaman", {}, {}
 ready.shamanNew = readyItem("reagent:17030")
 world.spells = { [20608] = true }; ready.shamanAnkh = readyItem("reagent:17030")
+-- party targets: a small frame beside a party member's frame for what that member is targeting
+local PT, partyT = ns.partyTargets, {}
+CompactPartyFrameMember2 = CreateFrame("Button", "CompactPartyFrameMember2")
+CompactPartyFrameMember2.unit = "party1"; CompactPartyFrameMember2:SetSize(72, 36); CompactPartyFrameMember2:Show()
+CompactPartyFrameMember2.IsVisible = function(self) return self.shown end
+world.party = { party1 = { name = "Tankard", class = "Warrior" }, party1target = { name = "Kolkar Stormer", class = "Warrior" } }
+world.threat.party1target = "Creature-0-1-2-3-4-5"
+fire("GROUP_ROSTER_UPDATE"); advance(1)
+local pb = PT.buttons[1]
+partyT.shown, partyT.unit, partyT.name, partyT.pct = pb.shown, pb.unit, pb.name.text, pb.pct.text
+partyT.size, partyT.placed, partyT.others = tostring(pb.w) .. "x" .. tostring(pb.h), pb.placed, PT.buttons[2].shown
+partyT.notMine = pb.edge[1].shown
+world.party.party1target = nil; advance(1); partyT.gone = pb.shown == false
+world.party.party1target = { name = "Kolkar Stormer", class = "Warrior" }; advance(1)
+world.combat = true; ns.db.partyTargetWidth = 140; ns.PlacePartyTargets(); partyT.inFight = pb.w
+world.combat = false; ns.PlacePartyTargets(); partyT.afterFight = pb.w
+ns.db.partyTargetWidth = 96
+ns.db.partyTargets = false; ns.PlacePartyTargets(); advance(1); partyT.off = pb.shown == false
+ns.db.partyTargets = true; ns.PlacePartyTargets(); advance(1); partyT.onAgain = pb.shown
+world.party, world.threat.party1target = nil, nil; fire("GROUP_ROSTER_UPDATE"); advance(1); partyT.solo = pb.shown == false
+CompactPartyFrameMember2:Hide()
 -- a warlock: a Voidwalker is fine alone and flagged in a group; another demon is fine there
 world.class, world.spells, world.petFamily = "Warlock", { [688] = true }, "Voidwalker"
 ready.voidSolo = readyItem("pet")
@@ -1094,6 +1115,11 @@ if MODE ~= "bare" then
 end
 check("ready check: a warlock's Voidwalker is fine alone and flagged in a group (" .. tostring(ready.voidGroup) .. ")",
     ready.voidSolo == "ok: Demon is out" and ready.voidGroup == "missing: Voidwalker out: it taunts mobs off the tank" and ready.impGroup == "ok: Demon is out")
+check("party targets: beside party1's frame, named, sized to it, for party1target (" .. tostring(partyT.name) .. ", " .. tostring(partyT.size) .. ")",
+    partyT.shown == true and partyT.unit == "party1target" and partyT.name == "Kolkar Stormer" and partyT.size == "96x36" and partyT.placed == "frame" and not partyT.others)
+check("party targets: hidden health gives a bar and no percentage; no edge unless it is your target; gone with the target", partyT.pct == "" and not partyT.notMine and partyT.gone)
+check("party targets: not resized in a fight, resized after it (" .. tostring(partyT.inFight) .. " -> " .. tostring(partyT.afterFight) .. ")", partyT.inFight == 96 and partyT.afterFight == 140)
+check("party targets: the setting turns them off and on, and nothing shows alone", partyT.off and partyT.onAgain == true and partyT.solo)
 check("Growl on while alone: no reminder", growlSolo)
 check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
 check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)
