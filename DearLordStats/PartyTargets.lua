@@ -1,15 +1,20 @@
 -- DearLord Stats : party targets
--- Beside each party member's frame, a small frame for what that member is targeting: its name
--- and health, coloured red for something you can attack, by class for a player. A click targets
--- it, so you can pick up the tank's mob or the healer's patient.
--- Each frame is a secure unit button for "partyNtarget": the game shows and hides it by itself,
--- also in a fight, and takes the click. Placing and sizing it can only be done out of combat, so
--- it follows the party frames again after the fight if they moved during one.
+-- Beside each frame of the game's party frame, a small frame for what that unit is targeting:
+-- its name and health, coloured red for something you can attack, by class for a player. A click
+-- targets it, so you can pick up the tank's mob or the healer's patient. Your own frame and your
+-- pet's get one too (your target, and what the pet is on), next to the party members'.
+-- Each is a secure unit button for "target", "pettarget" or "partyNtarget": the game shows and
+-- hides it by itself, also in a fight, and takes the click. It is made a child of the party
+-- member's frame, so it has that frame's size setting and disappears with it. Placing can only be
+-- done out of combat, so it follows the party frames again after the fight if they changed in one.
 -- No event fires for somebody else's target, so name and health are read five times a second.
 local ADDON, ns = ...
 local N, S, B = ns.N, ns.S, ns.B
 
-local MAX, GAP = 4, 2
+local GAP = 2
+-- whose frame, and the unit shown beside it
+local SLOTS = { { key = "player", unit = "target", own = true }, { key = "pet", unit = "pettarget", own = true },
+    { key = "party1", unit = "party1target" }, { key = "party2", unit = "party2target" }, { key = "party3", unit = "party3target" }, { key = "party4", unit = "party4target" } }
 ns.PARTY_TARGET_SIDES = { { key = "right", name = "Right" }, { key = "left", name = "Left" }, { key = "below", name = "Below" }, { key = "above", name = "Above" } }
 
 local buttons = {}
@@ -19,15 +24,14 @@ state.buttons = buttons
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() and true or false end
 
-local function create(n)
-    local unit = "party" .. n .. "target"
-    local ok, b = pcall(CreateFrame, "Button", "DearLordStats_PartyTarget" .. n, UIParent, "SecureUnitButtonTemplate")
-    if not ok or not b then b = CreateFrame("Button", "DearLordStats_PartyTarget" .. n, UIParent); state.noSecure = true end
-    b.unit, b.owner = unit, "party" .. n
-    b:SetAttribute("unit", unit)
+local function create(slot)
+    local name = "DearLordStats_PartyTarget_" .. slot.key
+    local ok, b = pcall(CreateFrame, "Button", name, UIParent, "SecureUnitButtonTemplate")
+    if not ok or not b then b = CreateFrame("Button", name, UIParent); state.noSecure = true end
+    b.unit, b.owner, b.own = slot.unit, slot.key, slot.own
+    b:SetAttribute("unit", slot.unit)
     b:SetAttribute("type1", "target")                           -- left click: target what they target
     b:RegisterForClicks("AnyUp", "AnyDown")                     -- the client acts on press or release, by a setting
-    b:SetFrameStrata("LOW")
     b:Hide()
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
@@ -62,25 +66,32 @@ local function create(n)
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-    buttons[n] = b
+    buttons[slot.key] = b
     return b
 end
-for n = 1, MAX do create(n) end
+for _, slot in ipairs(SLOTS) do create(slot) end
 
--- the game's own frame of each party member that is on screen: raid-style first, then the classic ones
-local function memberFrames()
+-- the game's own frame of each unit that is on screen: raid-style first (members, then the pet
+-- frames among the party frame's children), then the classic party frames
+local function unitFrames()
     local out, found = {}, 0
     local function take(f, unit)
-        local n = unit and tonumber(unit:match("^party(%d)$"))
-        if n and n <= MAX and not out[n] and f.IsVisible and f:IsVisible() then out[n] = f; found = found + 1 end
+        if type(f) ~= "table" or not unit or not buttons[unit] or out[unit] then return end
+        if f.IsVisible and f:IsVisible() then out[unit] = f; found = found + 1 end
     end
     for i = 1, 5 do
         local f = _G["CompactPartyFrameMember" .. i]
-        if type(f) == "table" then take(f, S(f.displayedUnit) or S(f.unit)) end
+        if type(f) == "table" then take(f, S(f.unit)) end
+    end
+    local cpf = _G.CompactPartyFrame
+    if type(cpf) == "table" and cpf.GetChildren then
+        for _, f in ipairs({ cpf:GetChildren() }) do
+            if type(f) == "table" then take(f, S(f.unit)) end
+        end
     end
     local pf = _G.PartyFrame
     if type(pf) == "table" then
-        for i = 1, MAX do
+        for i = 1, 4 do
             local f = pf["MemberFrame" .. i]
             if type(f) == "table" then take(f, S(f.unit) or S(f.unitToken) or ("party" .. i)) end
         end
@@ -93,11 +104,11 @@ local POINTS = {
     below = { "TOP", "BOTTOM", 0, -GAP }, above = { "BOTTOM", "TOP", 0, GAP },
 }
 
--- show and hide: the game does it from the unit, also in a fight; never in a raid, where party frames are away
+-- show and hide: the game does it from the unit, also in a fight
 local function watch(b, on)
     if state.noSecure then return end
     if RegisterStateDriver and UnregisterStateDriver then
-        if on then RegisterStateDriver(b, "visibility", "[group:raid] hide; [@" .. b.unit .. ",exists] show; hide")
+        if on then RegisterStateDriver(b, "visibility", "[@" .. b.unit .. ",exists] show; hide")
         else UnregisterStateDriver(b, "visibility"); b:Hide() end
         state.mode = "driver"
     elseif RegisterUnitWatch and UnregisterUnitWatch then
@@ -108,45 +119,53 @@ local function watch(b, on)
     end
 end
 
--- place every frame beside its party member; out of combat only
+local function wanted(b)
+    local db = ns.db
+    return db.partyTargets ~= false and (not b.own or db.partyTargetsSelf ~= false)
+end
+
+-- place every frame beside its unit's party frame; out of combat only
 local function attach(force)
     local db = ns.db
     if not db or inCombat() then return end
-    local on = db.partyTargets ~= false
     local side = POINTS[db.partyTargetSide] and db.partyTargetSide or "right"
-    local frames, found = memberFrames()
-    local parts = { tostring(on), side, tostring(db.partyTargetWidth) }
-    for n = 1, MAX do
-        local f = frames[n]
-        parts[#parts + 1] = f and (tostring(f) .. ":" .. tostring(N(f:GetHeight())) .. ":" .. tostring(N(f:GetWidth())) .. ":" .. tostring(f.GetEffectiveScale and N(f:GetEffectiveScale()))) or "-"
+    local frames, found = unitFrames()
+    local parts = { tostring(db.partyTargets ~= false), tostring(db.partyTargetsSelf ~= false), side, tostring(db.partyTargetWidth) }
+    for _, slot in ipairs(SLOTS) do
+        local f = frames[slot.key]
+        parts[#parts + 1] = f and (tostring(f) .. ":" .. tostring(N(f:GetHeight())) .. ":" .. tostring(N(f:GetWidth()))) or "-"
     end
     local signature = table.concat(parts, "|")
     if signature == state.signature and not force then return end
     state.signature, state.attached = signature, found
     local p = POINTS[side]
     local sideways = side == "right" or side == "left"
-    for n = 1, MAX do
-        local b, f = buttons[n], frames[n]
-        if state.on ~= on then watch(b, on) end
+    local column = 0
+    for _, slot in ipairs(SLOTS) do
+        local b, f = buttons[slot.key], frames[slot.key]
+        local on = wanted(b)
+        if b.watched ~= on then watch(b, on); b.watched = on end
         if not on then b:Hide() end
         if on then
             if f then
-                -- the party frames have their own size setting: take their scale, so the numbers below are in their units
-                local fs, us = f.GetEffectiveScale and N(f:GetEffectiveScale()), UIParent.GetEffectiveScale and N(UIParent:GetEffectiveScale())
-                b:SetScale((fs and us and us > 0) and fs / us or 1)
+                -- a child of the party member's frame: its size setting applies, and it goes when that frame goes
+                b:SetParent(f)
+                b:SetScale(1)
                 local fh, fw = N(f:GetHeight()) or 36, N(f:GetWidth()) or 72
                 if sideways then b:SetSize(db.partyTargetWidth or 96, fh) else b:SetSize(fw, math.max(14, math.floor(fh * 0.4))) end
                 b:ClearAllPoints()
                 b:SetPoint(p[1], f, p[2], p[3], p[4])
                 b.placed = "frame"
-            elseif found == 0 and not b.placed then
+            elseif found == 0 and not b.placed and not b.own then
                 -- none of the game's party frames found: a plain column at the left of the screen
+                b:SetParent(UIParent)
                 b:SetScale(1)
                 b:SetSize(db.partyTargetWidth or 96, 22)
                 b:ClearAllPoints()
-                b:SetPoint("LEFT", UIParent, "LEFT", 220, 60 - (n - 1) * 24)
+                b:SetPoint("LEFT", UIParent, "LEFT", 220, 60 - column * 24)
                 b.placed = "column"
             end
+            if slot.own == nil then column = column + 1 end
             local h = N(b:GetHeight()) or 22
             local size = math.max(8, math.min(12, math.floor(h * 0.42)))
             b.name:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE"); b.pct:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
@@ -154,11 +173,15 @@ local function attach(force)
             b.name:ClearAllPoints(); b.name:SetPoint("LEFT", b.bar, "LEFT", 3, 0); b.name:SetPoint("RIGHT", b.pct, "LEFT", -2, 0)
         end
     end
-    state.on = on
+    state.on = db.partyTargets ~= false
     if found > 0 then
         ns.diagOnce("partyTargetProbe", function()
-            local f = frames[1] or frames[2] or frames[3] or frames[4]
-            return "frames=" .. found .. " first=" .. tostring(f.GetName and f:GetName()) .. " mode=" .. tostring(state.mode) .. " secure=" .. tostring(not state.noSecure)
+            local names = {}
+            for _, slot in ipairs(SLOTS) do
+                local f = frames[slot.key]
+                if f then names[#names + 1] = slot.key .. ":" .. tostring(f.GetName and f:GetName()) end
+            end
+            return "frames=" .. found .. " first=" .. tostring(names[1] and names[1]:match(":(.*)$")) .. " mode=" .. tostring(state.mode) .. " secure=" .. tostring(not state.noSecure) .. " " .. table.concat(names, ",")
         end)
     end
 end
@@ -182,7 +205,8 @@ local function paint(b)
         if class and ns.CensusClassColor then r, g, bl = ns.CensusClassColor(class) end
     elseif UnitCanAttack and B(UnitCanAttack("player", unit)) then r, g, bl = 0.8, 0.25, 0.22 end
     b.bar:SetStatusBarColor(r, g, bl)
-    local mine = UnitIsUnit and B(UnitIsUnit(unit, "target")) or false
+    -- the edge marks "also your target": pointless on your own target's frame
+    local mine = b.owner ~= "player" and UnitIsUnit and B(UnitIsUnit(unit, "target")) or false
     if b.mine ~= mine then
         b.mine = mine
         for _, t in ipairs(b.edge) do t:SetShown(mine) end
@@ -192,10 +216,10 @@ end
 local function refresh()
     local db = ns.db
     if not db or db.partyTargets == false then return end
-    for n = 1, MAX do
-        local b = buttons[n]
-        if state.mode == "manual" or state.noSecure then          -- nothing shows it for us: do it by hand, out of combat
-            if not inCombat() then b:SetShown(UnitExists ~= nil and B(UnitExists(b.unit)) == true and not (IsInRaid and B(IsInRaid()))) end
+    for _, slot in ipairs(SLOTS) do
+        local b = buttons[slot.key]
+        if (state.mode == "manual" or state.noSecure) and not inCombat() then       -- nothing shows it for us: by hand, out of combat
+            b:SetShown(wanted(b) and b.placed ~= nil and UnitExists ~= nil and B(UnitExists(b.unit)) == true)
         end
         if b:IsShown() then paint(b) end
     end
@@ -302,7 +326,7 @@ ns.Every(1, function() if ns.db and (ns.db.partySolo or solo.shownByUs) then app
 ns.On("PLAYER_TARGET_CHANGED", refresh, "partyTargets:target")
 ns.Every(0.2, refresh, "partyTargets:tick")
 -- the party frames can be moved or resized in Edit Mode at any time: look again once a second
-ns.Every(1, function() if (IsInGroup and B(IsInGroup())) or state.on ~= (ns.db and ns.db.partyTargets ~= false) then attach() end end, "partyTargets:place")
+ns.Every(1, function() attach() end, "partyTargets:place")
 ns.OnLogin(function()
     if ns.db.diag then ns.db.diag.partyTargetProbe, ns.db.diag.partySoloProbe = nil, nil end
     attach(true)

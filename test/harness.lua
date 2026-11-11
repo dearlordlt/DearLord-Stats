@@ -658,9 +658,9 @@ CompactPartyFrameMember2.IsVisible = function(self) return self.shown end
 world.party = { party1 = { name = "Tankard", class = "Warrior" }, party1target = { name = "Kolkar Stormer", class = "Warrior" } }
 world.threat.party1target = "Creature-0-1-2-3-4-5"
 fire("GROUP_ROSTER_UPDATE"); advance(1)
-local pb = PT.buttons[1]
+local pb = PT.buttons.party1
 partyT.shown, partyT.unit, partyT.name, partyT.pct = pb.shown, pb.unit, pb.name.text, pb.pct.text
-partyT.size, partyT.placed, partyT.others = tostring(pb.w) .. "x" .. tostring(pb.h), pb.placed, PT.buttons[2].shown
+partyT.size, partyT.placed, partyT.others = tostring(pb.w) .. "x" .. tostring(pb.h), pb.placed, PT.buttons.party2.shown
 partyT.notMine = pb.edge[1].shown
 world.party.party1target = nil; advance(1); partyT.gone = pb.shown == false
 world.party.party1target = { name = "Kolkar Stormer", class = "Warrior" }; advance(1)
@@ -671,6 +671,20 @@ ns.db.partyTargets = false; ns.PlacePartyTargets(); advance(1); partyT.off = pb.
 ns.db.partyTargets = true; ns.PlacePartyTargets(); advance(1); partyT.onAgain = pb.shown
 world.party, world.threat.party1target = nil, nil; fire("GROUP_ROSTER_UPDATE"); advance(1); partyT.solo = pb.shown == false
 CompactPartyFrameMember2:Hide()
+-- your own frame in the party frame gets your target beside it; the pet's needs a pet frame to sit by
+CompactPartyFrameMember1 = CreateFrame("Button", "CompactPartyFrameMember1")
+CompactPartyFrameMember1.unit = "player"; CompactPartyFrameMember1:SetSize(72, 36); CompactPartyFrameMember1:Show()
+CompactPartyFrameMember1.IsVisible = function(self) return self.shown end
+local keepTarget, keepName = world.threat.target, world.targetName
+world.threat.target, world.targetName = "Creature-0-1-2-3-9-9", "Thunderhawk Hatchling"
+advance(2)
+local mineB, petB = PT.buttons.player, PT.buttons.pet
+partyT.own = tostring(mineB.shown) .. " " .. tostring(mineB.unit) .. " " .. tostring(mineB.name.text) .. " " .. tostring(mineB.placed)
+partyT.ownEdge, partyT.petUnplaced = mineB.edge[1].shown, petB.unit == "pettarget" and not petB.shown
+ns.db.partyTargetsSelf = false; ns.PlacePartyTargets(); advance(1); partyT.ownOff = mineB.shown == false
+ns.db.partyTargetsSelf = true; ns.PlacePartyTargets()
+world.threat.target, world.targetName = keepTarget, keepName
+CompactPartyFrameMember1:Hide(); advance(2)
 -- the party frame while alone: off by default; on, it is shown again whenever the game hides it, never in a fight
 local soloT = {}
 CompactPartyFrame = CreateFrame("Frame", "CompactPartyFrame"); CompactPartyFrame:Hide()
@@ -1132,6 +1146,8 @@ check("party targets: beside party1's frame, named, sized to it, for party1targe
 check("party targets: hidden health gives a bar and no percentage; no edge unless it is your target; gone with the target", partyT.pct == "" and not partyT.notMine and partyT.gone)
 check("party targets: not resized in a fight, resized after it (" .. tostring(partyT.inFight) .. " -> " .. tostring(partyT.afterFight) .. ")", partyT.inFight == 96 and partyT.afterFight == 140)
 check("party targets: the setting turns them off and on, and nothing shows alone", partyT.off and partyT.onAgain == true and partyT.solo)
+check("party targets: your own frame gets your target beside it (" .. tostring(partyT.own) .. "), without the same-target edge; its own switch hides it",
+    partyT.own == "true target Thunderhawk Hatchling frame" and not partyT.ownEdge and partyT.petUnplaced and partyT.ownOff)
 check("party frame alone: off by default; switched on it shows, and comes back when the game hides it", soloT.offByDefault and soloT.on == true and soloT.afterGameHid == true)
 check("party frame alone: left hidden in a fight, shown after it; untouched in a group; hidden again when switched off",
     soloT.inFight == false and soloT.afterFight == true and soloT.grouped == true and soloT.leftGroup == true and soloT.offAgain)

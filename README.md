@@ -42,7 +42,8 @@ icon to move it. The banner uses a secure button, so it appears and disappears o
 
 **Party targets**: beside each party member's frame, a small frame for what that member is
 targeting, with its name and a health bar (red for something you can attack, class colour for a
-player, a white edge when it is your target too). A click targets it. They follow the game's party
+player, a white edge when it is your target too). A click targets it. Your own frame and your pet's
+frame in the party frame get one too: your target, and what your pet is on (its own switch in Settings). They follow the game's party
 frames, raid-style or classic, at their size; Settings picks the side (right, left, below, above) and
 the width. Not shown in a raid. Placing happens out of combat, so after a change mid-fight they
 catch up when the fight ends.
