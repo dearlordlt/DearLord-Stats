@@ -42,7 +42,7 @@ icon to move it. The banner uses a secure button, so it appears and disappears o
 
 **Ready check**: when you join a group, or walk into a dungeon or raid with one, a small banner lists
 what you are missing: free bag slots, worn gear, food, water (classes with mana), ammunition, a pet
-that is away, dead or unhappy, and what your class burns or wears: an Ankh, seeds for Rebirth,
+that is away, dead or unhappy (or a warlock's Voidwalker, which taunts off the tank), and what your class burns or wears: an Ankh, seeds for Rebirth,
 candles, Arcane Powder, Symbols, Flash and Blinding Powder, soul shards, poisons on your weapons
 (also when they are about to run out). A thing is only asked for when the character can have it: a
 reagent when a spell that burns it is known, poisons once the rogue has learned Poisons or carries

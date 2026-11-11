@@ -8,7 +8,7 @@
 --   a reagent     only when a spell that burns it is known (Ankh with Reincarnation, seeds with Rebirth)
 --   poisons       only when the rogue has learned Poisons or carries some
 --   ammunition    only once this character has been seen carrying some
---   a pet         only when the spell that calls one is known
+--   a pet         only when the spell that calls one is known (a warlock's Voidwalker is flagged in a group)
 --   food, water   only when the client tells which items are food and drink
 local ADDON, ns = ...
 local N, S, B, T = ns.N, ns.S, ns.B, ns.T
@@ -118,6 +118,17 @@ local function lowestDurability()
 end
 
 local function className() return UnitClass and S((select(2, UnitClass("player")))) or nil end
+local function inGroup() return (IsInGroup and B(IsInGroup())) or (IsInRaid and B(IsInRaid())) or false end
+
+-- a Voidwalker taunts mobs off the tank: fine alone, wrong in a group
+local VOIDWALKER_NPC = 1860
+local function voidwalkerOut()
+    local family = UnitCreatureFamily and S(UnitCreatureFamily("pet"))
+    if family == "Voidwalker" then return true end
+    local guid = UnitGUID and S(UnitGUID("pet"))
+    local npc = guid and tonumber((select(6, strsplit("-", guid))))
+    return npc == VOIDWALKER_NPC
+end
 
 -- every check that applies to this character: { key, ok, text }
 function ns.ReadyList()
@@ -149,6 +160,8 @@ function ns.ReadyList()
         local what = class == "WARLOCK" and "demon" or "pet"
         if not out then add("pet", false, "No " .. what .. " out")
         elseif dead then add("pet", false, "Your " .. what .. " is dead")
+        elseif class == "WARLOCK" and inGroup() and voidwalkerOut() then
+            add("pet", false, "Voidwalker out: it taunts mobs off the tank")
         else
             local mood = class == "HUNTER" and ns.PetMood and select(4, ns.PetMood()) or nil
             add("pet", mood ~= 1, mood == 1 and "Your pet is unhappy: feed it" or (what:gsub("^%l", string.upper) .. " is out"))
@@ -298,7 +311,7 @@ function ns.ReadyShow(seconds)
 end
 
 local function context()
-    local grouped = (IsInGroup and B(IsInGroup())) or (IsInRaid and B(IsInRaid())) or false
+    local grouped = inGroup()
     local inside, kind = false, nil
     if IsInInstance then local a, k = IsInInstance(); inside, kind = B(a) == true, S(k) end
     return grouped, grouped and inside and (kind == "party" or kind == "raid")

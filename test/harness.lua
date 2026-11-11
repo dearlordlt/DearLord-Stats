@@ -374,6 +374,8 @@ C_Item.GetItemInfoInstant = function(id) return id, "Misc", "Junk", "", 1, world
 function IsPlayerSpell(id) return world.spells ~= nil and world.spells[id] == true end
 function GetWeaponEnchantInfo() return unpack(world.enchant or { false, 0, 0, 0, false, 0, 0, 0 }) end
 function GetInventoryItemID() return nil end
+function UnitCreatureFamily(u) return u == "pet" and world.petFamily or nil end
+strsplit = strsplit or function(sep, s) local out = {}; for part in (s .. sep):gmatch("(.-)%" .. sep) do out[#out + 1] = part end; return unpack(out) end
 -- MODE=bare: a hostile client where the helpful APIs are missing and health never becomes readable
 local MODE = os.getenv("MODE") or "full"
 if MODE == "bare" then
@@ -648,6 +650,12 @@ world.enchant = nil
 world.class, world.bag1, world.spells = "Shaman", {}, {}
 ready.shamanNew = readyItem("reagent:17030")
 world.spells = { [20608] = true }; ready.shamanAnkh = readyItem("reagent:17030")
+-- a warlock: a Voidwalker is fine alone and flagged in a group; another demon is fine there
+world.class, world.spells, world.petFamily = "Warlock", { [688] = true }, "Voidwalker"
+ready.voidSolo = readyItem("pet")
+world.party = { party1 = { name = "Tankard", class = "Warrior" } }; ready.voidGroup = readyItem("pet")
+world.petFamily = "Imp"; ready.impGroup = readyItem("pet")
+world.party, world.petFamily = nil, nil
 world.class, world.bag1, world.spells, world.itemSpells, world.itemClass, world.dur = nil, nil, nil, nil, nil, nil
 runFight({ name = "Razormane Hunter", mobLevel = 10, dmg = 210, taken = 130, duration = 22 }); world.hp = 175
 
@@ -1084,6 +1092,8 @@ if MODE ~= "bare" then
     check("client checks: /dls check says the count and opens the list (" .. health.said .. ")", health.said:find("client checks: %d+ work, %d+ limited, 0 not working") ~= nil and health.rows == 1)
     check("client checks: a logged error turns its row red", health["Addon errors"] == "ok: none logged" and health.errors == "bad")
 end
+check("ready check: a warlock's Voidwalker is fine alone and flagged in a group (" .. tostring(ready.voidGroup) .. ")",
+    ready.voidSolo == "ok: Demon is out" and ready.voidGroup == "missing: Voidwalker out: it taunts mobs off the tank" and ready.impGroup == "ok: Demon is out")
 check("Growl on while alone: no reminder", growlSolo)
 check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
 check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)
