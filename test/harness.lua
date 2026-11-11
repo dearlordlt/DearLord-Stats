@@ -597,6 +597,7 @@ if MODE ~= "bare" then
     local hook = TooltipDataProcessor.calls[0]
     scanResult.manualByDefault = ns.db.ahAutoScan == false
     ns.db.ahAutoScan = true                                      -- the automatic mode is tested below
+    scanResult.compareDefault = ns.db.ahCompare
     ns.db.ahCompare = "alt"
     GameTooltip.lines = {}; hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipLines = { unpack(GameTooltip.lines) }
     hook(GameTooltip, { id = 783, dataInstanceID = 11 }); tipDup = #GameTooltip.lines
@@ -655,7 +656,8 @@ if MODE ~= "bare" then
     scanResult.auctionatorWait = ns.AuctionStatus().nextIn
     Auctionator = nil; DearLordAuctionDB.lastRequest = keepReq
     fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2)
-    GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }
+    GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 17 }); scanResult.tipNeutralPlain = { unpack(GameTooltip.lines) }
+    world.alt = true; GameTooltip.lines = {}; hook(GameTooltip, { id = 2835, dataInstanceID = 24 }); scanResult.tipNeutral = { unpack(GameTooltip.lines) }; world.alt = false
     fire("AUCTION_HOUSE_CLOSED"); world.npc = nil
     world.npc, world.npcFaction = true, nil; fire("AUCTION_HOUSE_SHOW"); advance(2)
     -- a request the server never answers: after a minute the row stops saying "waiting", and a list that
@@ -1034,8 +1036,10 @@ if MODE ~= "bare" then
     check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 3 and norm(scanResult.tipAlt[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
     check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 3 and norm(scanResult.tipAlways[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
     check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
-    check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
+    check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips while the modifier is held (" .. tostring(scanResult.tipNeutral[3]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 3 and norm(scanResult.tipNeutral[3]) == "Neutral AH lowest 3c | 10 seen · just now")
+    check("other houses: hidden without the modifier, and Shift is the default (" .. #scanResult.tipNeutralPlain .. " rows, " .. tostring(scanResult.compareDefault) .. ")",
+        #scanResult.tipNeutralPlain == 2 and scanResult.compareDefault == "shift")
     local sg = scanResult.sight
     check("seen on screen: a full listing sets lowest and count, ignoring bid-only auctions (" .. tostring(sg.first) .. ")", sg.first == "300/2")
     check("seen on screen: the tooltip shows it at once with a fresh age (" .. norm(sg.tip[#sg.tip]) .. ")", #sg.tip == 1 and norm(sg.tip[1]) == "Horde AH lowest 3s 0c | 2 seen · just now")

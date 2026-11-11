@@ -91,9 +91,9 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   beside it (the lowest buyout when the item was last scanned or seen), and under it
   `Horde AH usual 8s 0c`, the middle one of the last week's daily lows, so you can tell a normal day
   from a cheap or an expensive one; the usual row appears once three days are known. A stack shows its
-  total, and a tooltip that is open while listings arrive is redrawn. Every house you have scanned is
-  listed: yours, the other faction's (by default always; Settings can tie it to Alt, Shift or Ctrl) and
-  the neutral one. The **Prices** tab starts with one line for the scans (each house's age, and Scan
+  total, and a tooltip that is open while listings arrive is redrawn. Your own house is always
+  shown; the neutral one and the other faction's appear while you hold Shift (Settings: Alt, Ctrl,
+  always or never). The **Prices** tab starts with one line for the scans (each house's age, and Scan
   now), then a browser: search by name across every house, one labelled column per house, click an item
   for a table of every house (lowest, median, units up, trend, age, and what a vendor pays) and a line
   chart per house, green where the price rose and red where it fell. Both the tooltip line and the

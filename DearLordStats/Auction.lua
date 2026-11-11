@@ -591,7 +591,7 @@ end, "ah:error")
 -- plus the stack total when hovering a stack
 ----------------------------------------------------------------------
 local function modifierHeld()
-    local m = ns.db and ns.db.ahCompare or "alt"
+    local m = ns.db and ns.db.ahCompare or "shift"
     if m == "always" then return true elseif m == "never" then return false end
     if m == "alt" then return IsAltKeyDown and B(IsAltKeyDown()) or false end
     if m == "shift" then return IsShiftKeyDown and B(IsShiftKeyDown()) or false end
@@ -643,8 +643,8 @@ local function addLines(tooltip, id)
         if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, note = "last " .. days .. " scan days" } end
     end
     house(nil, ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH", true)
-    if ns.db.ahTooltipNeutral ~= false then house(ns.AuctionNeutralKey(), "Neutral AH") end   -- the goblin house serves both factions
-    if modifierHeld() then                                     -- the other faction's house: on a modifier, always, or never (Settings)
+    if modifierHeld() then                                     -- the other houses: on a modifier (Shift by default), always, or never
+        if ns.db.ahTooltipNeutral ~= false then house(ns.AuctionNeutralKey(), "Neutral AH") end   -- the goblin house serves both factions
         local ok = ns.AuctionOtherKey()
         house(ok, ((ok or ""):match("%-(%a+)$") or "Other") .. " AH")
     end
