@@ -227,7 +227,7 @@ function ns.AuctionUsual(id, k)
     end
     if #lows < 3 then return nil end
     table.sort(lows)
-    return lows[math.ceil(#lows / 2)]
+    return lows[math.ceil(#lows / 2)], #lows
 end
 
 local function commit()
@@ -587,7 +587,8 @@ ns.On("UI_ERROR_MESSAGE", function(_, msg)
 end, "ah:error")
 
 ----------------------------------------------------------------------
--- tooltip line: "AH  9s 31c            19 seen · 2 days ago", plus the stack total when hovering a stack
+-- tooltip rows: "Horde AH lowest  9s 31c     19 seen · 5 min ago" and "Horde AH usual  8s 0c     last 7 scan days",
+-- plus the stack total when hovering a stack
 ----------------------------------------------------------------------
 local function modifierHeld()
     local m = ns.db and ns.db.ahCompare or "alt"
@@ -631,23 +632,21 @@ local function addLines(tooltip, id)
     if price and vendor and vendor > 0 then
         rows[#rows + 1] = { label = "Vendor", unit = vendor, win = ns.AuctionNet(price) <= vendor }
     end
-    local mine = ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH"
-    -- right of the price: what the item usually goes for; until three days are known, the move since the day before
-    local function aside(k)
-        local usual = ns.AuctionUsual(id, k)
-        if usual then return ns.LABEL .. "usual|r " .. ns.money(usual) end
-        return ns.AuctionTrendText((ns.AuctionTrend(id, k)))
+    -- per auction house two labelled prices: the lowest buyout when it was last seen (how many, how long ago),
+    -- and under it what the item usually goes for, once three days are known
+    local function house(k, name, own)
+        local p, a, n, sec = ns.AuctionPriceByID(id, k)
+        if not p then return end
+        rows[#rows + 1] = { label = name .. " lowest", unit = p, win = own and (not vendor or vendor <= 0 or ns.AuctionNet(p) > vendor),
+            note = n .. " seen  ·  " .. ns.AuctionAgeText(a, sec) }
+        local usual, days = ns.AuctionUsual(id, k)
+        if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, note = "last " .. days .. " scan days" } end
     end
-    if price then rows[#rows + 1] = { label = mine, unit = price, win = not vendor or vendor <= 0 or ns.AuctionNet(price) > vendor, seen = seen, age = age, secs = secs,
-        trend = aside() } end
-    if ns.db.ahTooltipNeutral ~= false then                    -- the goblin auction house serves both factions: always worth a look
-        local np, nage, nseen, nsecs = ns.AuctionPriceByID(id, ns.AuctionNeutralKey())
-        if np then rows[#rows + 1] = { label = "Neutral AH", unit = np, seen = nseen, age = nage, secs = nsecs, trend = aside(ns.AuctionNeutralKey()) } end
-    end
+    house(nil, ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH", true)
+    if ns.db.ahTooltipNeutral ~= false then house(ns.AuctionNeutralKey(), "Neutral AH") end   -- the goblin house serves both factions
     if modifierHeld() then                                     -- the other faction's house: on a modifier, always, or never (Settings)
         local ok = ns.AuctionOtherKey()
-        local op, oage, oseen, osecs = ns.AuctionPriceByID(id, ok)
-        if op then rows[#rows + 1] = { label = (ok:match("%-(%a+)$") or "Other") .. " AH", unit = op, seen = oseen, age = oage, secs = osecs, trend = aside(ok) } end
+        house(ok, ((ok or ""):match("%-(%a+)$") or "Other") .. " AH")
     end
     tooltip.dlsAhShown = #rows > 0 and id or nil
     if #rows == 0 then return end
@@ -661,13 +660,7 @@ local function addLines(tooltip, id)
         local col = r.win and ns.GREEN or ns.WHITE
         local left = ns.LABEL .. padTo(r.label, labelW) .. "|r   " .. col .. padTo(r.unitText, unitW, true) .. "|r"
         if r.totalText then left = left .. ns.LABEL .. "   ·   ×" .. count .. "   |r" .. col .. padTo(r.totalText, totalW, true) .. "|r" end
-        tooltip:AddDoubleLine(left, r.trend or " ")
-    end
-    for _, r in ipairs(rows) do                                -- how fresh each auction price is, on its own dim line
-        if r.seen then
-            local who = r.label:gsub(" AH$", "") .. ":  "
-            tooltip:AddLine(ns.LABEL .. who .. r.seen .. " seen  ·  " .. ns.AuctionAgeText(r.age, r.secs) .. "|r")
-        end
+        tooltip:AddDoubleLine(left, r.note and (ns.LABEL .. r.note .. "|r") or " ")
     end
     tooltip:Show()
 end

@@ -1009,9 +1009,9 @@ if MODE ~= "bare" then
     local forAH, gain = ns.BagsForAuction()
     check("bags: the Light Hide stack is worth +3s74c on the AH", forAH and #forAH == 1 and gain == 374 and forAH[1].name == "Light Hide")
     local function norm(t) return (tostring(t):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
-    check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 3 and norm(tipLines[1]) == "Vendor 50c |" and norm(tipLines[2]) == "Horde AH 2s 50c |" and norm(tipLines[3]) == "Horde: 19 seen · 2 days ago")
-    check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 3 and scanResult.unknownAndForbidden and tipOff == 0)
-    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "Horde AH 2s 50c · ×2 5s 0c |")
+    check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 2 and norm(tipLines[1]) == "Vendor 50c |" and norm(tipLines[2]) == "Horde AH lowest 2s 50c | 19 seen · 2 days ago")
+    check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 2 and scanResult.unknownAndForbidden and tipOff == 0)
+    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 2 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c |" and norm(tipStack[2]) == "Horde AH lowest 2s 50c · ×2 5s 0c | 19 seen · 2 days ago")
     local r = scanResult.realm
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
@@ -1028,17 +1028,17 @@ if MODE ~= "bare" then
     check("scan: a minute without the list stops the wait, and a list arriving later is still taken", scanResult.gaveUp and scanResult.lateTaken)
     check("panel: buttons on rows sit above the rows, so the row cannot swallow their click", scanResult.tryAbove)
     check("trend: Carving Knife fell from 2s to 1s 50c since the seed scan (-25%)", scanResult.trend == -25)
-    check("tooltip: the AH row carries the trend (" .. norm(scanResult.tipTrend[2]) .. ")", norm(scanResult.tipTrend[2]) == "Horde AH 1s 50c | -25%")
+    check("tooltip: with two days known there is no usual row yet (" .. norm(scanResult.tipTrend[2]) .. ")", (function() for _, l in ipairs(scanResult.tipTrend) do if l:find("usual") then return false end end; return true end)() and norm(scanResult.tipTrend[2]) == "Horde AH lowest 1s 50c | 1 seen · just now")
     check("search: 'carv' finds the knife with median and max", #scanResult.search == 1 and scanResult.search[1].name == "Carving Knife" and scanResult.search[1].med == 150 and scanResult.search[1].max == 150)
     check("history: two days for the knife, newest first", #scanResult.historyRows == 2 and scanResult.historyRows[1].min == 150 and scanResult.historyRows[2].min == 200)
-    check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 5 and norm(scanResult.tipAlt[3]) == "Alliance AH 3s 0c |" and norm(scanResult.tipAlt[5]) == "Alliance: 7 seen · yesterday")
-    check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 5 and norm(scanResult.tipAlways[3]) == "Alliance AH 3s 0c |")
+    check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 3 and norm(scanResult.tipAlt[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
+    check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 3 and norm(scanResult.tipAlways[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
     check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips (" .. tostring(scanResult.tipNeutral[2]) .. ")",
-        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 5 and norm(scanResult.tipNeutral[3]) == "Neutral AH 3c |" and norm(scanResult.tipNeutral[5]) == "Neutral: 10 seen · just now")
+        scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 3 and norm(scanResult.tipNeutral[3]) == "Neutral AH lowest 3c | 10 seen · just now")
     local sg = scanResult.sight
     check("seen on screen: a full listing sets lowest and count, ignoring bid-only auctions (" .. tostring(sg.first) .. ")", sg.first == "300/2")
-    check("seen on screen: the tooltip shows it at once with a fresh age (" .. norm(sg.tip[#sg.tip]) .. ")", norm(sg.tip[1]) == "Horde AH 3s 0c |" and norm(sg.tip[2]) == "Horde: 2 seen · just now")
+    check("seen on screen: the tooltip shows it at once with a fresh age (" .. norm(sg.tip[#sg.tip]) .. ")", #sg.tip == 1 and norm(sg.tip[1]) == "Horde AH lowest 3s 0c | 2 seen · just now")
     check("seen on screen: a partial listing only lowers the price (" .. sg.partialHigher .. " -> " .. sg.partialLower .. ")", sg.partialHigher == "300/2" and sg.partialLower == "250/2")
     check("seen on screen: a full listing may raise it once the cheap ones are gone (" .. sg.completeHigher .. ")", sg.completeHigher == "400/1")
     check("seen on screen: an open tooltip of that item is redrawn only when the price moved", sg.redrawnUnchanged == 0 and sg.redrawn == 1)
@@ -1047,7 +1047,8 @@ if MODE ~= "bare" then
     check("seen on screen: old auction house, a single page is complete, one page of many only lowers (" .. sg.page .. ", " .. sg.pagePartial .. ")", sg.page == "80/6" and sg.pagePartial == "80/6")
     check("seen on screen: nothing is taken with the auction house closed", sg.closed == "400/1")
     check("seen on screen: first sighting recorded (" .. tostring(sg.probe) .. ")", sg.probe == "item item=9101 unit=300 units=2 complete=true")
-    check("usual price: middle of five daily lows is 4s 52c, shown beside the price (" .. norm(sg.tipUsual[1]) .. ")", sg.usual == 452 and norm(sg.tipUsual[1]) == "Horde AH 4s 0c | usual 4s 52c")
+    check("usual price: middle of five daily lows is 4s 52c, on its own row under the lowest (" .. norm(sg.tipUsual[2]) .. ")",
+        sg.usual == 452 and #sg.tipUsual == 2 and norm(sg.tipUsual[1]) == "Horde AH lowest 4s 0c | 1 seen · just now" and norm(sg.tipUsual[2]) == "Horde AH usual 4s 52c | last 5 scan days")
     check("age text (" .. sg.ages .. ")", sg.ages == "just now, 5 min ago, 2 h ago, 3 days ago, today")
     local function find(list, id) for _, e in ipairs(list or {}) do if e.id == id then return e end end end
     local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
