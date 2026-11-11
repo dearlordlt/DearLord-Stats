@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.20.0"
+ns.version = "2.21.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.

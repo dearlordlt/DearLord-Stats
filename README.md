@@ -49,6 +49,11 @@ reagent when a spell that burns it is known, poisons once the rogue has learned 
 some, ammunition once the character has carried any. The banner goes away when everything is in
 order, or with a click; it never shows in a fight. `/dls ready` shows the whole list at any time.
 
+**Client checks** (Summary > Client checks, or `/dls check`): one row per part of the addon that leans
+on something a game patch can change (threat numbers, the Growl switch, keys on the cooldown manager,
+auction scans and searches, vendor prices, recipes, pet details, the census, the ready check), each
+marked works, limited, not working or not tried yet, with what the client actually gave.
+
 **Keys on the cooldown manager:** the game's own cooldown manager shows your spells without their
 keys. Each icon gets the key of the action bar slot that holds the spell (or a macro casting it),
 shortened the way action buttons do: `R`, `c-5`, `s-WU`, `M4`.

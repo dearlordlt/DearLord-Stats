@@ -26,7 +26,7 @@ local TABS = { { key = "combat", text = "Combat" }, { key = "abilities", text = 
 local SCOPES = {
     combat = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Total" } },
     abilities = { { key = "session", text = "Session" }, { key = "level", text = "Level" }, { key = "character", text = "Total" } },
-    summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" }, { key = "text", text = "Copy text" } },
+    summary = { { key = "one", text = "Current" }, { key = "all", text = "All characters" }, { key = "text", text = "Copy text" }, { key = "checks", text = "Client checks" } },
     economy = { { key = "advice", text = "Advice" }, { key = "session", text = "Session" }, { key = "history", text = "History" } },
     census = { { key = "classes", text = "Classes" }, { key = "races", text = "Races" }, { key = "places", text = "Guilds & zones" } },
 }
@@ -1366,8 +1366,25 @@ local function summaryAll()
     end
 end
 
+-- what works on this client: one row per part of the addon that leans on something a patch can change
+local function clientChecks()
+    local text, n = ns.HealthSummary()
+    H("Client checks  ·  " .. text)
+    P(L .. "Each part of the addon notes what the game gave it the last time it ran. \"Not tried yet\" means it has not run yet.|r")
+    GAP(6)
+    local widths = { fsize() * 8 }
+    for _, r in ipairs(ns.HealthRows()) do
+        CELLS(W .. r.name .. "|r", { ns.HealthColor(r.state) .. ns.HealthWord(r.state) .. "|r" }, { widths = widths })
+        if r.detail then P(L .. r.detail .. "|r", 14) end
+    end
+end
+
 function render.summary(scope)
-    if scope == "all" then summaryAll() else summaryOne() end
+    if scope == "checks" then clientChecks() elseif scope == "all" then summaryAll() else summaryOne() end
+end
+function ns.OpenChecks()
+    state.scope.summary, state.offset = "checks", 0
+    ns.OpenPanel("summary")
 end
 
 ----------------------------------------------------------------------
@@ -1469,7 +1486,7 @@ local function build()
         b:SetScript("OnClick", function() ns.OpenPanel(tab.key) end)
         tabButtons[tab.key] = b
     end
-    for i = 1, 3 do
+    for i = 1, 4 do
         local b = textButton(panel, 11)
         b:SetScript("OnClick", function(self)
             state.scope[state.tab] = self.scopeKey

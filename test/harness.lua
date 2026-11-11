@@ -1002,6 +1002,21 @@ for _, l in ipairs(printed) do io.write("   " .. strip(l) .. "\n") end
 io.write("\n-- everything the feed showed, in order\n")
 for _, l in ipairs(feedLog) do io.write("   " .. strip(l) .. "\n") end
 io.write("\n-- checks\n")
+-- client checks: the notes every part left, as one list
+local health = {}
+if MODE ~= "bare" then
+    ns.ReadyList()                                               -- a reload cleared its note: let it look once more
+    for _, r in ipairs(ns.HealthRows()) do health[r.name] = r.state .. ": " .. tostring(r.detail) end
+    health.summary = ns.HealthSummary()
+    printed = {}; SlashCmdList["DEARLORDSTATS"]("check"); health.said = printed[1] or ""
+    panelText("Summary / client checks")
+    health.rows = 0
+    for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and f.left and f.left.text and f.left.text:find("Threat numbers", 1, true) then health.rows = health.rows + 1 end end
+    ns.db.errors = ns.db.errors or {}; table.insert(ns.db.errors, { count = 1, where = "test", msg = "boom" })
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Addon errors" then health.errors = r.state end end
+    table.remove(ns.db.errors)
+    ns.OpenPanel("combat")
+end
 local function check(name, ok) io.write(string.format("   [%s] %s\n", ok and "ok" or "FAIL", name)); if not ok then os.exit_code = 1 end end
 local c = ns.char.combat
 if MODE == "bare" then
@@ -1060,6 +1075,15 @@ check("ready check: once learned (" .. tostring(ready.rogueLearned) .. "), carri
     ready.rogueLearned == "missing: No poisons in your bags, missing: No Flash Powder (Vanish)" and ready.rogueCarried == "missing: No poison on your main hand, ok: Flash Powder: 3 (Vanish)")
 check("ready check: poison applied, and about to run out (" .. tostring(ready.rogueRunsOut) .. ")", ready.rogueApplied == "ok: Poison on your main hand" and ready.rogueRunsOut == "missing: Poison on your main hand runs out in 2 min")
 check("ready check: a shaman is asked for an Ankh only with Reincarnation (" .. tostring(ready.shamanAnkh) .. ")", ready.shamanNew == "none" and ready.shamanAnkh == "missing: No Ankh (Reincarnation)")
+if MODE ~= "bare" then
+    check("client checks: threat readable, Growl click worked, searches seen (" .. tostring(health["Threat numbers"]) .. ")",
+        tostring(health["Threat numbers"]):find("^ok: readable") ~= nil and tostring(health["Growl reminder"]):find("^ok: .*click on the banner switches it") ~= nil
+        and tostring(health["Prices from searches"]):find("^ok: %d+ updates") ~= nil and tostring(health["Auction scan"]):find("^ok: %d+ items from %d+ auctions") ~= nil)
+    check("client checks: ready check and keys report what the client gave (" .. tostring(health["Ready check"]) .. ")",
+        tostring(health["Ready check"]):find("^ok: food and drink are told apart") ~= nil and tostring(health["Keys on the cooldown manager"]):find("^ok: %d+ icons") ~= nil)
+    check("client checks: /dls check says the count and opens the list (" .. health.said .. ")", health.said:find("client checks: %d+ work, %d+ limited, 0 not working") ~= nil and health.rows == 1)
+    check("client checks: a logged error turns its row red", health["Addon errors"] == "ok: none logged" and health.errors == "bad")
+end
 check("Growl on while alone: no reminder", growlSolo)
 check("Growl on in a dungeon group: banner with the off macro", growlDungeon)
 check("and the pet line says so (" .. tostring(growlPetLine) .. ")", (growlPetLine or ""):find("| Growl ON  ·  ", 1, true) ~= nil)

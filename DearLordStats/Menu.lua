@@ -69,7 +69,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -87,6 +87,9 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "resetxp" or cmd == "session" then ns.ResetSession()
         elseif cmd == "lock" then db.locked = not db.locked; ns.say(db.locked and "locked" or "unlocked")
         elseif cmd == "xp" then db.showXP = not db.showXP; applyAndRefresh()
+        elseif cmd == "check" or cmd == "checks" or cmd == "health" then
+            ns.say("client checks: " .. (ns.HealthSummary()))
+            ns.OpenChecks()
         elseif cmd == "ready" then
             local missing = ns.ReadyShow(30)
             ns.say(missing == 0 and "ready: nothing missing" or ("ready: " .. missing .. " thing" .. (missing == 1 and "" or "s") .. " missing"))
