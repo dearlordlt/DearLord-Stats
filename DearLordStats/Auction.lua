@@ -133,7 +133,7 @@ function ns.AuctionItemName(id, e)
 end
 
 -- items of any house on this realm whose name contains the query; at most `limit`, sorted by name.
--- p/n/d/med/max/trend describe your own house, neutral/other the lowest buyout at the two others.
+-- p/n/d/med/max/trend/usual describe your own house, neutral/other the lowest buyout at the two others.
 function ns.AuctionSearch(query, limit)
     local keys = { ns.AuctionKey(), ns.AuctionNeutralKey(), ns.AuctionOtherKey() }
     local out, seen = {}, {}
@@ -150,7 +150,7 @@ function ns.AuctionSearch(query, limit)
                         local h = ns.AuctionHistory(id)
                         out[#out + 1] = { id = id, name = name, p = oe and oe.p, n = oe and oe.n, d = oe and oe.d,
                             med = h[1] and h[1].med or (oe and oe.p), max = h[1] and h[1].max or (oe and oe.p),
-                            trend = oe and ns.AuctionTrend(id) or nil, days = #h,
+                            trend = oe and ns.AuctionTrend(id) or nil, usual = oe and ns.AuctionUsual(id) or nil, days = #h,
                             neutral = (ns.AuctionPriceByID(id, keys[2])), other = (ns.AuctionPriceByID(id, keys[3])) }
                         if #out >= (limit or 60) * 4 then break end
                     end
@@ -228,6 +228,21 @@ function ns.AuctionUsual(id, k)
     if #lows < 3 then return nil end
     table.sort(lows)
     return lows[math.ceil(#lows / 2)], #lows
+end
+-- what one unit can be counted on to bring: the lowest buyout, but no more than the usual price, so a
+-- single odd listing does not promise a profit. Returns that, the lowest, and the usual (when known).
+function ns.AuctionFairPrice(id, k)
+    local p = ns.AuctionPriceByID(id, k)
+    if not p then return nil end
+    local usual = ns.AuctionUsual(id, k)
+    return (usual and usual < p) and usual or p, p, usual
+end
+-- the lowest buyout against the usual price, in percent (nil until the usual price is known)
+function ns.AuctionVsUsual(id, k)
+    local p = ns.AuctionPriceByID(id, k)
+    local usual, days = ns.AuctionUsual(id, k)
+    if not (p and usual and usual > 0) then return nil end
+    return math.floor((p - usual) / usual * 100 + 0.5), usual, days
 end
 
 local function commit()

@@ -69,10 +69,12 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
       everything a vendor should get.
     - *Craft for profit*: recipes whose product sells for more than its materials cost, sold to the
       auction house **or a vendor**, whichever pays more. Materials count at the cheaper of their lowest
-      auction and a vendor you met. Shows how many you can make from your bags and flags skill-ups.
+      auction and a vendor you met. The product counts at its lowest buyout, but never above its usual
+      price, so one odd listing does not promise a profit (vendor flips are valued the same way).
+      Shows how many you can make from your bags and flags skill-ups.
       Open each profession window once after updating, so the addon learns what every recipe makes.
     - *Gather*: what your gathering skills collect (and anything you have gathered), ranked by the value
-      of a stack, with the move against the median of earlier scan days.
+      of a stack, with the move against the item's usual price.
     - *Vendor flips*: items a vendor you met sells for well under what the auction house pays.
     - *Bargains*: auctions listed below what a vendor pays for the item (today's or yesterday's scan).
     Hover a hint for the numbers behind it, click it for the item's price history, right-click to hide
@@ -97,7 +99,7 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   shown; the neutral one and the other faction's appear while you hold Shift (Settings: Alt, Ctrl,
   always or never). The **Prices** tab starts with one line for the scans (each house's age, and Scan
   now), then a browser: search by name across every house, one labelled column per house, click an item
-  for a table of every house (lowest, median, units up, trend, age, and what a vendor pays) and a line
+  for a table of every house (lowest, median, units up, usual price, age, and what a vendor pays) and a line
   chart per house, green where the price rose and red where it fell. Both the tooltip line and the
   automatic scan can be switched off in Settings.
 - The report follows its window: drag the corner wider and sections sit side by side in two or three

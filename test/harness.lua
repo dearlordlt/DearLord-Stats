@@ -734,6 +734,7 @@ end
 
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
 local adv, advAfterHide, advWide, advTip, advOpened, advKept, advLoaded, advPatched, advNewBuild = nil, nil, nil, nil, false, false, false, false, false
+local usualResult = {}
 if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
@@ -773,6 +774,15 @@ if MODE ~= "bare" then
     for _, f in ipairs(frames) do if f.kind == "Frame" and f.shown and (rawget(f, "colX") or 0) > 0 then advWide = advWide + 1 end end
     panelText("Economy / advice, wide")
     UIParent.w, UIParent.h = uw, uh; ns.db.panelSize = nil
+    -- the usual price everywhere: an odd high listing must not promise a craft profit
+    local keepH = items[4357].h
+    items[4357].h = AH_DAY .. ":200:220 " .. (AH_DAY - 1) .. ":40:45 " .. (AH_DAY - 2) .. ":42:45"
+    usualResult = { fair = table.concat({ ns.AuctionFairPrice(4357) }, "/"), vs = (ns.AuctionVsUsual(4357)) }
+    ns.AdviceDirty(true); advance(3)
+    usualResult.craftGone = true
+    for _, e in ipairs(ns.Advice().craft) do if e.id == 4357 then usualResult.craftGone = false end end
+    for _, e in ipairs(ns.AuctionSearch("blasting")) do if e.id == 4357 then usualResult.search = e.usual end end
+    items[4357].h = keepH; ns.AdviceDirty(true); advance(3)
 end
 
 -- census: a player seen twice (levelled in between), then /who riding on key presses
@@ -1066,6 +1076,8 @@ if MODE ~= "bare" then
     local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
     check("advisor: Rough Blasting Powder +1s 87c to AH, 14 craftable (" .. tostring(powder and strip(powder.right)) .. ")",
         powder and powder.value == 187 and strip(powder.right):find("to AH") and strip(powder.left):find("make 14"))
+    check("usual price: an odd high listing counts at its usual price (" .. tostring(usualResult.fair) .. ", " .. tostring(usualResult.vs) .. "%)", usualResult.fair == "42/200/42" and usualResult.vs == 376)
+    check("usual price: the craft that only paid at the odd price is no longer advised, and the price search lists the usual price", usualResult.craftGone == true and usualResult.search == 42)
     check("advisor: Copper Bolts pay more at a vendor, +2s 40c (" .. tostring(bolts and strip(bolts.right)) .. ")", bolts and bolts.value == 240 and strip(bolts.right):find("to vendor"))
     check("advisor: Rough Dynamite skipped, Linen Cloth has no price", adv and adv.craftSkipped and adv.craftSkipped.n >= 1 and table.concat(adv.craftSkipped.names, ","):find("Linen Cloth"))
     local bow = adv and find(adv.flips, 2506)

@@ -1006,17 +1006,18 @@ function render.prices()
         if not name then for _, h in ipairs(houses) do local _, he = ns.AuctionHistory(id, h[2]); name = name or ns.AuctionItemName(id, he) end end
         KV(ns.BLUE .. "‹ back to the list|r", "", { onClick = function() state.priceItem = nil; state.offset = 0; renderNow() end })
         H(name or ("item " .. id))
-        -- every house in one table: lowest, median, how many were up, the move since the day before, the scan's age
+        -- every house in one table: lowest, that scan's median, how many were up, the usual price, the age
         local widths = { fsize() * 6, fsize() * 6, fsize() * 4, fsize() * 4, fsize() * 6.5 }
-        CELLS(L .. "House|r", { L .. "lowest|r", L .. "median|r", L .. "on AH|r", L .. "trend|r", L .. "seen|r" }, { widths = widths, small = true, rule = true })
+        CELLS(L .. "House|r", { L .. "lowest|r", L .. "median|r", L .. "on AH|r", L .. "usual|r", L .. "seen|r" }, { widths = widths, small = true, rule = true })
         local sv = ns.SellPrice and ns.SellPrice(id)
         for _, house in ipairs(houses) do
             local p, age, seen, secs = ns.AuctionPriceByID(id, house[2])
             if p then
                 local hh = ns.AuctionHistory(id, house[2])
+                local usual = ns.AuctionUsual(id, house[2])
                 CELLS(W .. house[1] .. "|r", { W .. m(p) .. "|r", L .. (hh[1] and hh[1].med and m(hh[1].med) or "-") .. "|r", L .. (seen or 0) .. "|r",
-                    ns.AuctionTrendText((ns.AuctionTrend(id, house[2]))) or " ", L .. ns.AuctionAgeText(age, secs) .. "|r" },
-                    { widths = widths, link = "item:" .. id, tip = "Lowest and median buyout per unit when this house was last scanned or the item was last looked up there, units up for sale, and the lowest price's move since the scan day before." })
+                    usual and (W .. m(usual) .. "|r") or (L .. "-|r"), L .. ns.AuctionAgeText(age, secs) .. "|r" },
+                    { widths = widths, link = "item:" .. id, tip = "Lowest and median buyout per unit when this house was last scanned or the item was last looked up there, units up for sale, and the usual price: the middle one of the last week's daily lows (known after three days)." })
             end
         end
         if sv and sv > 0 then CELLS(L .. "Vendor pays|r", { W .. m(sv) .. "|r", "", "", "", "" }, { widths = widths }) end
@@ -1050,13 +1051,13 @@ function render.prices()
     if #list == 0 then P(L .. (q == "" and "Nothing scanned yet." or ("Nothing called \"" .. q .. "\" in the last scans.")) .. "|r"); return end
     H((q == "" and "All items" or ("Matching \"" .. q .. "\"")) .. "  ·  " .. #list .. (#list >= 60 and "+" or ""))
     -- one column per auction house, your own first: the lowest buyout per unit at that house's last scan
-    local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 4.8 }
-    CELLS(L .. "Item|r", { L .. own .. "|r", L .. "Neutral|r", L .. other .. "|r", L .. "trend|r" }, { widths = widths, small = true, rule = true })
+    local widths = { fsize() * 6.6, fsize() * 6.6, fsize() * 6.6, fsize() * 6.6 }
+    CELLS(L .. "Item|r", { L .. own .. "|r", L .. "Neutral|r", L .. other .. "|r", L .. "usual|r" }, { widths = widths, small = true, rule = true })
     local function cell(p) return p and (W .. ns.money(p) .. "|r") or (L .. "–|r") end
     for _, it in ipairs(list) do
-        CELLS(W .. it.name .. "|r", { cell(it.p), cell(it.neutral), cell(it.other), ns.AuctionTrendText(it.trend) or " " },
+        CELLS(W .. it.name .. "|r", { cell(it.p), cell(it.neutral), cell(it.other), it.usual and (L .. ns.strip(ns.money(it.usual)) .. "|r") or " " },
             { widths = widths, link = "item:" .. it.id, onClick = function() state.priceItem = it.id; state.offset = 0; renderNow() end,
-              tip = "Lowest buyout per unit at each house's last scan; the trend is your own house's move since its previous scan day. Click for the history." })
+              tip = "Lowest buyout per unit at each house's last scan; usual is what it normally goes for at your own house (the middle of the last week's daily lows). Click for the history." })
     end
 end
 

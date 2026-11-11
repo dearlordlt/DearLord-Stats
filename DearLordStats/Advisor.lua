@@ -196,16 +196,13 @@ local function nameOf(id)
     if not name and C_Item and C_Item.GetItemInfo then name = S((C_Item.GetItemInfo("item:" .. id))) end
     return name or ns.itemName(id)
 end
--- the newest lowest price against the median of the older days' lowest, in percent
-local function trendVsHistory(id)
-    local h = ns.AuctionHistory(id)
-    if #h < 2 then return nil end
-    local older = {}
-    for i = 2, #h do if h[i].min and h[i].min > 0 then older[#older + 1] = h[i].min end end
-    if #older == 0 then return nil end
-    table.sort(older)
-    local mid = older[math.ceil(#older / 2)]
-    return math.floor((h[1].min - mid) / mid * 100 + 0.5), #h
+-- a sentence for tooltips: how today's lowest price stands against the usual one
+local function usualNote(id)
+    local pct, usual = ns.AuctionVsUsual(id)
+    if not pct then return "" end
+    if pct >= 15 then return "Usually " .. m(usual) .. ": today is high, a good day to sell.\n" end
+    if pct <= -15 then return "Usually " .. m(usual) .. ": today is low, waiting may pay more.\n" end
+    return "Usually " .. m(usual) .. ": a normal day.\n"
 end
 
 ----------------------------------------------------------------------
@@ -234,11 +231,10 @@ local function adviseSell(out)
                 elseif b.n > 1 and k > 1 then plan = "as one stack of " .. b.n
                 elseif b.n > 1 then plan = "one at a time (most sellers post singles)"
                 else plan = "it" end
-                local med = median(b.id)
                 out.sell[#out.sell + 1] = { kind = "sell", id = b.id, link = b.link, q = b.q, name = b.name, n = b.n, value = aTotal - vTotal,
                     left = ns.QualityColor(b.q) .. b.name .. "|r" .. ns.LABEL .. "  ×" .. b.n .. (split and ("  as " .. split) or "") .. "|r",
                     right = ns.GREEN .. "+" .. m(aTotal - vTotal) .. "|r" .. ns.LABEL .. "  at " .. m(p) .. "|r",
-                    tip = "List " .. plan .. " at " .. m(p) .. " each, the lowest buyout at your last scan" .. (med and med ~= p and (" (median " .. m(med) .. ")") or "") .. ".\n"
+                    tip = "List " .. plan .. " at " .. m(p) .. " each, the lowest buyout when last seen.\n" .. usualNote(b.id)
                         .. "After the 5% cut: " .. m(aTotal) .. ". A vendor pays " .. m(vTotal) .. ".\n"
                         .. (seen or 0) .. " on the auction house" .. (k > 1 and (", most sellers post stacks of " .. k) or "") .. ". Deposit not counted.\n"
                         .. "Click for the price history, right-click to hide this hint." }
@@ -277,7 +273,7 @@ local function adviseCraft(out)
                         skipped = skipped + 1
                         if #missing < 5 then missing[#missing + 1] = lack end
                     else
-                        local p = ns.AuctionPriceByID(r.out)
+                        local p, lowest, usual = ns.AuctionFairPrice(r.out)   -- no more than it usually goes for
                         local sv = ns.SellPrice(r.out) or 0
                         local ahRev = p and math.floor(net(p) * qty) or 0
                         local vRev = math.floor(sv * qty)
@@ -295,7 +291,8 @@ local function adviseCraft(out)
                                 right = ns.GREEN .. "+" .. m(profit) .. "|r" .. ns.LABEL .. "  to " .. where .. "|r",
                                 tip = prof .. ": " .. r.name .. (qty ~= 1 and (" (makes " .. qty .. ")") or "") .. "\n"
                                     .. "Materials " .. m(cost) .. ":\n   " .. table.concat(parts, "\n   ") .. "\n"
-                                    .. (p and ("Auction house: " .. m(p) .. " each, " .. m(ahRev) .. " after the cut\n") or "Not on the auction house at your last scan\n")
+                                    .. (p and ("Auction house: " .. m(p) .. " each" .. (lowest ~= p and (" (its usual price; the lowest today is " .. m(lowest) .. ")") or "") .. ", " .. m(ahRev) .. " after the cut\n")
+                                        or "Not on the auction house at your last scan\n")
                                     .. (vRev > 0 and ("A vendor pays " .. m(vRev) .. ". ") or "") .. "Best: " .. where .. ", " .. ns.strip(ns.money(profit, true)) .. " per craft.\n"
                                     .. (make > 0 and make < math.huge and ("Your bags hold materials for " .. make .. ".\n") or "")
                                     .. "Click for the price history, right-click to hide this hint." }
@@ -356,7 +353,7 @@ local function adviseGather(out)
         if p and p > 0 and net(p) * ((entryOf(id) and entryOf(id).k) or 20) >= MIN_GAIN and not hidden("gather", id) then
             local e = entryOf(id)
             local k = (e and e.k) or 20
-            local pct, days = trendVsHistory(id)
+            local pct, usual, days = ns.AuctionVsUsual(id)
             local stack = net(p) * k
             local name = nameOf(id) or ("item " .. id)
             local trend = pct and math.abs(pct) >= 5 and ((pct > 0 and ns.GREEN .. "+" or ns.RED) .. pct .. "%|r") or nil
@@ -365,7 +362,7 @@ local function adviseGather(out)
                 right = ns.WHITE .. m(stack) .. "|r" .. ns.LABEL .. " /" .. k .. "|r" .. (trend and ("  " .. trend) or ""),
                 tip = name .. ": lowest buyout " .. m(p) .. " each" .. (median(id) and (", median " .. m(median(id))) or "") .. ", " .. (seen or 0) .. " on the auction house.\n"
                     .. "A stack of " .. k .. " brings " .. m(stack) .. " after the cut.\n"
-                    .. (pct and ("Now " .. (pct >= 0 and "+" or "") .. pct .. "% against the median of the " .. (days - 1) .. " earlier scan day" .. (days > 2 and "s" or "") .. ".\n") or "")
+                    .. (pct and ("Now " .. (pct >= 0 and "+" or "") .. pct .. "% against its usual " .. m(usual) .. " (last " .. days .. " scan days).\n") or "")
                     .. (c.need and ("Needs " .. c.prof .. " " .. c.need .. ".\n") or "")
                     .. (c.got and ("You have gathered " .. c.got .. " so far.\n") or "")
                     .. "Click for the price history, right-click to hide this hint." }
@@ -376,7 +373,8 @@ end
 
 local function adviseFlips(out)
     for id, v in pairs(ns.db.vendors or {}) do
-        local p, _, seen = ns.AuctionPriceByID(id)
+        local p, lowest = ns.AuctionFairPrice(id)            -- no more than it usually goes for
+        local seen = select(3, ns.AuctionPriceByID(id))
         if p and not hidden("flip", id) then
             local gain = net(p) - v.c
             if gain >= MIN_GAIN and net(p) >= v.c * 1.3 then
@@ -385,7 +383,7 @@ local function adviseFlips(out)
                     left = ns.WHITE .. name .. "|r" .. ns.LABEL .. "  " .. (v.z or "") .. "|r",
                     right = ns.GREEN .. "+" .. m(gain) .. "|r" .. ns.LABEL .. "  buy " .. m(v.c) .. ", AH " .. m(p) .. "|r",
                     tip = name .. ": " .. (v.npc and (v.npc .. " in ") or "a vendor in ") .. (v.z or "?") .. " sells it for " .. m(v.c) .. (v.lim and " (limited stock)" or "") .. ".\n"
-                        .. "Lowest auction " .. m(p) .. ", " .. m(net(p)) .. " after the cut; " .. (seen or 0) .. " on the auction house.\n"
+                        .. (lowest ~= p and ("Usually " .. m(p) .. " (the lowest today is " .. m(lowest) .. ")") or ("Lowest auction " .. m(p))) .. ", " .. m(net(p)) .. " after the cut; " .. (seen or 0) .. " on the auction house.\n"
                         .. "Deposit not counted. Right-click to hide this hint." }
             end
         end
