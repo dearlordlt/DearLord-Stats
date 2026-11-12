@@ -39,6 +39,15 @@ probed directly. In a fight `GetAuraDataByIndex("player", 1, "HELPFUL")` returne
 `C_Secrets` has `GetSpellAuraSecrecy`, `ShouldSpellAuraBeSecret`, `ShouldUnitAuraIndexBeSecret`,
 `ShouldUnitAuraInstanceBeSecret` and `ShouldUnitAuraSlotBeSecret` (they take arguments; not tried).
 
+## Windfury procs (launch client, November 2026)
+
+A shaman's saved cast counts hold thousands of `UNIT_SPELLCAST_SUCCEEDED` casts and no Windfury attack
+among them, while the damage meter lists the proc's damage under the spell `Windfury Weapon`. So a
+proc sends no spellcast event, and during a fight the only trace is `UNIT_COMBAT` on the target.
+DearLord Stats takes three or more melee results within 0.3 s for a proc; whether the extra attacks
+really arrive that close together has not been confirmed in the game, and the addon compares every
+fight with the meter to find out.
+
 ## The built-in damage meter is the way to get combat numbers
 
 About a second after combat ends:

@@ -99,6 +99,18 @@ your pet is out, and gentle one-line reminders (a new spell that is not on your 
 could craft from your bags, a trainer unlock you reached). They fade out by themselves; left-click
 opens the matching report tab, right-click dismisses.
 
+**Windfury (shaman):** every proc of Windfury Weapon puts a line where the fight recap shows, lit up
+as it lands and ranked against every proc the character has had: `Windfury #1 hit 812 damage!` for the
+top three, `Windfury #14 for 412 damage` for the rest, with the hits, crits and misses of that proc
+beside it. The fight recap then counts them (`windfury ×2 best 612`), the Combat tab keeps the number
+of procs, the biggest one and the biggest single hit, and `/dls windfury` lists the five biggest
+(`/dls windfury test` shows three made-up ones). The combat log is closed to addons, so a proc is read
+from the hits: the swing that set it off and the extra attacks land together, and three or more melee
+results on your target within 0.3 s while Windfury is on the weapon count as one. The damage shown is
+all of those hits added up. In a group someone else's swing landing in the same instant can be counted
+in. After each fight the game's own damage meter says whether Windfury did damage, and the client
+checks show how often the two agree.
+
 The report (`/dls`, or click either text block; resizable, Escape closes):
 
 - **Combat**: time per kill, dps with pet share, time in combat, rest between pulls, health pool lost
@@ -180,7 +192,7 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls shield`, `/dls ready`, `/dls check`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls shield`, `/dls windfury [test]`, `/dls ready`, `/dls check`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

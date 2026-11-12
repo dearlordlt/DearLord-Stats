@@ -161,6 +161,10 @@ local function recap(f)
     end
     if f.endMana then parts[#parts + 1] = string.format("%smana|r %s%d%%|r", L, W, math.floor(f.endMana * 100 + 0.5)) end
     if f.mobs > 1 then parts[#parts + 1] = string.format("%s%d|r %smobs|r", W, f.mobs, L) end
+    if f.wf and f.wf.procs > 0 then                              -- shaman: Windfury procs in this fight and the biggest of them
+        parts[#parts + 1] = string.format("%swindfury|r %s×%d|r", L, W, f.wf.procs)
+            .. (f.wf.best > 0 and string.format(" %sbest|r %s%d|r", L, W, f.wf.best) or "")
+    end
     if f.died then parts[#parts + 1] = ns.RED .. "died|r" end
     return table.concat(parts, L .. "  ·  |r")
 end
@@ -172,6 +176,7 @@ local function finalize(f, data)
     f.healed = (data and data.healed and data.healed > 0) and data.healed or f.liveHealed
     f.spells = data and data.spells or {}
     f.approx = data == nil
+    if ns.WindfuryCheck then ns.safe("windfury:check", function() ns.WindfuryCheck(f, data ~= nil) end) end
     if f.dmg <= 0 and f.taken <= 0 and f.duration < 2 then return end      -- not a real fight
     f.mobs = math.max(f.mobCount, data and data.enemies or 0, f.xpKills, 1)
     f.kills = f.xpKills > 0 and f.xpKills or ((not f.died) and f.mobs or 0)
@@ -282,6 +287,7 @@ ns.On("PLAYER_REGEN_ENABLED", function()
     if not fight then return end
     local f = fight
     fight = nil
+    f.wf = ns.WindfuryTake and ns.WindfuryTake() or nil
     f.endedAt = GetTime()
     f.duration = f.endedAt - f.start
     lastFightEnd = f.endedAt

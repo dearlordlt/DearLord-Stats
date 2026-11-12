@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.27.2"
+ns.version = "2.28.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -186,7 +186,7 @@ end
 ----------------------------------------------------------------------
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
-    showRecap = true, nudges = true,
+    showRecap = true, nudges = true, windfury = true,
     font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true, threatWarn = true, threatWarnAt = 90, threatSound = true, growlWarn = true, readyCheck = true, partyTargets = true, partyTargetsSelf = true, partySolo = false, partyTargetSide = "right", partyTargetWidth = 110, partyTargetHeight = 55, showKeys = true,
     shieldBar = true, shieldWidth = 220, shieldHeight = 22, shieldColor = "spell", shieldText = "both", shieldIcon = true, shieldTimer = true, shieldAnim = true, shieldSound = false,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
@@ -425,6 +425,12 @@ local function feedRow(i)
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     row.bg = bg
+    local flash = row:CreateTexture(nil, "BORDER")             -- a wash of colour behind a line that wants to be noticed
+    flash:SetAllPoints()
+    flash:SetColorTexture(1, 1, 1, 1)
+    if flash.SetBlendMode then flash:SetBlendMode("ADD") end
+    flash:SetAlpha(0)
+    row.flash = flash
     local text = row:CreateFontString(nil, "OVERLAY")
     text:SetFont(STANDARD_TEXT_FONT, 13, "OUTLINE")
     text:SetShadowColor(0, 0, 0, 1)
@@ -457,14 +463,20 @@ local function feedShow(row, entry)
     row:SetHeight(ns.db.fontSize + 4)
     row.tab, row.key = entry.tab, entry.key
     row.age, row.hold, row.state = 0, entry.hold or 7, "in"
+    if entry.flash then
+        row.flash:SetVertexColor(entry.flash[1], entry.flash[2], entry.flash[3])
+        row.flashLeft = 0.7
+        row.flash:SetAlpha(0.55)
+    else row.flashLeft = nil; row.flash:SetAlpha(0) end
     row:SetAlpha(0)
     row:Show()
 end
 
--- opts: tab (panel tab opened on click), key (same key replaces the visible line), hold (seconds)
+-- opts: tab (panel tab opened on click), key (same key replaces the visible line), hold (seconds),
+-- flash ({ r, g, b }: the line lights up in that colour as it lands)
 function ns.Feed(text, opts)
     opts = opts or {}
-    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold }
+    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash }
     if entry.key then
         for i = 1, #feed.rows do
             local row = feed.rows[i]
@@ -484,6 +496,11 @@ ns.Every(0.05, function(dt)
         if row:IsShown() then
             feedWidth(row)
             row.age = row.age + dt
+            if row.flashLeft then
+                row.flashLeft = row.flashLeft - dt
+                if row.flashLeft <= 0 then row.flashLeft = nil; row.flash:SetAlpha(0)
+                else row.flash:SetAlpha(0.55 * (row.flashLeft / 0.7) ^ 2) end
+            end
             if row.state == "in" then
                 row:SetAlpha(math.min(1, row.age / 0.35))
                 if row.age >= 0.35 then row.state, row.age = "hold", 0 end

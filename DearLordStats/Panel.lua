@@ -566,6 +566,17 @@ function render.combat(scope)
         { tip = "From the game's built-in damage meter, read after each fight." })
     KV(L .. "In combat|r", W .. pctText(v.combatShare) .. "|r " .. L .. "of played time|r")
     KV(L .. "Rest between pulls|r", W .. ns.seconds(v.rest) .. "|r", { tip = "Average pause between one fight and the next, counting only pauses under 90 s. High numbers mean eating, drinking or bandaging a lot." })
+    local wf = ns.WindfuryView and ns.WindfuryView()
+    if wf and wf.on and (wf.shaman or wf.procs > 0) then          -- shaman: Windfury procs and the biggest of them
+        KV(L .. "Windfury procs|r", W .. wf.procs .. "|r  " .. L .. "(" .. wf.sessionProcs .. " this session)|r",
+            { tip = "A proc is read from the hits: the swing that set it off and the extra attacks land together. The damage is all of them added up. In a group someone else's swing landing in the same instant can be counted in." })
+        local best = wf.top[1]
+        if best then
+            KV(L .. "Biggest Windfury|r", W .. best.total .. "|r  " .. L .. best.hits .. " hits" .. ((best.crits or 0) > 0 and (", " .. best.crits .. " crit") or "") .. (best.mob and (" on " .. best.mob) or "") .. "|r",
+                { tip = "/dls windfury lists the five biggest." })
+        end
+        if wf.hit then KV(L .. "Biggest single hit in a proc|r", W .. wf.hit.amount .. "|r" .. (wf.hit.crit and ("  " .. L .. "crit|r") or "")) end
+    end
     end)
 
     SECTION(function()

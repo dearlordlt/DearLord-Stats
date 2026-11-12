@@ -1324,6 +1324,89 @@ if MODE ~= "bare" and not os.getenv("SV") then
     for _, r in ipairs(ns.HealthRows()) do if r.name == "Refused actions" then shield.refusedRow = r.state end end
     ns.db.diag.census.blocked = keep
 end
+
+-- Windfury (shaman): procs read from hits landing together, ranked, counted in the fight summary
+local wfT = {}
+if MODE ~= "bare" then
+    local function feedLine(key) for _, row in ipairs(ns.feed.rows) do if row.shown and row.key == key then return strip(row.text.text), row end end end
+    local function together(list)
+        for _, h in ipairs(list) do fire("UNIT_COMBAT", "target", h[1], h[2] or "", h[3], h[4] or 1) end
+        advance(0.5)
+    end
+    local function procs() return ns.char.windfury and ns.char.windfury.procs or 0 end
+    local three = { { "WOUND", "", 40 }, { "WOUND", "", 40 }, { "WOUND", "", 40 } }
+    local keepClass, keepRecap = ns.char.classFile, ns.db.showRecap
+    -- the fights below are only for Windfury: everything the earlier fights added up is put back afterwards
+    local function copy(v) if type(v) ~= "table" then return v end; local o = {}; for k, x in pairs(v) do o[k] = copy(x) end; return o end
+    local function putBack(into, from) for k in pairs(into) do into[k] = nil end; for k, x in pairs(from) do into[k] = copy(x) end end
+    local keepChar, keepSession, keepLast = copy(ns.char), copy(ns.session), ns.lastFight
+    local keepFights, keepMeter, keepWorld = ns.db.diag.fights, ns.db.diag.fightsFromMeter, { world.hp, world.mana, world.targetLevel, world.targetName }
+    SPELLS[8232], SPELLS[8017] = "Windfury Weapon", "Rockbiter Weapon"
+    ns.db.showRecap = true
+    advance(10)                                                  -- earlier lines fade
+    -- not a shaman: nothing, whatever lands
+    world.enchant = { true, 1000, 0, 283, false, 0, 0, 0 }; advance(2.5)
+    together(three); wfT.hunter = feedLine("windfury") == nil and procs() == 0 and ns.WindfuryView() == nil
+    ns.char.classFile = "SHAMAN"; ns.char.windfury, ns.session.windfury = nil, nil; advance(2.5)
+    -- two hits together are a swing and a strike: no proc
+    together({ { "WOUND", "", 100 }, { "WOUND", "", 120 } }); wfT.two = feedLine("windfury") == nil and procs() == 0
+    -- three together: a proc; the first ever is #1
+    together({ { "WOUND", "", 100 }, { "WOUND", "CRITICAL", 220 }, { "WOUND", "", 130 } })
+    local line, row = feedLine("windfury"); wfT.first, wfT.flash = line or "-", row ~= nil and row.flashLeft ~= nil and row.flash.alpha > 0
+    together({ { "WOUND", "", 90 }, { "MISS", "", nil }, { "WOUND", "", 110 } }); wfT.second = feedLine("windfury") or "-"
+    together({ { "WOUND", "", 50 }, { "WOUND", "", 50 }, { "WOUND", "", 50 } }); wfT.third = feedLine("windfury") or "-"
+    together({ { "WOUND", "", 40 }, { "WOUND", "", 40 }, { "WOUND", "", 40 } }); wfT.fourth = feedLine("windfury") or "-"
+    together({ { "WOUND", "", 100 }, { "WOUND", "", 100 }, { "WOUND", "", 100 } }); wfT.fifth = feedLine("windfury") or "-"
+    local w = ns.char.windfury
+    wfT.kept = w.procs == 5 and #w.ranks == 5 and w.ranks[1] == 450 and w.ranks[2] == 300 and w.ranks[5] == 120
+        and w.top[1].total == 450 and w.top[1].crits == 1 and w.hit.amount == 220 and w.hit.crit == true and ns.session.windfury.procs == 5
+    -- a shock landing with the swing is not melee: no proc
+    together({ { "WOUND", "", 100 }, { "WOUND", "", 60, 8 }, { "WOUND", "", 60, 8 } }); wfT.spell = procs() == 5
+    -- hits spread over a second are swings, not a proc
+    for _ = 1, 3 do fire("UNIT_COMBAT", "target", "WOUND", "", 80, 1); advance(0.5) end
+    wfT.spread = procs() == 5
+    -- Rockbiter on the weapon, or nothing on it: no proc
+    world.enchant = { true, 1000, 0, 29, false, 0, 0, 0 }; advance(2.5); together(three); wfT.rockbiter = procs() == 5
+    world.enchant = { false, 0, 0, 0, false, 0, 0, 0 }; advance(2.5); together(three); wfT.bare = procs() == 5
+    -- an enchant nothing is known about counts; the damage meter then says there was no Windfury, and it is learned
+    world.enchant = { true, 1000, 0, 9001, false, 0, 0, 0 }; advance(2.5)
+    runFight({ name = "Test Boar", kills = 0, dmg = 300, taken = 10, duration = 6, spells = { { 6603, 300 } }, during = function() together(three) end })
+    wfT.unknownCounted, wfT.learnedNot = procs() == 6, ns.db.wfEnchants[9001] == false
+    together(three); wfT.unknownQuiet = procs() == 6
+    -- another unknown enchant, and this time the meter lists Windfury: learned, and the fight summary counts the procs
+    world.enchant = { true, 1000, 0, 9002, false, 0, 0, 0 }; advance(2.5)
+    runFight({ name = "Test Boar", kills = 0, dmg = 500, taken = 10, duration = 6, spells = { { 6603, 200 }, { 8232, 300 } },
+        during = function() together({ { "WOUND", "", 100 }, { "WOUND", "", 150 }, { "WOUND", "", 150 } }) end })
+    wfT.learned, wfT.recap = ns.db.wfEnchants[9002] == true, feedLine("recap") or "-"
+    -- a fight with Windfury damage in the meter and no proc seen is counted as missed
+    runFight({ name = "Test Boar", kills = 0, dmg = 500, taken = 10, duration = 6, spells = { { 6603, 200 }, { 8232, 300 } } })
+    local fd = ns.db.diag.windfury.fights
+    wfT.fights = fd.agree == 1 and fd.missed == 1 and fd.extra == 1
+    world.class = "Shaman"
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Windfury procs" then wfT.health = r.state end end
+    world.class = nil
+    -- the shaman's own imbue cast teaches the enchant it puts on
+    world.enchant = { true, 1000, 0, 9003, false, 0, 0, 0 }
+    fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-wf", 8017); advance(1.5)
+    wfT.castNot = ns.db.wfEnchants[9003] == false
+    world.enchant = { true, 1000, 0, 9004, false, 0, 0, 0 }
+    fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-wf", 8232); advance(1.5)
+    wfT.castIs = ns.db.wfEnchants[9004] == true
+    -- the setting switches it off
+    local before = procs()
+    ns.db.windfury = false; together(three); wfT.off = procs() == before; ns.db.windfury = true
+    -- the slash command lists the biggest, and the preview shows made-up procs without keeping them
+    printed = {}; SlashCmdList["DEARLORDSTATS"]("windfury"); wfT.say = (printed[1] or "") .. " / " .. (printed[2] or "")
+    before = procs()
+    advance(8); SlashCmdList["DEARLORDSTATS"]("windfury test"); advance(1); wfT.preview1 = feedLine("windfury") or "-"
+    advance(4); wfT.preview2 = feedLine("windfury") or "-"
+    advance(12); wfT.previewKept = procs() == before
+    world.enchant = nil
+    putBack(ns.char, keepChar); putBack(ns.session, keepSession)
+    ns.lastFight, ns.db.diag.fights, ns.db.diag.fightsFromMeter, ns.db.showRecap = keepLast, keepFights, keepMeter, keepRecap
+    world.hp, world.mana, world.targetLevel, world.targetName = keepWorld[1], keepWorld[2], keepWorld[3], keepWorld[4]
+    ns.char.classFile = keepClass
+end
 local function check(name, ok) io.write(string.format("   [%s] %s\n", ok and "ok" or "FAIL", name)); if not ok then os.exit_code = 1 end end
 local c = ns.char.combat
 if MODE == "bare" then
@@ -1603,6 +1686,23 @@ check("shield bar: Edit Mode shows it with a running preview and it can be dragg
 check("shield bar: /dls shield previews it for 20 s", shield.preview and shield.previewOver)
 check("shield bar: client checks say what the client gave (" .. tostring(shield.health) .. ")", shield.health ~= nil and shield.health:find("^ok") ~= nil and shield.note ~= nil)
 check("refused actions: one that is not /who is logged and leaves the census on (" .. tostring(shield.refusedRow) .. ")", shield.refused and shield.refusedRow == "limited")
+if MODE ~= "bare" then
+    check("windfury: three melee results landing together are a proc, ranked #1 with a flash (" .. tostring(wfT.first) .. ")",
+        wfT.first:find("Windfury #1 hit  450 damage!  ·  3 hits, 1 crit", 1, true) ~= nil and wfT.flash)
+    check("windfury: the top three shout, a miss is counted, the rest say their place (" .. tostring(wfT.fourth) .. ")",
+        wfT.second:find("Windfury #2 hit  200 damage!  ·  2 hits, 1 missed", 1, true) ~= nil and wfT.third:find("Windfury #3 hit  150 damage!", 1, true) ~= nil
+        and wfT.fourth:find("Windfury #4 for 120 damage  ·  3 hits", 1, true) ~= nil and wfT.fifth:find("Windfury #2 hit  300 damage!", 1, true) ~= nil)
+    check("windfury: procs, the ranked list, the five biggest and the biggest single hit are kept", wfT.kept)
+    check("windfury: not a proc: two hits, a shock with the swing, swings apart, Rockbiter, a bare weapon, another class, the setting off",
+        wfT.two and wfT.spell and wfT.spread and wfT.rockbiter and wfT.bare and wfT.hunter and wfT.off)
+    check("windfury: the fight summary counts the procs and the biggest (" .. tostring(wfT.recap) .. ")", wfT.recap:find("windfury ×1 best 400", 1, true) ~= nil)
+    check("windfury: an unknown weapon enchant counts until the damage meter or the shaman's own cast says what it is",
+        wfT.unknownCounted and wfT.learnedNot and wfT.unknownQuiet and wfT.learned and wfT.castNot and wfT.castIs)
+    check("windfury: fights are compared with the damage meter and the client checks say so (" .. tostring(wfT.health) .. ")", wfT.fights and wfT.health == "limited")
+    check("windfury: /dls windfury lists the biggest (" .. tostring(wfT.say) .. ")", wfT.say:find("7 procs in all", 1, true) ~= nil and wfT.say:find("#1  450 damage, 3 hits, 1 crit", 1, true) ~= nil)
+    check("windfury: the preview shows made-up procs and keeps nothing (" .. tostring(wfT.preview1) .. " / " .. tostring(wfT.preview2) .. ")",
+        wfT.preview1:find("Windfury #14 for 650 damage", 1, true) ~= nil and wfT.preview2:find("Windfury #2 hit  1134 damage!", 1, true) ~= nil and wfT.previewKept)
+end
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")
     for _, e in ipairs(ns.db.errors) do io.write("   x" .. e.count .. " [" .. e.where .. "] " .. e.msg .. "\n") end

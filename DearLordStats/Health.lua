@@ -150,6 +150,18 @@ function ns.HealthRows()
         else add("Shield bar", "limited", "this client gives no amount " .. where .. ": the bar shows the time left") end
     end
 
+    -- shaman: do the Windfury procs seen from the hits agree with the game's damage meter?
+    if class == "SHAMAN" and db and db.windfury ~= false then
+        local wf = type(d.windfury) == "table" and d.windfury or {}
+        local fd = type(wf.fights) == "table" and wf.fights or nil
+        if not fd then add("Windfury procs", "wait", "no fight with Windfury yet (/dls windfury test previews the line)")
+        elseif (fd.missed or 0) + (fd.extra or 0) == 0 then add("Windfury procs", "ok", (fd.agree or 0) .. " fights agree with the game's damage meter")
+        else
+            add("Windfury procs", "limited", (fd.agree or 0) .. " fights agree with the game's damage meter, " .. (fd.missed or 0)
+                .. " had Windfury damage with no proc seen, " .. (fd.extra or 0) .. " had a proc seen with no Windfury damage")
+        end
+    end
+
     if GetBuildInfo then
         local version, build, _, interface = GetBuildInfo()
         add("Game client", "ok", "version " .. tostring(S(version) or "?") .. ", build " .. tostring(S(build) or "?") .. ", interface " .. tostring(N(interface) or "?"))

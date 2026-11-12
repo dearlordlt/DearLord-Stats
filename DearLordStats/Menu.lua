@@ -69,7 +69,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | shield | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | shield | windfury [test|on|off] | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -90,6 +90,10 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
         elseif cmd == "check" or cmd == "checks" or cmd == "health" then
             ns.say("client checks: " .. (ns.HealthSummary()))
             ns.OpenChecks()
+        elseif cmd == "windfury" or cmd == "wf" then
+            if arg == "test" or arg == "preview" then ns.WindfuryPreview(); ns.say("three made-up Windfury procs under the main window; nothing is kept")
+            elseif arg == "off" or arg == "on" then db.windfury = arg == "on"; ns.say("Windfury line " .. arg)
+            else ns.WindfurySay() end
         elseif cmd == "shield" then
             ns.ShieldPreview(20); ns.say("shield bar preview for 20 s: drag it where you want it (it can also be moved in the game's Edit Mode)")
         elseif cmd == "ready" then
