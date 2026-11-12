@@ -27,6 +27,18 @@ every moment sampled, in and out of combat. Spell cooldown fields and every numb
 `issecretvalue` first. Readable throughout: `UnitHealthMax`, `UnitGUID`, `UnitName`,
 `UnitThreatSituation`, `UNIT_COMBAT` amounts, chat messages, `UI_ERROR_MESSAGE`.
 
+## Absorb shields and buffs (launch client, November 2026)
+
+`UnitGetTotalAbsorbs("player")` exists and was a secret value at every moment sampled, out of a fight
+too. A status bar and `SetFormattedText` take it. Out of a fight `C_UnitAuras.GetAuraDataByIndex`
+returns readable buffs, and a shield buff's `points[1]` followed what was left of the shield (44, then
+30 after a hit), so it is the plain amount; this is inferred from what the shield bar showed, not
+probed directly. In a fight `GetAuraDataByIndex("player", 1, "HELPFUL")` returned nothing at all and
+`C_Secrets.ShouldAurasBeSecret()` returned true. `C_UnitAuras` also has `GetPlayerAuraBySpellID`,
+`GetAuraDataByAuraInstanceID`, `GetAuraDuration`, `GetUnitAuraBySpellID` and `GetBuffDataByIndex`;
+`C_Secrets` has `GetSpellAuraSecrecy`, `ShouldSpellAuraBeSecret`, `ShouldUnitAuraIndexBeSecret`,
+`ShouldUnitAuraInstanceBeSecret` and `ShouldUnitAuraSlotBeSecret` (they take arguments; not tried).
+
 ## The built-in damage meter is the way to get combat numbers
 
 About a second after combat ends:

@@ -72,14 +72,16 @@ game's Edit Mode, where it shows itself with a running preview, or during `/dls 
 clicks pass through it. Width, height, colour (by shield, or one of five), the numbers (left and
 full, left, percent, none), icon, time, animations and a break sound are settings.
 
-In a fight this client hides the amount and your buffs from addons. The bar and its number still
-follow the hidden amount (a status bar and a text may take one), and the whole bar is drawn inside a
-box that the game itself opens while there is a point of shield and closes when there is none, so a
-shield is neither lost nor shown after it is gone. Which shield it is comes from the buff when
-readable, else from your own cast, else from what was up when the fight began; a shield somebody
-else casts on you mid-fight shows without its icon's certainty and is measured against your health.
-The full size is what was read at a fresh cast out of a fight (else the spell rank's), so a bar met
-half used reads 30 / 44, not 30 / 30. With no amount at all from the client the bar shows time left.
+This client hides the absorb amount from addons at every moment, and all your buffs in a fight. Out
+of a fight the buff itself says what is left, and the bar works from that. In a fight the bar and
+its number follow the hidden amount (a status bar and a text may take one), and the whole bar is
+drawn inside a box that the game itself opens while there is a point of shield and closes when
+there is none, so a shield is neither lost nor shown after it is gone. Which shield it is comes
+from the buff when readable, else from your own cast, else from what was up when the fight began,
+else it is taken for the kind this character had last (then without the seconds); a character that
+never had one sees the bar measured against its health. The full size is what was read at a fresh
+cast out of a fight (else the spell rank's), so a shield met half used reads 30 / 44, not 30 / 30.
+With no amount at all from the client the bar shows the time left.
 
 **Client checks** (Summary > Client checks, or `/dls check`): one row per part of the addon that leans
 on something a game patch can change (threat numbers, the Growl switch, keys on the cooldown manager,

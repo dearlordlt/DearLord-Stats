@@ -46,8 +46,21 @@ local FAMILIES = {
     { key = "sacrifice", color = { 0.75, 0.40, 0.95 }, duration = 30,
         ids = { [7812] = 305, [19438] = 510, [19440] = 770, [19441] = 1095, [19442] = 1470, [19443] = 1905 } },
 }
-local BY_ID, BY_NAME = {}, {}
-for _, fam in ipairs(FAMILIES) do for id in pairs(fam.ids) do BY_ID[id] = fam end end
+local BY_ID, BY_NAME, BY_KEY = {}, {}, {}
+for _, fam in ipairs(FAMILIES) do
+    BY_KEY[fam.key] = fam
+    for id in pairs(fam.ids) do BY_ID[id] = fam end
+end
+-- the shield a spell id stands for: by the table, else by its name (a client may number a known shield its own way)
+local function familyOf(id)
+    if not id then return nil end
+    local fam = BY_ID[id]
+    if fam then return fam end
+    local name = C_Spell and C_Spell.GetSpellName and S((select(2, pcall(C_Spell.GetSpellName, id))))
+    fam = name and BY_NAME[name] or nil
+    if fam then BY_ID[id] = fam end
+    return fam
+end
 
 local state = { present = false, disp = 0, ghostV = 0, ghostHold = 0, flash = 0, demoUntil = 0, edit = false }
 ns.shield = state
@@ -258,11 +271,21 @@ local function readAmount()
     return v, "secret"                                       -- there, but hidden: only widgets may take it
 end
 
+-- true while the client keeps buffs from addons (it says so itself; else: in a fight)
+local function buffsKeptBack()
+    local ask = type(C_Secrets) == "table" and C_Secrets.ShouldAurasBeSecret
+    if type(ask) == "function" then
+        local ok, v = pcall(ask)
+        if ok and B(v) ~= nil then return B(v) end
+    end
+    return (InCombatLockdown and InCombatLockdown()) and true or false
+end
+
 local function auraInfo(a, fam, id, how)
     a = a or {}
     local points = T(a.points)
     return { fam = fam, id = id or N(a.spellId), name = S(a.name), icon = N(a.icon) or S(a.icon), expires = N(a.expirationTime),
-        duration = N(a.duration), nominal = points and N(points[1]) or nil, instance = N(a.auraInstanceID), how = how }
+        duration = N(a.duration), left = points and N(points[1]) or nil, instance = N(a.auraInstanceID), how = how }
 end
 -- the shield among your buffs: by spell id or name when buffs can be read, else by asking for each known
 -- shield spell in turn (that answers even when the details are hidden)
@@ -280,7 +303,10 @@ local function findAura()
             if not id and not name then hidden = true
             else
                 local fam = (id and BY_ID[id]) or (name and BY_NAME[name])
-                if fam then return auraInfo(a, fam, id, "list"), "list" end
+                if fam then
+                    if id and not BY_ID[id] then BY_ID[id] = fam end
+                    return auraInfo(a, fam, id, "list"), "list"
+                end
             end
         end
     end
@@ -290,7 +316,8 @@ local function findAura()
             if ok and raw ~= nil then return auraInfo(T(raw), fam, id, "byid"), "byid" end
         end
     end
-    return nil, hidden and "hidden" or (seen > 0 and "list" or "empty")
+    -- no buffs at all: either there are none, or (in a fight) the client is keeping them back
+    return nil, hidden and "hidden" or ((seen > 0 or not buffsKeptBack()) and "list" or "empty")
 end
 
 -- the preview: a 480 shield that takes five hits, breaks, and comes back, over and over
@@ -402,17 +429,18 @@ local function note(amountHow, known, auraHow)
     local d = diag()
     local key = (InCombatLockdown and InCombatLockdown()) and "combat" or "calm"
     if d[key] then return end
-    d[key] = string.format("mode=%s amount=%s buffs=%s shield=%s id=%s nominal=%s expires=%s instance=%s max=%s(%s) smooth=%s spark=%s box=%s",
+    d[key] = string.format("mode=%s amount=%s buffs=%s shield=%s id=%s left=%s expires=%s instance=%s max=%s(%s) smooth=%s spark=%s box=%s",
         tostring(state.mode), tostring(amountHow), tostring(auraHow), tostring(known and known.how), tostring(known and known.id),
-        known and known.nominal and "plain" or "no", known and known.expires and "plain" or "no", known and known.instance and "yes" or "no",
+        known and known.left and "plain" or "no", known and known.expires and "plain" or "no", known and known.instance and "yes" or "no",
         tostring(state.max), tostring(state.maxKind), INTERP and "yes" or "no", state.sparkOk and "yes" or "no", state.presenceOk and "yes" or "no")
 end
 
--- what a shield of this kind holds when full, as far as is known: read once, else the buff's own number, else the rank's
+-- what a shield of this kind holds when full, as far as is known: read at a fresh cast, else the rank's, else
+-- what this character's last shield held
 local function fullSize(known, lk)
     if not known then return nil end
     local learn = learned()
-    return (lk and learn[lk]) or known.nominal or (known.id and known.fam.ids[known.id]) or nil
+    return (lk and learn[lk]) or (known.id and known.fam.ids[known.id]) or known.full or nil
 end
 
 local function refresh(fresh)
@@ -424,17 +452,26 @@ local function refresh(fresh)
     local on = db.shieldBar ~= false or demo
     local was, before = state.present, state.mode
     local secret = how == "secret"
-    if not secret then state.standby = nil end
+    -- The amount itself is hidden on this client even out of a fight, but the buff carries what is left as a
+    -- plain number whenever buffs can be read, and that serves as well.
+    local left = (how ~= "plain" and not demo and aura and aura.left) or nil
+    local readable = how == "plain" or auraHow == "list"      -- buffs (or the amount) can be read: what is seen is the truth
+    if not secret or readable then state.standby = nil end
     -- your own cast is only a stand-in for the buff: dropped once things can be read, or its time is over
     local cast = state.cast
     if cast and (how == "plain" or demo or now >= cast.expires or (auraHow == "list" and now - cast.castAt > 1)) then state.cast, cast = nil, nil end
-    -- which shield: the buff when it can be read, else your own cast, else the one that was up a moment ago
+    -- which shield: the buff when it can be read, else your own cast, else the one that was up a moment ago,
+    -- else (something landed, nothing says what) the kind this character had last
     local known = aura
     if not known and how ~= "plain" and not demo then
         if cast then known = cast
         elseif was and state.aura and state.expires and now < state.expires and not state.instanceGone and auraHow ~= "list" then
             known = state.aura
             if not state.blind then state.blind = true; diag().blind = "followed by its clock (buffs=" .. tostring(auraHow) .. ")" end
+        elseif state.standby and state.presenceOk and ns.char and T(ns.char.lastShield) then
+            local last = ns.char.lastShield
+            local fam = BY_KEY[S(last.key) or ""]
+            if fam then known = { fam = fam, id = N(last.id), full = N(last.full), how = "guess" } end
         end
     end
     local present = false
@@ -444,7 +481,7 @@ local function refresh(fresh)
         else present = known ~= nil end
     end
     if present then
-        local plain = how == "plain" and amount or nil
+        local plain = (how == "plain" and amount) or left or nil
         -- a new shield over the old one: another buff, a later end, another cast, or more than there was
         local renewed = was and ((known and ((state.instance and known.instance and known.instance ~= state.instance)
             or (known.expires and state.expires and known.expires > state.expires + 1)
@@ -459,7 +496,7 @@ local function refresh(fresh)
         end
         if plain and plain > 0 then state.sawAmount = true end
         state.mode = (plain and (plain > 0 or state.sawAmount)) and "amount" or (secret and "hidden") or "timer"
-        local duration = known and (known.duration or known.fam.duration)
+        local duration = known and known.how ~= "guess" and (known.duration or known.fam.duration) or nil   -- a guess has no clock
         state.duration = duration
         state.expires = known and (known.expires or (duration and (((not was or renewed or not state.expires) and (now + duration)) or state.expires))) or nil
         state.aura, state.instance, state.castAt = known, known and known.instance, known and known.castAt
@@ -471,6 +508,7 @@ local function refresh(fresh)
                     state.max = plain
                     if freshCast and lk then learned()[lk] = plain end
                 else state.max = math.max(plain, fullSize(known, lk) or 0) end          -- met half used: after a fight, or at login
+                if known and known.how ~= "demo" and ns.char then ns.char.lastShield = { key = known.fam.key, id = known.id, full = state.max } end
             elseif before ~= "amount" then                           -- the fight is over and the number can be read again
                 state.max = math.max(plain, (state.maxKind ~= "health" and state.maxKind ~= "none" and state.max) or fullSize(known, lk) or 0)
             else state.max = math.max(state.max or 0, plain) end
@@ -486,8 +524,8 @@ local function refresh(fresh)
             -- the full size: what it was while readable, else what is known of this kind of shield, else your health
             local max, kind = (was and not renewed and state.maxKind == "seen") and state.max or nil, "seen"
             if not max then max, kind = lk and learned()[lk], "learned" end
-            if not max then max, kind = known and known.nominal, "buff" end
             if not max then max, kind = known and known.id and known.fam.ids[known.id], "rank" end
+            if not max then max, kind = known and known.full, "last" end
             if not max then max, kind = N(UnitHealthMax and UnitHealthMax("player")), "health" end
             state.max, state.maxKind = max or 1, max and kind or "none"
             state.amount, state.raw = nil, amount
@@ -506,7 +544,7 @@ local function refresh(fresh)
         if not was or renewed then note(how, known, auraHow) end
     elseif was then
         -- the fight is over and nothing is left: it ended some time ago, unseen. No farewell for that.
-        local silent = before == "hidden" and how == "plain"
+        local silent = before == "hidden" and readable
         -- gone before its time (or right after a hit): broken; otherwise it ran out
         local broke = (state.expires and now < state.expires - 0.5) or (state.lastHit and now - state.lastHit < 1) or false
         state.present = false
@@ -732,14 +770,26 @@ end, "shield:absorb")
 ns.On("UNIT_SPELLCAST_SENT", function(unit, target, _, spellID)
     if S(unit) ~= "player" then return end
     local id = N(spellID)
-    if id and BY_ID[id] then state.sent = { id = id, target = S(target), at = GetTime() } end
+    if id and familyOf(id) then state.sent = { id = id, target = S(target), at = GetTime() } end
 end, "shield:sent")
 local SELF_ONLY = { barrier = true, mana = true, fireward = true, frostward = true, shadowward = true }
+-- "Name" against "Name-Realm", or a first name against a full one (names here may have a space)
+local function sameName(a, b)
+    a, b = a:match("^[^-]+") or a, b:match("^[^-]+") or b
+    return a == b or a:find(b, 1, true) == 1 or b:find(a, 1, true) == 1
+end
+local hiddenCasts = 0
 ns.On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
     unit = S(unit)
+    if unit ~= "player" and unit ~= "pet" then return end
     local id = N(spellID)
-    local fam = id and BY_ID[id]
-    if not fam or (unit ~= "player" and unit ~= "pet") then return end
+    if not id then                                            -- the spell itself is hidden: noted a few times, nothing to go by
+        hiddenCasts = hiddenCasts + 1
+        if hiddenCasts <= 3 then trace("CAST by=" .. unit .. " id=" .. flag(spellID)) end
+        return
+    end
+    local fam = familyOf(id)
+    if not fam then return end
     local now, onMe = GetTime(), false
     if unit == "pet" then onMe = fam.key == "sacrifice"
     elseif SELF_ONLY[fam.key] then onMe = true
@@ -747,7 +797,7 @@ ns.On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
         local sent = state.sent
         local target = sent and sent.id == id and now - sent.at < 4 and sent.target or nil
         local me = S(UnitName and UnitName("player"))
-        if target and target ~= "" then onMe = me ~= nil and (target == me or target:match("^[^-]+") == me)
+        if target and target ~= "" then onMe = me ~= nil and sameName(target, me)
         else                                                 -- no name given: yours, unless you have someone else selected to help
             local other = UnitExists and B(UnitExists("target")) and UnitIsFriend and B(UnitIsFriend("player", "target"))
                 and UnitIsUnit and B(UnitIsUnit("target", "player")) == false

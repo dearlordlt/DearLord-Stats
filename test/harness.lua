@@ -379,15 +379,16 @@ function GetInventoryItemID() return nil end
 function UnitCreatureFamily(u) return u == "pet" and world.petFamily or nil end
 strsplit = strsplit or function(sep, s) local out = {}; for part in (s .. sep):gmatch("(.-)%" .. sep) do out[#out + 1] = part end; return unpack(out) end
 -- absorb shields: the total left on a unit (hidden in combat, like other numbers) and the buff behind it
-function UnitGetTotalAbsorbs() if world.absorbApi == false then return nil end return hide(world.absorb or 0) end
+function UnitGetTotalAbsorbs() if world.absorbApi == false then return nil end if world.absorbHidden then return secret() end return hide(world.absorb or 0) end
 C_UnitAuras = {
     GetAuraDataByIndex = function(_, i)
         local a = (world.auras or {})[i]
-        if not a then return nil end
+        if not a or world.aurasBlank then return nil end
         if world.aurasHidden then return { spellId = secret(), name = secret(), icon = secret(), expirationTime = secret(), duration = secret(), auraInstanceID = a.auraInstanceID } end
         return a
     end,
     GetPlayerAuraBySpellID = function(id)
+        if world.aurasBlank then return nil end
         for _, a in ipairs(world.auras or {}) do
             if a.spellId == id then return world.aurasHidden and { auraInstanceID = a.auraInstanceID } or a end
         end
@@ -1127,7 +1128,7 @@ end
 local shield = {}
 if MODE ~= "bare" and not os.getenv("SV") then
     local sf, st = DearLordStats_Shield, ns.shield
-    local function pws(instance) return { spellId = 17, name = "Power Word: Shield", icon = 135940, expirationTime = GetTime() + 30, duration = 30, points = { 44 }, auraInstanceID = instance } end
+    local function pws(instance, left) return { spellId = 17, name = "Power Word: Shield", icon = 135940, expirationTime = GetTime() + 30, duration = 30, points = left and { left } or nil, auraInstanceID = instance } end
     world.combat = false; world.absorb, world.auras = 0, {}
     st.demoUntil = 0; ns.ApplyShield()                           -- the settings page's preview button was clicked earlier
     advance(1); shield.idle = not sf.shown
@@ -1190,12 +1191,31 @@ if MODE ~= "bare" and not os.getenv("SV") then
     advance(1)
     -- somebody else's shield in a fight: all that is known is that the amount changed. The bar is kept ready,
     -- measured against your health, and the game draws it or not from the hidden amount.
+    ns.char.lastShield = nil                                    -- a character that never had a shield
     world.combat, world.aurasHidden = true, true; world.auras, world.absorb = { pws(508) }, 44
     fire("UNIT_ABSORB_AMOUNT_CHANGED", "player"); advance(0.5)
     shield.standby = sf.shown and st.mode == "hidden" and st.maxKind == "health" and st.max == 175 and issecretvalue(sf.presence.value) and sf.full.text == ""
     world.combat, world.aurasHidden = false, nil; world.auras, world.absorb = {}, 0; fire("UNIT_AURA", "player"); advance(1)
     C_UnitAuras.GetPlayerAuraBySpellID = askById
     shield.trace = #(ns.db.diag.shield.trace or {})
+    -- this client as it is: the amount hidden at every moment, the buff saying what is left while buffs can be
+    -- read, and no buffs at all in a fight
+    world.absorbHidden = true
+    world.auras = { pws(520, 44) }; fire("UNIT_AURA", "player"); advance(0.5)
+    local full = st.mode == "amount" and sf.amount.text == "44" and sf.full.text == "/ 44"
+    world.auras[1].points = { 36 }; fire("UNIT_AURA", "player"); advance(0.25)
+    shield.fromBuff = full and st.mode == "amount" and sf.amount.text == "36" and sf.full.text == "/ 44" and st.max == 44
+    world.combat, world.aurasBlank = true, true; fire("UNIT_ABSORB_AMOUNT_CHANGED", "player"); advance(0.5)
+    shield.intoFight = sf.shown and st.mode == "hidden" and st.max == 44 and st.maxKind == "seen" and sf.full.text == "/ 44" and sf.time.text ~= ""
+    world.combat, world.aurasBlank = false, nil; world.auras = {}; fire("UNIT_AURA", "player"); advance(1)
+    local calm = not sf.shown
+    -- a shield landing in the next fight, its cast unreadable: taken for the kind this character had last
+    world.combat, world.aurasBlank = true, true; world.auras = { pws(521, 44) }; fire("UNIT_AURA", "player"); advance(0.5)
+    local waiting = not sf.shown
+    fire("UNIT_ABSORB_AMOUNT_CHANGED", "player"); advance(0.5)
+    shield.guess = calm and waiting and sf.shown and st.mode == "hidden" and st.aura.how == "guess" and st.max == 44 and sf.full.text == "/ 44" and sf.time.text == ""
+    world.combat, world.aurasBlank = false, nil; world.auras = {}; fire("UNIT_AURA", "player"); advance(1)
+    world.absorbHidden = nil
     -- a client that gives no amount: the bar shows the time left
     world.auras = { pws(503) }; fire("UNIT_AURA", "player"); advance(0.5)
     shield.timer = sf.shown and st.mode == "timer" and sf.amount.text == "~44"
@@ -1468,6 +1488,8 @@ check("shield bar: a fight that hides everything keeps the shield, and afterward
 check("shield bar: cast in a fight with nothing readable, your own cast brings the bar up; a cast on someone else does not", shield.cast)
 check("shield bar: a fight ending with nothing left takes the bar away without a break", shield.silent)
 check("shield bar: an unknown shield in a fight is kept ready and drawn from the hidden amount; the fight is traced (" .. tostring(shield.trace) .. " lines)", shield.standby and (shield.trace or 0) > 3)
+check("shield bar: with the amount always hidden, the buff's own number gives 36 / 44, and the fight keeps the 44", shield.fromBuff and shield.intoFight)
+check("shield bar: a shield landing in a fight with its cast unreadable is taken for the kind you had last (/ 44, no clock)", shield.guess)
 check("shield bar: with no amount from the client the bar shows the time left; the setting switches it off", shield.timer and shield.off)
 check("shield bar: Edit Mode shows it with a running preview and it can be dragged there, not outside", shield.edit and shield.moved and shield.editBroken and shield.editOff and shield.fixed)
 check("shield bar: /dls shield previews it for 20 s", shield.preview and shield.previewOver)
