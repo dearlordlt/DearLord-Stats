@@ -80,6 +80,9 @@ function ns.HealthRows()
             .. (last and ("; prices are from " .. ago(last.at)) or ""))
     elseif last then add("Auction scan", "ok", (last.items or "?") .. " items from " .. (last.rows or "?") .. " auctions, " .. ago(last.at))
     else add("Auction scan", "wait", "not scanned yet: Scan prices at an auction house") end
+    local tip = type(ah.tip) == "table" and ah.tip or nil
+    if tip and tip.mode == "columns" then add("Price rows in tooltips", "ok", "set in real columns")
+    elseif tip then add("Price rows in tooltips", "limited", "lined up with spaces, a few pixels loose (" .. tostring(tip.why or "no real columns here") .. ")") end
     if (ah.sights or 0) > 0 then add("Prices from searches", "ok", ah.sights .. " update" .. (ah.sights == 1 and "" or "s") .. " from auction house searches")
     else add("Prices from searches", "wait", "search for an item at the auction house, or put one in the sell tab") end
 

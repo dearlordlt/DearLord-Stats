@@ -687,8 +687,8 @@ local function modifierHeld()
     return false
 end
 
--- the tooltip has no columns of its own, so the rows are padded with spaces measured in the
--- tooltip's font, every column lined up
+-- the tooltip has no columns of its own: every text is measured in the tooltip's font and given a
+-- pixel position (drawColumns below), or the row is padded with spaces where that is not possible
 local meter
 local function measure(text)
     if not meter then
@@ -707,14 +707,102 @@ local function spaceWidth() return math.max(1, measure("a a") - measure("aa")) e
 -- spaces never adds up from one column to the next.
 local function newRow() return { plain = "", text = "" } end
 local function put(row, text, x, right, color)
-    local n = 0
-    if row.plain ~= "" then
-        local target = right and x or (x + measure(text))
-        n = math.max(1, math.floor((target - measure(row.plain .. text)) / spaceWidth() + 0.5))
-    end
+    local target = right and x or (x + measure(text))
+    local n = math.max(row.plain ~= "" and 1 or 0, math.floor((target - measure(row.plain .. text)) / spaceWidth() + 0.5))
     local pad = string.rep(" ", n)
     row.plain = row.plain .. pad .. text
     row.text = row.text .. pad .. (color or "") .. text .. (color and "|r" or "")
+end
+
+-- Real columns: the tooltip gets one blank line per row and the row's texts are our own font strings
+-- pinned to that line, each at its own pixel position. Spaces can only place text to the nearest three
+-- pixels or so, this places it exactly. Needs the tooltip to accept a minimum width; where it does not,
+-- or where a check after drawing finds the tooltip too narrow, the rows are padded with spaces instead.
+local overlays, columnsOff, tipInset = {}, nil, 10
+local function clearOverlay(tooltip)
+    local o = overlays[tooltip]
+    if not (o and o.on) then return end
+    o.on, o.check = false, nil
+    for i = 1, o.used do o.pool[i]:Hide() end
+    o.used = 0
+    o.holder:Hide()
+    if o.minSet then o.minSet = nil; pcall(tooltip.SetMinimumWidth, tooltip, o.minWas or 0) end
+end
+local function overlayFor(tooltip)
+    local o = overlays[tooltip]
+    if o then return o end
+    o = { holder = CreateFrame("Frame", nil, tooltip), pool = {}, used = 0 }
+    o.holder:SetSize(1, 1); o.holder:SetPoint("TOPLEFT", tooltip, "TOPLEFT", 0, 0); o.holder:Hide()
+    overlays[tooltip] = o
+    local function cleared() ns.safe("ah:tipclear", function() tooltip.dlsAhInstance = nil; clearOverlay(tooltip) end) end
+    if tooltip.HookScript then
+        pcall(tooltip.HookScript, tooltip, "OnHide", cleared)
+        pcall(tooltip.HookScript, tooltip, "OnTooltipCleared", cleared)
+    end
+    -- one frame after drawing: is the tooltip as wide as the rows need? And later: are the lines still ours?
+    o.holder:SetScript("OnUpdate", function()
+        ns.safe("ah:tipcheck", function()
+            if not o.on then return end
+            local text = o.first and o.first.GetText and S(o.first:GetText())
+            if text and o.blank and text ~= o.blank then clearOverlay(tooltip); return end   -- the tooltip shows something else now
+            if not o.check then return end
+            o.check = nil
+            local w, left, mine = N(tooltip:GetWidth()), N(tooltip:GetLeft()), o.first and N(o.first:GetLeft())
+            local inset = left and mine and (mine - left) or nil
+            if inset and inset >= 0 and inset < 40 then tipInset = inset end
+            local narrow = w and w + 1 < o.width + (inset or 0)                   -- the rows would run out of the tooltip
+            local dg = diag()
+            if narrow or not dg.tip or dg.tip.version ~= ns.version then          -- what the client did, once per version
+                local _, lineSize = o.first.GetFont and o.first:GetFont()
+                local _, ownSize = o.pool[1] and o.pool[1].GetFont and o.pool[1]:GetFont()
+                dg.tip = { mode = "columns", need = math.floor(o.width + 0.5), width = w and math.floor(w + 0.5), inset = inset and math.floor(inset + 0.5),
+                    lineFont = N(lineSize), ownFont = N(ownSize), version = ns.version }
+            end
+            if narrow then columnsOff = true; dg.tip.mode = "text"; dg.tip.why = "tooltip stayed narrow" end
+        end)
+    end)
+    return o
+end
+function ns.AuctionTipColumns(again)                          -- are real columns in use; `again` lets them be tried anew
+    if again then columnsOff = nil; diag().tip = nil end
+    return not columnsOff
+end
+-- lines: rows of cells { text, x, right, color }; width: the widest row. Returns false when this tooltip cannot do it.
+local function drawColumns(tooltip, lines, width)
+    if columnsOff or not (tooltip.SetMinimumWidth and tooltip.NumLines and tooltip.GetName) then return false end
+    local name = S(tooltip:GetName())
+    if not (name and _G[name .. "TextLeft1"] and N(tooltip:NumLines())) then return false end
+    local o = overlayFor(tooltip)
+    clearOverlay(tooltip)
+    local anchors = {}
+    for i = 1, #lines do
+        tooltip:AddLine(" ")
+        anchors[i] = _G[name .. "TextLeft" .. N(tooltip:NumLines())]
+        if not anchors[i] then columnsOff = true; return i == 1 and false or true end
+    end
+    for i, cells in ipairs(lines) do
+        for _, c in ipairs(cells) do
+            o.used = o.used + 1
+            local fs = o.pool[o.used]
+            if not fs then
+                fs = o.holder:CreateFontString(nil, "OVERLAY")
+                if fs.SetFontObject and GameTooltipText then fs:SetFontObject(GameTooltipText) else fs:SetFont(STANDARD_TEXT_FONT, 12, "") end
+                if not fs.GetFont or not fs:GetFont() then fs:SetFont(STANDARD_TEXT_FONT, 12, "") end
+                o.pool[o.used] = fs
+            end
+            fs:ClearAllPoints()
+            fs:SetPoint(c.right and "RIGHT" or "LEFT", anchors[i], "LEFT", c.x, 0)
+            fs:SetText((c.color or "") .. c.text .. (c.color and "|r" or ""))
+            fs:Show()
+        end
+    end
+    o.on, o.check, o.first, o.width = true, true, anchors[1], width
+    o.blank = anchors[1].GetText and S(anchors[1]:GetText()) or nil   -- what a blank line reads as here
+    o.holder:Show()
+    local need = width + tipInset * 2 + 2
+    local was = N(tooltip.GetMinimumWidth and tooltip:GetMinimumWidth()) or 0
+    if was < need then o.minWas, o.minSet = was, true; tooltip:SetMinimumWidth(need) end
+    return true
 end
 
 -- ore -> bar, ores per bar: what a stack is worth once smelted. The character's own Mining recipes (kept
@@ -782,8 +870,11 @@ local function addLines(tooltip, id)
     end
     tooltip.dlsAhShown = (#rows > 0 or bar) and id or nil       -- an ore with no price of its own still gains a row on the modifier
     if #rows == 0 then return end
-    -- columns: label | price each | · ×stack | stack total | seen count | "seen ·" | age (| what it is smelted into)
+    -- columns: label | price each | stack total | seen count | "seen ·" | age (| what it is smelted into).
+    -- A stack gets a heading row, so it is plain which price is for one and which for all of them.
+    local headEach, headAll = "each", "all " .. count
     local labelW, unitW, totalW, seenW, ageW = 0, 0, 0, 0, 0
+    if count > 1 then unitW, totalW = measure(headEach), measure(headAll) end
     for _, r in ipairs(rows) do
         r.unitText, r.totalText = ns.strip(ns.money(r.unit)), count > 1 and ns.strip(ns.money(r.total or r.unit * count)) or nil
         labelW, unitW = math.max(labelW, measure(r.label)), math.max(unitW, measure(r.unitText))
@@ -791,31 +882,45 @@ local function addLines(tooltip, id)
         if r.seen then seenW, ageW = math.max(seenW, measure(r.seen)), math.max(ageW, measure(r.age)) end
     end
     local sp = spaceWidth()
-    local gap, mid, word = sp * 3, "·   ×" .. count, "seen  ·"
-    local xUnit = labelW + gap + unitW                           -- right edge of the price
-    local xMid = xUnit + gap                                     -- "· ×6"
-    local xTotal = xMid + measure(mid) + gap + totalW            -- right edge of the stack total
+    local gap, word = sp * 4, "seen  ·"
+    local xUnit = labelW + gap + unitW                           -- right edge of the price for one
+    local xTotal = xUnit + gap + totalW                          -- right edge of the stack total
     local xSeen = (count > 1 and xTotal or xUnit) + gap * 2 + seenW   -- right edge of the seen count
     local xWord = xSeen + sp
     local xAge = xWord + measure(word) + sp * 2
+    local lines, width = {}, 0
+    local function cell(cells, text, x, right, color)
+        cells[#cells + 1] = { text = text, x = x, right = right, color = color }
+        width = math.max(width, right and x or (x + measure(text)))
+    end
+    if count > 1 then
+        local head = {}
+        cell(head, headEach, xUnit, true, ns.LABEL)
+        cell(head, headAll, xTotal, true, ns.LABEL)
+        lines[#lines + 1] = head
+    end
     for _, r in ipairs(rows) do
         local col = r.win and ns.GREEN or ns.WHITE
-        local row = newRow()
-        put(row, r.label, 0, false, ns.LABEL)
-        put(row, r.unitText, xUnit, true, col)
-        if r.totalText then
-            put(row, mid, xMid, false, ns.LABEL)
-            put(row, r.totalText, xTotal, true, col)
-        end
+        local cells = {}
+        cell(cells, r.label, 0, false, ns.LABEL)
+        cell(cells, r.unitText, xUnit, true, col)
+        if r.totalText then cell(cells, r.totalText, xTotal, true, col) end
         if r.seen then
-            put(row, r.seen, xSeen, true, ns.LABEL)
-            put(row, word, xWord, false, ns.LABEL)
-            put(row, r.age, xAge, false, ns.LABEL)
-            if r.extra then put(row, "·  " .. r.extra, xAge + ageW + sp * 2, false, ns.LABEL) end
+            cell(cells, r.seen, xSeen, true, ns.LABEL)
+            cell(cells, word, xWord, false, ns.LABEL)
+            cell(cells, r.age, xAge, false, ns.LABEL)
+            if r.extra then cell(cells, "·  " .. r.extra, xAge + ageW + sp * 2, false, ns.LABEL) end
         elseif r.span then
-            put(row, r.span, xSeen - seenW, false, ns.LABEL)
+            cell(cells, r.span, xSeen - seenW, false, ns.LABEL)
         end
-        tooltip:AddLine(row.text, 1, 1, 1)
+        lines[#lines + 1] = cells
+    end
+    if not drawColumns(tooltip, lines, width) then               -- no real columns here: pad with spaces
+        for _, cells in ipairs(lines) do
+            local row = newRow()
+            for _, c in ipairs(cells) do put(row, c.text, c.x, c.right, c.color) end
+            tooltip:AddLine(row.text, 1, 1, 1)
+        end
     end
     tooltip:Show()
 end

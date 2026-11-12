@@ -64,12 +64,14 @@ local function widget(kind, name)
     function M:HasFocus() return false end
     function M:CreateTexture() return widget("Texture") end
     function M:CreateLine() return widget("Line") end
-    function M:CreateFontString() return widget("FontString") end
+    function M:CreateFontString() local s = widget("FontString"); self.strings = self.strings or {}; self.strings[#self.strings + 1] = s; return s end
+    function M:SetPoint(...) self.point = { ... } end
+    function M:GetName() return self.name end
     -- unknown METHODS (capitalised) are harmless no-ops; unknown fields are nil, as on real frames
     return setmetatable(w, { __index = function(t, k) return M[k] or (type(k) == "string" and k:match("^%u") and function() end) or nil end })
 end
 function CreateFrame(kind, name, parent)
-    local f = widget(kind, name); frames[#frames + 1] = f
+    local f = widget(kind, name); frames[#frames + 1] = f; f.parent = parent
     if name then _G[name] = f end
     return f
 end
@@ -82,13 +84,46 @@ function GameTooltip:IsShown() return world.tooltip ~= nil end
 GameTooltipTextLeft1.GetText = function() return world.tooltip end
 GameTooltip.lines = {}; GameTooltip.forbidden = false
 local function plain(t) return (tostring(t):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
-function GameTooltip:AddDoubleLine(l, r)
-    self.lines[#self.lines + 1] = plain(l) .. " | " .. plain(r)
-    self.raw = self.raw or {}; self.raw[#self.lines] = l         -- with its colour codes, for checks on which row is green
+-- the tooltip's own lines: line 1 is the item's name (not kept in .lines), so .lines[i] is GameTooltipTextLeft(i+1)
+local function tipLine(self, text)
+    self.lines[#self.lines + 1] = plain(text)
+    self.raw = self.raw or {}; self.raw[#self.lines] = text       -- with its colour codes, for checks on which row is green
+    local key = "GameTooltipTextLeft" .. (#self.lines + 1)
+    if not _G[key] then _G[key] = widget("FontString"); _G[key].fontSet = true end
+    _G[key].text = text
 end
-function GameTooltip:AddLine(l)
-    self.lines[#self.lines + 1] = plain(l)
-    self.raw = self.raw or {}; self.raw[#self.lines] = l
+function GameTooltip:AddDoubleLine(l, r) tipLine(self, l .. " | " .. r); self.raw[#self.lines] = l end
+function GameTooltip:AddLine(l) tipLine(self, l) end
+function GameTooltip:NumLines() return #self.lines + 1 end
+function GameTooltip:GetMinimumWidth() return self.minW or 0 end
+function GameTooltip:SetMinimumWidth(v) self.minW = v; self.minSets = (self.minSets or 0) + 1; self.w = world.tipNarrow and 100 or math.max(100, v) end
+-- rows drawn as pinned font strings over blank lines: put each text at its place (6 wide a byte) so a check reads the row
+local function composeTip(tt)
+    for i, line in ipairs(tt.lines) do
+        local anchor = _G["GameTooltipTextLeft" .. (i + 1)]
+        local cells = {}
+        if line == " " then
+            for _, f in ipairs(frames) do
+                if f.parent == tt and f.shown then
+                    for _, s in ipairs(f.strings or {}) do
+                        if s.shown and s.point and s.point[2] == anchor then cells[#cells + 1] = s end
+                    end
+                end
+            end
+        end
+        if #cells > 0 then
+            local buf, raw = "", ""
+            table.sort(cells, function(a, b) return a.point[4] < b.point[4] end)
+            for _, s in ipairs(cells) do
+                local text = plain(s.text)
+                local at = s.point[4] / 6 - (s.point[1] == "RIGHT" and #text or 0)
+                assert(at == math.floor(at) and at >= #buf, "tooltip cell overlaps or sits off the grid: " .. text)
+                buf = buf .. string.rep(" ", at - #buf) .. text
+                raw = raw .. s.text
+            end
+            tt.lines[i], tt.raw[i] = buf, raw
+        end
+    end
 end
 function GameTooltip:IsForbidden() return self.forbidden end
 function GameTooltip:SetBagItem(bag, slot) self.lines = {} end
@@ -218,7 +253,7 @@ C_AuctionHouse = { requests = 0,
 -- the old auction house: one page of auctions (itemID, count, buyout) out of world.pageTotal
 function GetNumAuctionItems() return #(world.page or {}), world.pageTotal or #(world.page or {}) end
 function GetAuctionItemInfo(_, i) local r = world.page[i]; return "Thing " .. r[1], 1, r[2], 1, true, 1, "", r[3], 1, r[3], 0, nil, nil, "Someone", nil, 0, r[1], true end
-TooltipDataProcessor = { calls = {}, AddTooltipPostCall = function(kind, fn) TooltipDataProcessor.calls[kind] = fn end }
+TooltipDataProcessor = { calls = {}, AddTooltipPostCall = function(kind, fn) TooltipDataProcessor.calls[kind] = function(tt, data) fn(tt, data); composeTip(tt) end end }
 function GetCursorPosition() return 380, 200 end
 C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
     GetContainerItemInfo = function(bag, slot)
@@ -779,7 +814,24 @@ if MODE ~= "bare" then
         scanResult.smeltPlain = tip(301)
         world.alt = true
         scanResult.smelt = tip(302)
+        local sets = GameTooltip.minSets or 0
         scanResult.smeltStack = tip(303, { id = 2770, count = 4 })
+        scanResult.smeltPinned = (GameTooltip.minSets or 0) > sets and GameTooltip.minW >= 6 * #scanResult.smeltStack[4]   -- pinned columns, tooltip widened to fit
+        -- the check a frame later: wide enough, so it stays in columns
+        local function tick() for _, f in ipairs(frames) do if f.parent == GameTooltip and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.02) end end end
+        tick(); scanResult.okMode = ns.db.diag.ah.tip and ns.db.diag.ah.tip.mode
+        -- a tooltip with no minimum width: the same rows, padded with spaces
+        local setMin = GameTooltip.SetMinimumWidth
+        GameTooltip.SetMinimumWidth = false; sets = GameTooltip.minSets
+        scanResult.smeltText = tip(307, { id = 2770, count = 4 })
+        GameTooltip.SetMinimumWidth = setMin
+        scanResult.smeltTextPlain = GameTooltip.minSets == sets and scanResult.smeltText[4]:find("^Horde AH smelted") ~= nil
+        -- a tooltip that takes the minimum width but stays narrow: noticed a frame later, spaces from then on
+        world.tipNarrow = true; tip(308, { id = 2770, count = 4 }); tick(); world.tipNarrow = nil
+        scanResult.narrowMode, scanResult.narrowWhy = ns.db.diag.ah.tip.mode, ns.db.diag.ah.tip.why
+        sets = GameTooltip.minSets
+        scanResult.narrowNext = tip(309, { id = 2770, count = 4 }); scanResult.narrowNextPlain = GameTooltip.minSets == sets
+        ns.AuctionTipColumns(true)                                                 -- back to real columns for the rest
         items[2840].p = 20; scanResult.smeltWorse = tip(304)                       -- bars cheaper than the ore
         items[2840].p = 45
         local keep = ns.char.recipes.Mining                                         -- the character's own recipe wins: 2 ore a bar
@@ -1402,7 +1454,7 @@ if MODE ~= "bare" then
     local function norm(t) return (tostring(t):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
     check("tooltip: vendor row then AH row with seen/age (" .. norm(tipLines[2]) .. ")", #tipLines == 2 and norm(tipLines[1]) == "Vendor 50c" and norm(tipLines[2]) == "Horde AH lowest 2s 50c 19 seen · 2 days ago")
     check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 2 and scanResult.unknownAndForbidden and tipOff == 0)
-    check("tooltip: a stack of 2 shows the totals on both rows (" .. tostring(tipStack[2]) .. ")", #tipStack == 2 and norm(tipStack[1]) == "Vendor 50c · ×2 1s 0c" and norm(tipStack[2]) == "Horde AH lowest 2s 50c · ×2 5s 0c 19 seen · 2 days ago")
+    check("tooltip: a stack of 2 gets a heading row and the totals on both rows (" .. tostring(tipStack[3]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "each all 2" and norm(tipStack[2]) == "Vendor 50c 1s 0c" and norm(tipStack[3]) == "Horde AH lowest 2s 50c 5s 0c 19 seen · 2 days ago")
     local r = scanResult.realm
     check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
@@ -1432,17 +1484,25 @@ if MODE ~= "bare" then
         local sm, st, sw, so = scanResult.smelt, scanResult.smeltStack, scanResult.smeltWorse, scanResult.smeltOwn
         check("smelted: the modifier adds the bar price per ore under the ore's own (" .. norm(sm[3] or "-") .. ")",
             #scanResult.smeltPlain == 2 and #sm == 3 and norm(sm[2]) == "Horde AH lowest 30c 40 seen · 2 days ago" and norm(sm[3]) == "Horde AH smelted 45c 12 seen · 2 days ago · Copper Bar")
-        check("smelted: a stack shows its total, and the better way to sell is the one green row (" .. norm(st[3] or "-") .. ")",
-            norm(st[3]) == "Horde AH smelted 45c · ×4 1s 80c 12 seen · 2 days ago · Copper Bar"
+        check("smelted: a stack shows its total, and the better way to sell is the one green row (" .. norm(st[4] or "-") .. ")",
+            norm(st[4]) == "Horde AH smelted 45c 1s 80c 12 seen · 2 days ago · Copper Bar"
             and sm.green[3] and not sm.green[2] and sw.green[2] and not sw.green[3])
         -- every column starts or ends at the same place on every row (the test font is 6 wide a byte)
         local function ends(l, word) local _, e = l:find(word, 1, true); return e end
         local function at(l, word) return (l:find(word, 1, true)) end
-        check("columns: prices and totals end together, and seen counts, 'seen' and ages line up (" .. tostring(at(st[2], "seen")) .. "/" .. tostring(at(st[3], "seen")) .. ")",
-            ends(st[1], "5c") == ends(st[2], "30c") and ends(st[2], "30c") == ends(st[3], "45c")
-            and at(st[1], "·") == at(st[2], "·") and ends(st[1], "20c") == ends(st[2], "1s 20c") and ends(st[2], "1s 20c") == ends(st[3], "1s 80c")
-            and at(st[2], "seen") == at(st[3], "seen") and ends(st[2], "40 seen") == ends(st[3], "12 seen") and at(st[2], "2 days ago") == at(st[3], "2 days ago")
-            and st[3]:find("2 days ago  ·  Copper Bar", 1, true) ~= nil)
+        local function lined(rows)
+            return #rows == 4 and ends(rows[1], "each") == ends(rows[2], "5c") and ends(rows[2], "5c") == ends(rows[3], "30c") and ends(rows[3], "30c") == ends(rows[4], "45c")
+                and ends(rows[1], "all 4") == ends(rows[2], "20c") and ends(rows[2], "20c") == ends(rows[3], "1s 20c") and ends(rows[3], "1s 20c") == ends(rows[4], "1s 80c")
+                and at(rows[3], "seen") == at(rows[4], "seen") and ends(rows[3], "40 seen") == ends(rows[4], "12 seen") and at(rows[3], "2 days ago") == at(rows[4], "2 days ago")
+                and rows[4]:find("2 days ago  ·  Copper Bar", 1, true) ~= nil
+        end
+        check("columns: a heading says which price is for one and which for all; prices, totals, seen counts and ages line up (" .. norm(st[1]) .. ")",
+            norm(st[1]) == "each all 4" and lined(st) and scanResult.smeltPinned)
+        local tx = scanResult.smeltText
+        check("columns: a tooltip without a minimum width gets the same rows padded with spaces (" .. norm(tx[4] or "-") .. ")",
+            lined(tx) and scanResult.smeltTextPlain and norm(tx[4]) == norm(st[4]))
+        check("columns: a tooltip that stays too narrow is noticed, logged and padded with spaces from then on (" .. tostring(scanResult.narrowMode) .. ", " .. tostring(scanResult.narrowWhy) .. ")",
+            scanResult.okMode == "columns" and scanResult.narrowMode == "text" and scanResult.narrowWhy == "tooltip stayed narrow" and scanResult.narrowNextPlain and lined(scanResult.narrowNext))
         check("smelted: the character's own recipe sets the ratio, and no bar price means no row (" .. norm(so[3] or "-") .. ")",
             norm(so[3]) == "Horde AH smelted 22c 12 seen · 2 days ago · Copper Bar" and #scanResult.smeltNoBar == 2)
     end
