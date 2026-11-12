@@ -161,10 +161,12 @@ local function recap(f)
     end
     if f.endMana then parts[#parts + 1] = string.format("%smana|r %s%d%%|r", L, W, math.floor(f.endMana * 100 + 0.5)) end
     if f.mobs > 1 then parts[#parts + 1] = string.format("%s%d|r %smobs|r", W, f.mobs, L) end
-    if f.wf and f.wf.procs > 0 then                              -- shaman: Windfury procs in this fight and the biggest of them
+    if f.wf and f.wf.meter then                                  -- shaman: Windfury damage in this fight (the game's meter) and its rating
+        parts[#parts + 1] = string.format("%swindfury|r %s%d|r", L, W, f.wf.meter)
+            .. (f.wf.meterPlace and string.format(" %s(top %d)|r", L, f.wf.meterPlace) or "")
+    elseif f.wf and f.wf.procs > 0 then                          -- no meter for this fight: the procs seen
         parts[#parts + 1] = string.format("%swindfury|r %s×%d|r", L, W, f.wf.procs)
             .. (f.wf.best > 0 and string.format(" %sbest|r %s%d|r", L, W, f.wf.best) or "")
-            .. (f.wf.place and string.format(" %s(top %d)|r", L, f.wf.place) or "")
     end
     if f.died then parts[#parts + 1] = ns.RED .. "died|r" end
     return table.concat(parts, L .. "  ·  |r")

@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.28.1"
+ns.version = "2.29.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -463,7 +463,8 @@ end
 -- a line is at least as wide as the window it hangs under, so the backgrounds line up
 local function feedWidth(row)
     local anchor = feedAnchor()
-    local w = row.text:GetStringWidth() + 16
+    -- a line holding hidden numbers has a hidden width: it takes the window's width, or a fixed one
+    local w = (ns.N(row.text:GetStringWidth()) or math.max(anchor and ns.N(anchor:GetWidth()) or 0, 340)) + 16
     if ns.db.background and anchor then w = math.max(w, anchor:GetWidth()) end
     if math.abs(row:GetWidth() - w) > 0.5 then row:SetWidth(w) end
 end
@@ -471,7 +472,10 @@ end
 local function feedShow(row, entry)
     row.big = entry.big
     ns.FeedFont(row)
-    row.text:SetText(entry.text)
+    -- fmt and args: the game fills the numbers in itself, which is the only way to show ones it hides from addons
+    if not (entry.fmt and entry.args and pcall(row.text.SetFormattedText, row.text, entry.fmt, unpack(entry.args))) then
+        row.text:SetText(entry.text)
+    end
     feedWidth(row)
     row:SetHeight(ns.db.fontSize + (entry.big or 0) + 4)
     row.tab, row.key = entry.tab, entry.key
@@ -487,10 +491,12 @@ end
 
 -- opts: tab (panel tab opened on click), key (same key replaces the visible line), hold (seconds),
 -- flash ({ r, g, b }: the line lights up in that colour as it lands), glow (how much of that colour stays
--- behind it, 0-1), pulse (the glow breathes), big (font larger by so many points)
+-- behind it, 0-1), pulse (the glow breathes), big (font larger by so many points), fmt and args (a
+-- format the game fills in itself, for numbers it hides from addons; `text` is used if that fails)
 function ns.Feed(text, opts)
     opts = opts or {}
-    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash, glow = opts.glow, pulse = opts.pulse, big = opts.big }
+    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash, glow = opts.glow, pulse = opts.pulse, big = opts.big,
+        fmt = opts.fmt, args = opts.args }
     if entry.key then
         for i = 1, #feed.rows do
             local row = feed.rows[i]

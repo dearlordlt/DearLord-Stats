@@ -1,20 +1,25 @@
 -- DearLord Stats : Windfury (shaman)
--- A line under the main window each time Windfury Weapon procs, ranked against every proc this character
--- has had: "TOP 1  812 damage!" for the top three, "top 14  412 damage" for the rest. The fight summary
--- after combat counts the procs of that fight, and the biggest ones are kept.
+-- Two lines where the fight recap shows.
+--   * At a proc: "Windfury  212 + 198 + 240", the hits of that proc. Where the client lets addons read the
+--     amounts they are added up and rated against every proc the character has had ("TOP 1  812 damage!").
+--     On the launch client the amounts arrive hidden: the game can still write them into the line, but an
+--     addon can neither add them nor compare them, so there they stand side by side, unrated.
+--   * After the fight: "Windfury this fight  TOP 2  682 damage!", the Windfury damage of that fight from the
+--     game's own damage meter (exact, yours only, also in a group), rated against every fight before it.
 --
 -- How a proc is seen. The combat log is closed to addons and the proc casts no spell the client reports,
--- so it is read from the hits themselves: a proc is the swing that set it off plus two extra attacks, all
--- landing at the same moment. Three or more melee results on the target within 0.3 s, while Windfury is
--- on the weapon, is a proc. The damage shown is all of those hits together.
--- In a group somebody else's swing can land in the same instant and be counted in.
+-- so it is read from the hits themselves: the swing that set it off and the two extra attacks land within
+-- half a second. Three or more melee results on the target within 0.45 s, while Windfury is on the weapon,
+-- is a proc. The target's hits carry no author, so in a group other people's swings get mixed in and the
+-- line at the proc is a guess there; the line after the fight is not.
 --
--- After every fight the game's own damage meter says whether Windfury did damage; that is compared with
--- what was seen here and kept in the client checks, and it teaches which weapon enchants are Windfury.
+-- After every fight the meter's Windfury damage is compared with what was seen here and kept in the client
+-- checks, and it teaches which weapon enchants are Windfury.
 local ADDON, ns = ...
 local N, S, B = ns.N, ns.S, ns.B
 
-local WINDOW, HITS = 0.3, 3
+local ICON = "|TInterface\\Icons\\Spell_Nature_Cyclone:0|t"
+local WINDOW, HITS = 0.45, 3
 local KEEP, TOP = 100, 5
 local MELEE = { MISS = true, DODGE = true, PARRY = true, BLOCK = true }
 local GOLD, SKY = "|cffffd24a", "|cff5fb4ff"
@@ -32,14 +37,7 @@ local weapon = {}                       -- the last readable look: mh, oh (encha
 local burst                             -- melee results landing together
 local demoUntil = 0
 
--- the spell's own icon when the client hands it out, the classic one otherwise
-local iconText
-local function icon()
-    if iconText then return iconText end
-    local id = C_Spell and C_Spell.GetSpellTexture and N((C_Spell.GetSpellTexture(8232)))
-    iconText = "|T" .. (id or "Interface\\Icons\\Spell_Nature_Cyclone") .. ":0|t"
-    return iconText
-end
+local function icon() return ICON end
 
 local function newTally() return { procs = 0, total = 0, best = 0 } end
 local tally = newTally()                -- this fight
@@ -100,6 +98,7 @@ local function store()
     if type(c.windfury) ~= "table" then c.windfury = { procs = 0, ranks = {}, top = {} } end
     local w = c.windfury
     w.procs, w.ranks, w.top = w.procs or 0, w.ranks or {}, w.top or {}
+    if type(w.fights) ~= "table" then w.fights = { n = 0, ranks = {}, top = {} } end   -- Windfury damage per fight, from the meter
     return w
 end
 local function sessionStore()
@@ -113,7 +112,7 @@ end
 local function rankOf(ranks, total)
     local place = 1
     for i = 1, #ranks do
-        if ranks[i] > total then place = i + 1 else break end
+        if ranks[i] >= total then place = i + 1 else break end   -- a tie stands behind the one that was there first
     end
     if place > KEEP then return nil end
     return place
@@ -131,7 +130,7 @@ local function record(b, demo)
     if b.max > 0 and (not w.hit or b.max > w.hit.amount) then
         w.hit = { amount = b.max, crit = b.maxCrit or nil, at = time(), mob = b.mob }
     end
-    if b.total <= 0 then return nil end                       -- the numbers were kept back: a proc, but nothing to rank
+    if b.total <= 0 or b.hidden then return nil end           -- the numbers were kept back: a proc, but nothing to rate
     local place = rankOf(w.ranks, b.total)
     if place then
         table.insert(w.ranks, place, b.total)
@@ -155,27 +154,47 @@ local function detail(b)
     return table.concat(parts, ", ")
 end
 
-local function announce(b, place)
-    local L, W = ns.LABEL, ns.WHITE
-    local text, flash
-    local sep = L .. "  ·  |r"
-    if b.total <= 0 then                                         -- the numbers were kept back: a proc, but nothing to rate
-        text = icon() .. " " .. SKY .. "Windfury|r" .. sep .. L .. detail(b) .. "|r"
-        flash = { 0.25, 0.6, 1 }
-    elseif place and place <= 3 then
-        text = icon() .. " " .. GOLD .. "Windfury  TOP " .. place .. "|r  " .. W .. b.total .. "|r " .. GOLD .. "damage!|r" .. sep .. L .. detail(b) .. "|r"
-        flash = { 1, 0.8, 0.2 }
-    elseif place then
-        text = icon() .. " " .. SKY .. "Windfury|r  " .. W .. "top " .. place .. "|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "|r"
-        flash = { 0.25, 0.6, 1 }
-    else
-        text = icon() .. " " .. SKY .. "Windfury|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "  ·  below your top " .. KEEP .. "|r"
-        flash = { 0.25, 0.6, 1 }
-    end
-    local top = b.total > 0 and place ~= nil and place <= 3
+local function shout(text, flash, top, fmt, args)
     local db = ns.db or {}
     ns.Feed(text, { tab = "combat", key = "windfury", hold = db.windfuryHold or 15, big = db.windfuryBig or 6,
-        flash = flash, glow = top and 0.34 or 0.22, pulse = top })
+        flash = flash, glow = top and 0.34 or 0.22, pulse = top, fmt = fmt, args = args })
+end
+local BLUE_FLASH, GOLD_FLASH = { 0.25, 0.6, 1 }, { 1, 0.8, 0.2 }
+
+local function announce(b, place)
+    local L, W = ns.LABEL, ns.WHITE
+    local sep = L .. "  ·  |r"
+    if b.hidden or b.total <= 0 then
+        -- the amounts are hidden from addons: the game writes each hit into the line itself, side by side
+        local extra = {}
+        if b.crits > 0 then extra[#extra + 1] = b.crits .. (b.crits == 1 and " crit" or " crits") end
+        if b.n - b.hits > 0 then extra[#extra + 1] = (b.n - b.hits) .. " missed" end
+        local tail = #extra > 0 and (sep .. L .. table.concat(extra, ", ") .. "|r") or ""
+        local plain = icon() .. " " .. SKY .. "Windfury|r" .. sep .. L .. detail(b) .. "|r"
+        local slots = {}
+        for i = 1, #b.raw do slots[i] = W .. "%.0f|r" end
+        local fmt = #b.raw > 0 and (icon() .. " " .. SKY .. "Windfury|r  " .. table.concat(slots, L .. " + |r") .. tail) or nil
+        shout(plain, BLUE_FLASH, false, fmt, b.raw)
+    elseif place and place <= 3 then
+        shout(icon() .. " " .. GOLD .. "Windfury  TOP " .. place .. "|r  " .. W .. b.total .. "|r " .. GOLD .. "damage!|r" .. sep .. L .. detail(b) .. "|r", GOLD_FLASH, true)
+    elseif place then
+        shout(icon() .. " " .. SKY .. "Windfury|r  " .. W .. "top " .. place .. "|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "|r", BLUE_FLASH)
+    else
+        shout(icon() .. " " .. SKY .. "Windfury|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "  ·  below your top " .. KEEP .. "|r", BLUE_FLASH)
+    end
+end
+
+-- after the fight: what Windfury did in it, by the game's own meter, and where that stands among your fights
+local function announceFight(total, place, procs)
+    local L, W = ns.LABEL, ns.WHITE
+    local tail = (procs and procs > 0) and (L .. "  ·  " .. procs .. (procs == 1 and " proc|r" or " procs|r")) or ""
+    if place and place <= 3 then
+        shout(icon() .. " " .. GOLD .. "Windfury this fight  TOP " .. place .. "|r  " .. W .. total .. "|r " .. GOLD .. "damage!|r" .. tail, GOLD_FLASH, true)
+    elseif place then
+        shout(icon() .. " " .. SKY .. "Windfury this fight|r  " .. W .. "top " .. place .. "|r  " .. W .. total .. "|r " .. L .. "damage|r" .. tail, BLUE_FLASH)
+    else
+        shout(icon() .. " " .. SKY .. "Windfury this fight|r  " .. W .. total .. "|r " .. L .. "damage  ·  below your top " .. KEEP .. "|r" .. tail, BLUE_FLASH)
+    end
 end
 
 local function closeBurst()
@@ -193,16 +212,16 @@ local function closeBurst()
     t.procs, t.total = t.procs + 1, t.total + b.total
     t.mh, t.oh = weapon.mh, weapon.oh
     local place = record(b, b.demo)
-    if b.total > t.best then t.best, t.place = b.total, place end
+    if not b.hidden and b.total > t.best then t.best, t.place = b.total, place end
     announce(b, place)
     if ns.PanelDirty then ns.PanelDirty() end
 end
 
-local function onResult(action, indicator, amount, school)
+local function onResult(action, indicator, amount, school, raw)
     local now = GetTime()
     if burst and now - burst.t0 > WINDOW then closeBurst() end
     if not burst then
-        burst = { t0 = now, n = 0, hits = 0, crits = 0, total = 0, max = 0, amounts = {}, schools = {}, tally = tally,
+        burst = { t0 = now, n = 0, hits = 0, crits = 0, total = 0, max = 0, amounts = {}, schools = {}, raw = {}, tally = tally,
             mob = S(UnitName and UnitName("target")) }
         local mine = burst
         ns.After(WINDOW + 0.05, function() if burst == mine then closeBurst() end end, "windfury:close")
@@ -212,10 +231,14 @@ local function onResult(action, indicator, amount, school)
     b.schools[#b.schools + 1] = tostring(school or "?")
     if action == "WOUND" then
         b.hits = b.hits + 1
-        b.amounts[#b.amounts + 1] = tostring(amount or "?")
+        b.amounts[#b.amounts + 1] = tostring(amount or (ns.exists(raw) and "hidden" or "nil"))
         if amount then
             b.total = b.total + amount
             if amount > b.max then b.max, b.maxCrit = amount, indicator == "CRITICAL" end
+            b.raw[#b.raw + 1] = amount
+        else
+            b.hidden = true                                      -- the client keeps the number back: it can be shown, not read
+            if ns.exists(raw) then b.raw[#b.raw + 1] = raw end
         end
         if indicator == "CRITICAL" then b.crits = b.crits + 1 end
     else
@@ -231,7 +254,7 @@ ns.On("UNIT_COMBAT", function(unit, action, indicator, amount, school)
     school = N(school)
     local melee = (action == "WOUND" and (school == nil or school == 1)) or MELEE[action]
     if not melee or not active() then return end
-    onResult(action, S(indicator), N(amount), school)
+    onResult(action, S(indicator), N(amount), school, amount)
 end, "windfury:hits")
 
 ----------------------------------------------------------------------
@@ -279,10 +302,32 @@ function ns.WindfuryCheck(f, fromMeter)
     local t = f.wf
     local seen = t and t.procs or 0
     if meter <= 0 and seen <= 0 then return end
+    local inGroup = B(IsInGroup and IsInGroup()) or false
+    if meter > 0 then                                            -- the fight's Windfury damage, rated among all fights
+        local w, ss = store(), sessionStore()
+        if w then
+            local fs = w.fights
+            fs.n = (fs.n or 0) + 1
+            local place = rankOf(fs.ranks, meter)
+            if place then
+                table.insert(fs.ranks, place, meter)
+                while #fs.ranks > KEEP do table.remove(fs.ranks) end
+                if place <= TOP then
+                    table.insert(fs.top, place, { total = meter, at = time(), mob = f.mobName or f.targetName, level = f.level,
+                        procs = (not inGroup and seen > 0) and seen or nil })
+                    while #fs.top > TOP do table.remove(fs.top) end
+                end
+            end
+            if ss and meter > (ss.fight or 0) then ss.fight = meter end
+            if not t then t = newTally(); f.wf = t end
+            t.meter, t.meterPlace = meter, place
+            announceFight(meter, place, (not inGroup) and seen or nil)
+        end
+    end
     local d = diag()
     d.fights = d.fights or { agree = 0, missed = 0, extra = 0 }
     local fd = d.fights
-    local group = B(IsInGroup and IsInGroup()) or false
+    local group = inGroup
     if meter > 0 and seen > 0 then fd.agree = fd.agree + 1
     elseif meter > 0 then fd.missed = fd.missed + 1
     else fd.extra = fd.extra + 1 end
@@ -304,7 +349,9 @@ function ns.WindfuryView()
     local w = c and type(c.windfury) == "table" and c.windfury or nil
     if not w and not isShaman() then return nil end
     local s = ns.session and type(ns.session.windfury) == "table" and ns.session.windfury or nil
+    local fs = w and type(w.fights) == "table" and w.fights or nil
     return { procs = w and w.procs or 0, top = w and w.top or {}, hit = w and w.hit or nil, kept = w and #(w.ranks or {}) or 0,
+        fights = fs and fs.n or 0, fightTop = fs and fs.top or {}, sessionFight = s and s.fight or 0,
         sessionProcs = s and s.procs or 0, sessionBest = s and s.best or 0, sessionHit = s and s.hit or 0,
         shaman = isShaman(), on = enabled(), active = isShaman() and enabled() and active() or false,
         fightProcs = tally.procs }
@@ -314,27 +361,29 @@ function ns.WindfurySay()
     local v = ns.WindfuryView()
     if not v then ns.say("Windfury is tracked on shamans. /dls windfury test shows what a proc looks like."); return end
     if not v.on then ns.say("Windfury tracking is off (Settings)."); return end
-    ns.say("Windfury: " .. v.procs .. " procs in all, " .. v.sessionProcs .. " this session"
+    ns.say("Windfury: " .. v.procs .. " procs seen in all, " .. v.sessionProcs .. " this session, in " .. v.fights .. " fights with Windfury damage"
         .. (v.hit and (", biggest single hit " .. v.hit.amount .. (v.hit.crit and " (crit)" or "")) or ""))
+    if #v.fightTop > 0 then ns.say("  Most Windfury damage in one fight (the game's damage meter):") end
+    for i, r in ipairs(v.fightTop) do
+        ns.say("  #" .. i .. "  " .. r.total .. " damage" .. (r.procs and (", " .. r.procs .. (r.procs == 1 and " proc" or " procs")) or "")
+            .. (r.mob and (" on " .. r.mob) or "") .. (r.level and (" at level " .. r.level) or ""))
+    end
+    if #v.top > 0 then ns.say("  Biggest procs (where the client lets the hits be read):") end
     for i, r in ipairs(v.top) do
         ns.say("  #" .. i .. "  " .. r.total .. " damage, " .. r.hits .. " hits" .. ((r.crits or 0) > 0 and (", " .. r.crits .. " crit") or "")
             .. (r.mob and (" on " .. r.mob) or "") .. (r.level and (" at level " .. r.level) or ""))
     end
-    if v.procs == 0 then ns.say("  nothing yet: put Windfury Weapon on and hit something. /dls windfury test shows the line.") end
+    if v.procs == 0 and v.fights == 0 then ns.say("  nothing yet: put Windfury Weapon on and hit something. /dls windfury test shows the lines.") end
 end
 
--- three made-up procs, nothing kept
+-- made-up lines, nothing kept: a proc with its hits, a rated proc, and the line after a fight
 function ns.WindfuryPreview()
     demoUntil = GetTime() + 12
-    local shots = { { 0.1, 14, { 212, 198, 240 }, 0 }, { 4, 2, { 305, 498, 331 }, 1 }, { 8, 1, { 520, 610, 0 }, 2 } }
-    for _, shot in ipairs(shots) do
-        ns.After(shot[1], function()
-            local b = { t0 = GetTime(), n = 3, hits = 0, crits = shot[4], total = 0, max = 0, amounts = {}, schools = {}, tally = newTally(),
-                proc = true, demo = true, demoRank = shot[2] }
-            for _, a in ipairs(shot[3]) do
-                if a > 0 then b.hits, b.total = b.hits + 1, b.total + a end
-            end
-            announce(b, b.demoRank)
-        end, "windfury:preview")
-    end
+    ns.After(0.1, function()
+        announce({ n = 3, hits = 3, crits = 0, total = 0, hidden = true, raw = { 212, 198, 240 } }, nil)
+    end, "windfury:preview")
+    ns.After(4, function()
+        announce({ n = 3, hits = 3, crits = 1, total = 1134, raw = { 305, 498, 331 } }, 2)
+    end, "windfury:preview")
+    ns.After(8, function() announceFight(682, 14, 2) end, "windfury:preview")
 end

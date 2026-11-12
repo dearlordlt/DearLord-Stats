@@ -15,7 +15,9 @@ local function boom() error("attempt to perform arithmetic/compare on a secret v
 for _, m in ipairs({ "__add", "__sub", "__mul", "__div", "__lt", "__le", "__concat", "__unm", "__mod" }) do SECRET_MT[m] = boom end
 SECRET_MT.__eq = boom
 SECRET_MT.__tostring = function() return "<secret>" end
-local function secret() return setmetatable({}, SECRET_MT) end
+-- a hidden value may carry what it stands for: only the game's own text formatting can get at it
+local SECRET_OF = setmetatable({}, { __mode = "k" })
+local function secret(v) local s = setmetatable({}, SECRET_MT); SECRET_OF[s] = v; return s end
 function issecretvalue(v) return type(v) == "table" and getmetatable(v) == SECRET_MT end
 local function hide(v) if world.combat then return secret() end return v end
 
@@ -33,10 +35,21 @@ local function widget(kind, name)
     local function needFont(self) if self.kind == "FontString" and not self.fontSet then error("FontString:SetText(): Font not set", 3) end end
     function M:SetFont() self.fontSet = true end
     function M:SetFontObject() self.fontSet = true end
-    function M:SetText(t) needFont(self); self.text = tostring(t or "") end
+    function M:SetText(t) needFont(self); self.text = tostring(t or ""); self.secretText = nil end
     function M:GetText() return self.text end
-    function M:SetFormattedText(fmt, ...) needFont(self); self.text = string.format(fmt, ...) end
-    function M:GetStringWidth() return #((self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) * 6 end
+    function M:SetFormattedText(fmt, ...)                       -- the game fills hidden numbers in itself; the text is then hidden too
+        needFont(self)
+        local args, hidden = { ... }, nil
+        for i = 1, select("#", ...) do
+            if issecretvalue(args[i]) then hidden = true; args[i] = SECRET_OF[args[i]] or 0 end
+        end
+        self.text = string.format(fmt, unpack(args, 1, select("#", ...)))
+        self.secretText = hidden
+    end
+    function M:GetStringWidth()
+        if self.secretText then return secret() end              -- a width that would give the hidden number away
+        return #((self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) * 6
+    end
     function M:GetStringHeight() return 14 * (1 + math.floor(self:GetStringWidth() / 420)) end
     function M:Show()
         local was = self.shown
@@ -1366,10 +1379,20 @@ if MODE ~= "bare" then
     local w = ns.char.windfury
     wfT.kept = w.procs == 5 and #w.ranks == 5 and w.ranks[1] == 450 and w.ranks[2] == 300 and w.ranks[5] == 120
         and w.top[1].total == 450 and w.top[1].crits == 1 and w.hit.amount == 220 and w.hit.crit == true and ns.session.windfury.procs == 5
+    -- the launch client hides every hit's amount: the game writes the numbers into the line, nothing is rated
+    do
+        local ranksBefore = #w.ranks
+        together({ { "WOUND", "", secret(212) }, { "WOUND", "CRITICAL", secret(498) }, { "WOUND", "", secret(240) } })
+        local hl, hrow = feedLine("windfury")
+        wfT.hidden = hl or "-"
+        wfT.hiddenKept = w.procs == 6 and #w.ranks == ranksBefore and hrow ~= nil and hrow.text.secretText == true and hrow:GetWidth() >= 340
+        advance(1); wfT.hiddenQuiet = #(ns.db.errors or {})
+        w.procs, ns.session.windfury.procs = 5, 5
+    end
     -- a shock landing with the swing is not melee: no proc
     together({ { "WOUND", "", 100 }, { "WOUND", "", 60, 8 }, { "WOUND", "", 60, 8 } }); wfT.spell = procs() == 5
     -- hits spread over a second are swings, not a proc
-    for _ = 1, 3 do fire("UNIT_COMBAT", "target", "WOUND", "", 80, 1); advance(0.5) end
+    for _ = 1, 3 do fire("UNIT_COMBAT", "target", "WOUND", "", 80, 1); advance(0.75) end
     wfT.spread = procs() == 5
     -- Rockbiter on the weapon, or nothing on it: no proc
     world.enchant = { true, 1000, 0, 29, false, 0, 0, 0 }; advance(2.5); together(three); wfT.rockbiter = procs() == 5
@@ -1383,11 +1406,18 @@ if MODE ~= "bare" then
     world.enchant = { true, 1000, 0, 9002, false, 0, 0, 0 }; advance(2.5)
     runFight({ name = "Test Boar", kills = 0, dmg = 500, taken = 10, duration = 6, spells = { { 6603, 200 }, { 8232, 300 } },
         during = function() together({ { "WOUND", "", 100 }, { "WOUND", "", 150 }, { "WOUND", "", 150 } }) end })
-    wfT.learned, wfT.recap = ns.db.wfEnchants[9002] == true, feedLine("recap") or "-"
+    wfT.learned, wfT.recap, wfT.fightLine = ns.db.wfEnchants[9002] == true, feedLine("recap") or "-", feedLine("windfury") or "-"
+    wfT.fightKept = ns.char.windfury.fights.n == 1 and ns.char.windfury.fights.ranks[1] == 300 and ns.char.windfury.fights.top[1].procs == 1
     -- a fight with Windfury damage in the meter and no proc seen is counted as missed
     runFight({ name = "Test Boar", kills = 0, dmg = 500, taken = 10, duration = 6, spells = { { 6603, 200 }, { 8232, 300 } } })
+    wfT.fightLine2 = feedLine("windfury") or "-"                 -- no proc seen, and the meter still gives the damage: rated all the same
+    -- a smaller fight in a group: rated below, and the proc count (a guess there) is left out
+    local keepParty = world.party; world.party = world.party or {}
+    runFight({ name = "Test Boar", kills = 0, dmg = 500, taken = 10, duration = 6, spells = { { 6603, 400 }, { 8232, 100 } }, during = function() together(three) end })
+    world.party = keepParty
+    wfT.fightLine3 = feedLine("windfury") or "-"
     local fd = ns.db.diag.windfury.fights
-    wfT.fights = fd.agree == 1 and fd.missed == 1 and fd.extra == 1
+    wfT.fights = fd.agree == 2 and fd.missed == 1 and fd.extra == 1
     world.class = "Shaman"
     for _, r in ipairs(ns.HealthRows()) do if r.name == "Windfury procs" then wfT.health = r.state end end
     world.class = nil
@@ -1402,11 +1432,12 @@ if MODE ~= "bare" then
     local before = procs()
     ns.db.windfury = false; together(three); wfT.off = procs() == before; ns.db.windfury = true
     -- the slash command lists the biggest, and the preview shows made-up procs without keeping them
-    printed = {}; SlashCmdList["DEARLORDSTATS"]("windfury"); wfT.say = (printed[1] or "") .. " / " .. (printed[2] or "")
+    printed = {}; SlashCmdList["DEARLORDSTATS"]("windfury"); wfT.say = printed[1] or ""; wfT.sayAll = table.concat(printed, " / ")
     before = procs()
     advance(8); SlashCmdList["DEARLORDSTATS"]("windfury test"); advance(1); wfT.preview1 = feedLine("windfury") or "-"
     advance(4); wfT.preview2 = feedLine("windfury") or "-"
-    advance(12); wfT.previewKept = procs() == before
+    advance(4); wfT.preview3 = feedLine("windfury") or "-"
+    advance(12); wfT.previewKept = procs() == before and ns.char.windfury.fights.n == 3
     world.enchant = nil
     putBack(ns.char, keepChar); putBack(ns.session, keepSession)
     ns.lastFight, ns.db.diag.fights, ns.db.diag.fightsFromMeter, ns.db.showRecap = keepLast, keepFights, keepMeter, keepRecap
@@ -1702,13 +1733,20 @@ if MODE ~= "bare" then
     check("windfury: procs, the ranked list, the five biggest and the biggest single hit are kept", wfT.kept)
     check("windfury: not a proc: two hits, a shock with the swing, swings apart, Rockbiter, a bare weapon, another class, the setting off",
         wfT.two and wfT.spell and wfT.spread and wfT.rockbiter and wfT.bare and wfT.hunter and wfT.off)
-    check("windfury: the fight summary counts the procs and the biggest (" .. tostring(wfT.recap) .. ")", wfT.recap:find("windfury ×1 best 400 (top 2)", 1, true) ~= nil)
+    check("windfury: hidden hit amounts are written into the line by the game, side by side, unrated (" .. tostring(wfT.hidden) .. ")",
+        wfT.hidden:find("Windfury  212 + 498 + 240  ·  1 crit", 1, true) ~= nil and wfT.hiddenKept and wfT.hiddenQuiet == 0)
+    check("windfury: after the fight the meter's Windfury damage is rated among your fights (" .. tostring(wfT.fightLine) .. ")",
+        wfT.fightLine:find("Windfury this fight  TOP 1  300 damage!  ·  1 proc", 1, true) ~= nil and wfT.fightKept
+        and wfT.fightLine2:find("Windfury this fight  TOP 2  300 damage!", 1, true) ~= nil and wfT.fightLine2:find("proc", 1, true) == nil
+        and wfT.fightLine3:find("Windfury this fight  TOP 3  100 damage!", 1, true) ~= nil and wfT.fightLine3:find("proc", 1, true) == nil)
+    check("windfury: the fight recap carries that damage and its rating (" .. tostring(wfT.recap) .. ")", wfT.recap:find("windfury 300 (top 1)", 1, true) ~= nil)
     check("windfury: an unknown weapon enchant counts until the damage meter or the shaman's own cast says what it is",
         wfT.unknownCounted and wfT.learnedNot and wfT.unknownQuiet and wfT.learned and wfT.castNot and wfT.castIs)
     check("windfury: fights are compared with the damage meter and the client checks say so (" .. tostring(wfT.health) .. ")", wfT.fights and wfT.health == "limited")
-    check("windfury: /dls windfury lists the biggest (" .. tostring(wfT.say) .. ")", wfT.say:find("7 procs in all", 1, true) ~= nil and wfT.say:find("#1  450 damage, 3 hits, 1 crit", 1, true) ~= nil)
+    check("windfury: /dls windfury lists the biggest (" .. tostring(wfT.sayAll) .. ")", wfT.say:find("procs seen in all", 1, true) ~= nil and wfT.sayAll:find("#1  300 damage, 1 proc on Test Boar", 1, true) ~= nil and wfT.sayAll:find("#1  450 damage, 3 hits, 1 crit", 1, true) ~= nil)
     check("windfury: the preview shows made-up procs and keeps nothing (" .. tostring(wfT.preview1) .. " / " .. tostring(wfT.preview2) .. ")",
-        wfT.preview1:find("Windfury  top 14  650 damage", 1, true) ~= nil and wfT.preview2:find("Windfury  TOP 2  1134 damage!", 1, true) ~= nil and wfT.previewKept)
+        wfT.preview1:find("Windfury  212 + 198 + 240", 1, true) ~= nil and wfT.preview2:find("Windfury  TOP 2  1134 damage!", 1, true) ~= nil
+        and wfT.preview3:find("Windfury this fight  top 14  682 damage  ·  2 procs", 1, true) ~= nil and wfT.previewKept)
 end
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")

@@ -99,18 +99,26 @@ your pet is out, and gentle one-line reminders (a new spell that is not on your 
 could craft from your bags, a trainer unlock you reached). They fade out by themselves; left-click
 opens the matching report tab, right-click dismisses.
 
-**Windfury (shaman):** every proc of Windfury Weapon puts a line where the fight recap shows, in
-larger letters, lit up as it lands and glowing for as long as it stays (15 s; size and time are
-settings), ranked against every proc the character has had: `Windfury TOP 1 812 damage!` for the
-top three, `Windfury top 14 412 damage` for the rest (the hundred biggest are kept), with the hits, crits and misses of that proc
-beside it. The fight recap then counts them (`windfury ×2 best 612 (top 4)`), the Combat tab keeps the number
-of procs, the biggest one and the biggest single hit, and `/dls windfury` lists the five biggest
-(`/dls windfury test` shows three made-up ones). The combat log is closed to addons, so a proc is read
-from the hits: the swing that set it off and the extra attacks land together, and three or more melee
-results on your target within 0.3 s while Windfury is on the weapon count as one. The damage shown is
-all of those hits added up. In a group someone else's swing landing in the same instant can be counted
-in. After each fight the game's own damage meter says whether Windfury did damage, and the client
-checks show how often the two agree.
+**Windfury (shaman):** two lines where the fight recap shows, in larger letters, lit up as they land
+and glowing while they stay (15 s; size and time are settings).
+
+- *At a proc:* `Windfury  212 + 198 + 240`, the hits of that proc. This client hides every hit's amount
+  from addons during a fight: the game can write the numbers into the line, but an addon can neither
+  add them up nor compare them, so they stand side by side and the proc gets no rating. Where a client
+  does let the amounts be read, the line adds them and rates the proc against every one before it
+  (`Windfury TOP 1 812 damage!`, `Windfury top 14 412 damage`).
+- *After the fight:* `Windfury this fight  TOP 2  682 damage!`. That number is the Windfury damage of the
+  fight from the game's own damage meter: exact, yours only, also in a group. It is rated against every
+  fight before it (the hundred biggest are kept), gold for the top three, and the fight recap carries
+  it too (`windfury 682 (top 2)`).
+
+The Combat tab keeps the most Windfury damage in one fight and the procs seen, and `/dls windfury`
+lists the five biggest fights (`/dls windfury test` shows made-up lines). The combat log is closed to
+addons, so a proc is read from the hits: the swing that set it off and the two extra attacks land
+within half a second, and three or more melee results on your target within 0.45 s while Windfury is
+on the weapon count as one. Those hits carry no author, so in a group other people's swings get mixed
+in and the line at the proc is a guess there. The line after the fight is not. The client checks show
+how often the procs seen agree with the meter.
 
 The report (`/dls`, or click either text block; resizable, Escape closes):
 
