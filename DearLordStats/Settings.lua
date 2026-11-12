@@ -52,6 +52,8 @@ local CONTROLS = {
     { header = "Messages under the HUD" },
     { type = "check", key = "showRecap", label = "Fight recap after combat" },
     { type = "check", key = "windfury", label = "Shaman: a line for every Windfury proc, ranked against your biggest, and the count in the fight recap" },
+    { type = "slider", key = "windfuryHold", label = "Windfury line stays", min = 5, max = 60, step = 5, suffix = " s" },
+    { type = "slider", key = "windfuryBig", label = "Windfury line: letters larger by", min = 0, max = 14, step = 1, suffix = " pt" },
     { type = "button", label = "Preview the Windfury line (three made-up procs)", action = function() ns.WindfuryPreview() end },
     { type = "slider", key = "recapHold", label = "Recap stays for", min = 3, max = 20, step = 1, suffix = " s" },
     { type = "check", key = "nudges", label = "Gentle reminders" },

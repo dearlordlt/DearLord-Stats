@@ -1352,11 +1352,17 @@ if MODE ~= "bare" then
     together({ { "WOUND", "", 100 }, { "WOUND", "", 120 } }); wfT.two = feedLine("windfury") == nil and procs() == 0
     -- three together: a proc; the first ever is #1
     together({ { "WOUND", "", 100 }, { "WOUND", "CRITICAL", 220 }, { "WOUND", "", 130 } })
-    local line, row = feedLine("windfury"); wfT.first, wfT.flash = line or "-", row ~= nil and row.flashLeft ~= nil and row.flash.alpha > 0
+    local line, row = feedLine("windfury"); wfT.first, wfT.flash = line or "-", row ~= nil and row.flashLeft ~= nil and row.flash.alpha > 0.34
+    wfT.seen = row ~= nil and row.hold == 15 and row.big == 6 and row.h == ns.db.fontSize + 10 and row.pulse == true
+    advance(3); wfT.glow = row ~= nil and row.shown and row.flashLeft == nil and row.flash.alpha > 0.15 and row.flash.alpha <= 0.34
     together({ { "WOUND", "", 90 }, { "MISS", "", nil }, { "WOUND", "", 110 } }); wfT.second = feedLine("windfury") or "-"
     together({ { "WOUND", "", 50 }, { "WOUND", "", 50 }, { "WOUND", "", 50 } }); wfT.third = feedLine("windfury") or "-"
     together({ { "WOUND", "", 40 }, { "WOUND", "", 40 }, { "WOUND", "", 40 } }); wfT.fourth = feedLine("windfury") or "-"
+    wfT.calm = select(2, feedLine("windfury")).pulse ~= true
+    ns.db.windfuryHold, ns.db.windfuryBig = 30, 0
     together({ { "WOUND", "", 100 }, { "WOUND", "", 100 }, { "WOUND", "", 100 } }); wfT.fifth = feedLine("windfury") or "-"
+    do local r = select(2, feedLine("windfury")); wfT.sized = r.hold == 30 and r.big == 0 and r.h == ns.db.fontSize + 4 end
+    ns.db.windfuryHold, ns.db.windfuryBig = 15, 6
     local w = ns.char.windfury
     wfT.kept = w.procs == 5 and #w.ranks == 5 and w.ranks[1] == 450 and w.ranks[2] == 300 and w.ranks[5] == 120
         and w.top[1].total == 450 and w.top[1].crits == 1 and w.hit.amount == 220 and w.hit.crit == true and ns.session.windfury.procs == 5
@@ -1687,21 +1693,22 @@ check("shield bar: /dls shield previews it for 20 s", shield.preview and shield.
 check("shield bar: client checks say what the client gave (" .. tostring(shield.health) .. ")", shield.health ~= nil and shield.health:find("^ok") ~= nil and shield.note ~= nil)
 check("refused actions: one that is not /who is logged and leaves the census on (" .. tostring(shield.refusedRow) .. ")", shield.refused and shield.refusedRow == "limited")
 if MODE ~= "bare" then
-    check("windfury: three melee results landing together are a proc, ranked #1 with a flash (" .. tostring(wfT.first) .. ")",
-        wfT.first:find("Windfury #1 hit  450 damage!  ·  3 hits, 1 crit", 1, true) ~= nil and wfT.flash)
-    check("windfury: the top three shout, a miss is counted, the rest say their place (" .. tostring(wfT.fourth) .. ")",
-        wfT.second:find("Windfury #2 hit  200 damage!  ·  2 hits, 1 missed", 1, true) ~= nil and wfT.third:find("Windfury #3 hit  150 damage!", 1, true) ~= nil
-        and wfT.fourth:find("Windfury #4 for 120 damage  ·  3 hits", 1, true) ~= nil and wfT.fifth:find("Windfury #2 hit  300 damage!", 1, true) ~= nil)
+    check("windfury: three melee results landing together are a proc, rated TOP 1 with a flash (" .. tostring(wfT.first) .. ")",
+        wfT.first:find("Windfury  TOP 1  450 damage!  ·  3 hits, 1 crit", 1, true) ~= nil and wfT.flash)
+    check("windfury: the top three shout, a miss is counted, the rest say top N (" .. tostring(wfT.fourth) .. ")",
+        wfT.second:find("Windfury  TOP 2  200 damage!  ·  2 hits, 1 missed", 1, true) ~= nil and wfT.third:find("Windfury  TOP 3  150 damage!", 1, true) ~= nil
+        and wfT.fourth:find("Windfury  top 4  120 damage  ·  3 hits", 1, true) ~= nil and wfT.fifth:find("Windfury  TOP 2  300 damage!", 1, true) ~= nil)
+    check("windfury: the line is larger, stays 15 s and keeps a glow that breathes for the top three; both are settings", wfT.seen and wfT.glow and wfT.calm and wfT.sized)
     check("windfury: procs, the ranked list, the five biggest and the biggest single hit are kept", wfT.kept)
     check("windfury: not a proc: two hits, a shock with the swing, swings apart, Rockbiter, a bare weapon, another class, the setting off",
         wfT.two and wfT.spell and wfT.spread and wfT.rockbiter and wfT.bare and wfT.hunter and wfT.off)
-    check("windfury: the fight summary counts the procs and the biggest (" .. tostring(wfT.recap) .. ")", wfT.recap:find("windfury ×1 best 400", 1, true) ~= nil)
+    check("windfury: the fight summary counts the procs and the biggest (" .. tostring(wfT.recap) .. ")", wfT.recap:find("windfury ×1 best 400 (top 2)", 1, true) ~= nil)
     check("windfury: an unknown weapon enchant counts until the damage meter or the shaman's own cast says what it is",
         wfT.unknownCounted and wfT.learnedNot and wfT.unknownQuiet and wfT.learned and wfT.castNot and wfT.castIs)
     check("windfury: fights are compared with the damage meter and the client checks say so (" .. tostring(wfT.health) .. ")", wfT.fights and wfT.health == "limited")
     check("windfury: /dls windfury lists the biggest (" .. tostring(wfT.say) .. ")", wfT.say:find("7 procs in all", 1, true) ~= nil and wfT.say:find("#1  450 damage, 3 hits, 1 crit", 1, true) ~= nil)
     check("windfury: the preview shows made-up procs and keeps nothing (" .. tostring(wfT.preview1) .. " / " .. tostring(wfT.preview2) .. ")",
-        wfT.preview1:find("Windfury #14 for 650 damage", 1, true) ~= nil and wfT.preview2:find("Windfury #2 hit  1134 damage!", 1, true) ~= nil and wfT.previewKept)
+        wfT.preview1:find("Windfury  top 14  650 damage", 1, true) ~= nil and wfT.preview2:find("Windfury  TOP 2  1134 damage!", 1, true) ~= nil and wfT.previewKept)
 end
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")

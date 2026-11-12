@@ -99,10 +99,11 @@ your pet is out, and gentle one-line reminders (a new spell that is not on your 
 could craft from your bags, a trainer unlock you reached). They fade out by themselves; left-click
 opens the matching report tab, right-click dismisses.
 
-**Windfury (shaman):** every proc of Windfury Weapon puts a line where the fight recap shows, lit up
-as it lands and ranked against every proc the character has had: `Windfury #1 hit 812 damage!` for the
-top three, `Windfury #14 for 412 damage` for the rest, with the hits, crits and misses of that proc
-beside it. The fight recap then counts them (`windfury ×2 best 612`), the Combat tab keeps the number
+**Windfury (shaman):** every proc of Windfury Weapon puts a line where the fight recap shows, in
+larger letters, lit up as it lands and glowing for as long as it stays (15 s; size and time are
+settings), ranked against every proc the character has had: `Windfury TOP 1 812 damage!` for the
+top three, `Windfury top 14 412 damage` for the rest (the hundred biggest are kept), with the hits, crits and misses of that proc
+beside it. The fight recap then counts them (`windfury ×2 best 612 (top 4)`), the Combat tab keeps the number
 of procs, the biggest one and the biggest single hit, and `/dls windfury` lists the five biggest
 (`/dls windfury test` shows three made-up ones). The combat log is closed to addons, so a proc is read
 from the hits: the swing that set it off and the extra attacks land together, and three or more melee

@@ -1,6 +1,6 @@
 -- DearLord Stats : Windfury (shaman)
 -- A line under the main window each time Windfury Weapon procs, ranked against every proc this character
--- has had: "#1 hit 812 damage!" for the top three, "#14 for 412 damage" for the rest. The fight summary
+-- has had: "TOP 1  812 damage!" for the top three, "top 14  412 damage" for the rest. The fight summary
 -- after combat counts the procs of that fight, and the biggest ones are kept.
 --
 -- How a proc is seen. The combat log is closed to addons and the proc casts no spell the client reports,
@@ -158,20 +158,24 @@ end
 local function announce(b, place)
     local L, W = ns.LABEL, ns.WHITE
     local text, flash
-    if b.total <= 0 then
-        text = icon() .. " " .. SKY .. "Windfury|r" .. L .. "  ·  " .. detail(b) .. "|r"
+    local sep = L .. "  ·  |r"
+    if b.total <= 0 then                                         -- the numbers were kept back: a proc, but nothing to rate
+        text = icon() .. " " .. SKY .. "Windfury|r" .. sep .. L .. detail(b) .. "|r"
         flash = { 0.25, 0.6, 1 }
     elseif place and place <= 3 then
-        text = icon() .. " " .. GOLD .. "Windfury #" .. place .. " hit|r  " .. W .. b.total .. "|r " .. GOLD .. "damage!|r" .. L .. "  ·  " .. detail(b) .. "|r"
+        text = icon() .. " " .. GOLD .. "Windfury  TOP " .. place .. "|r  " .. W .. b.total .. "|r " .. GOLD .. "damage!|r" .. sep .. L .. detail(b) .. "|r"
         flash = { 1, 0.8, 0.2 }
     elseif place then
-        text = icon() .. " " .. SKY .. "Windfury|r " .. W .. "#" .. place .. "|r " .. L .. "for|r " .. W .. b.total .. "|r " .. L .. "damage  ·  " .. detail(b) .. "|r"
+        text = icon() .. " " .. SKY .. "Windfury|r  " .. W .. "top " .. place .. "|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "|r"
         flash = { 0.25, 0.6, 1 }
     else
-        text = icon() .. " " .. SKY .. "Windfury|r " .. L .. "for|r " .. W .. b.total .. "|r " .. L .. "damage  ·  " .. detail(b) .. "|r"
+        text = icon() .. " " .. SKY .. "Windfury|r  " .. W .. b.total .. "|r " .. L .. "damage|r" .. sep .. L .. detail(b) .. "  ·  below your top " .. KEEP .. "|r"
         flash = { 0.25, 0.6, 1 }
     end
-    ns.Feed(text, { tab = "combat", key = "windfury", hold = 6, flash = flash })
+    local top = b.total > 0 and place ~= nil and place <= 3
+    local db = ns.db or {}
+    ns.Feed(text, { tab = "combat", key = "windfury", hold = db.windfuryHold or 15, big = db.windfuryBig or 6,
+        flash = flash, glow = top and 0.34 or 0.22, pulse = top })
 end
 
 local function closeBurst()
@@ -187,9 +191,10 @@ local function closeBurst()
     if not b.proc then return end
     local t = b.tally
     t.procs, t.total = t.procs + 1, t.total + b.total
-    if b.total > t.best then t.best = b.total end
     t.mh, t.oh = weapon.mh, weapon.oh
-    announce(b, record(b, b.demo))
+    local place = record(b, b.demo)
+    if b.total > t.best then t.best, t.place = b.total, place end
+    announce(b, place)
     if ns.PanelDirty then ns.PanelDirty() end
 end
 

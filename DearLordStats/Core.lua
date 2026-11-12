@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.28.0"
+ns.version = "2.28.1"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -186,7 +186,7 @@ end
 ----------------------------------------------------------------------
 local defaults = {
     locked = false, scale = 1, alpha = 1, showXP = true, fontSize = 13, background = false,
-    showRecap = true, nudges = true, windfury = true,
+    showRecap = true, nudges = true, windfury = true, windfuryHold = 15, windfuryBig = 6,
     font = "friz", outline = "OUTLINE", bgAlpha = 0.4, showStats = true, showGold = true, showProf = true, showPet = true, showThreat = true, threatWarn = true, threatWarnAt = 90, threatSound = true, growlWarn = true, readyCheck = true, partyTargets = true, partyTargetsSelf = true, partySolo = false, partyTargetSide = "right", partyTargetWidth = 110, partyTargetHeight = 55, showKeys = true,
     shieldBar = true, shieldWidth = 220, shieldHeight = 22, shieldColor = "spell", shieldText = "both", shieldIcon = true, shieldTimer = true, shieldAnim = true, shieldSound = false,
     recapHold = 8, nudgeHold = 25, panelAlpha = 0.92, panelFontSize = 12, lootAnnounce = true,
@@ -403,7 +403,7 @@ function ns.LayoutFeed()
         local row = feed.rows[i]
         row:ClearAllPoints()
         row:SetScale(ns.db.scale)
-        ns.SetHudFont(row.text)
+        ns.FeedFont(row)
         row:SetAlpha(row:IsShown() and row:GetAlpha() or 0)
         -- with the background on, the lines join the window above as one block
         local joined = ns.db.background
@@ -412,6 +412,17 @@ function ns.LayoutFeed()
         if prev then row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, joined and 0 or -1)
         else row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, joined and 0 or -2) end
         prev = row
+    end
+end
+
+-- a line's font: the HUD's, larger by `big` points for a line that wants to be seen
+function ns.FeedFont(row)
+    ns.SetHudFont(row.text)
+    local big = row.big
+    if big and big > 0 then
+        local db = ns.db
+        local size, flags = ((db and db.fontSize) or 13) + big, (db and db.outline) or "OUTLINE"
+        if not row.text:SetFont(ns.FontPath(), size, flags) then row.text:SetFont(STANDARD_TEXT_FONT, size, flags) end
     end
 end
 
@@ -458,25 +469,28 @@ local function feedWidth(row)
 end
 
 local function feedShow(row, entry)
+    row.big = entry.big
+    ns.FeedFont(row)
     row.text:SetText(entry.text)
     feedWidth(row)
-    row:SetHeight(ns.db.fontSize + 4)
+    row:SetHeight(ns.db.fontSize + (entry.big or 0) + 4)
     row.tab, row.key = entry.tab, entry.key
     row.age, row.hold, row.state = 0, entry.hold or 7, "in"
-    if entry.flash then
+    if entry.flash then                                        -- lights up, then keeps a glow of that colour while it stays
         row.flash:SetVertexColor(entry.flash[1], entry.flash[2], entry.flash[3])
-        row.flashLeft = 0.7
-        row.flash:SetAlpha(0.55)
-    else row.flashLeft = nil; row.flash:SetAlpha(0) end
+        row.flashLeft, row.glow, row.pulse = 1.2, entry.glow or 0, entry.pulse
+        row.flash:SetAlpha(0.85)
+    else row.flashLeft, row.glow, row.pulse = nil, nil, nil; row.flash:SetAlpha(0) end
     row:SetAlpha(0)
     row:Show()
 end
 
 -- opts: tab (panel tab opened on click), key (same key replaces the visible line), hold (seconds),
--- flash ({ r, g, b }: the line lights up in that colour as it lands)
+-- flash ({ r, g, b }: the line lights up in that colour as it lands), glow (how much of that colour stays
+-- behind it, 0-1), pulse (the glow breathes), big (font larger by so many points)
 function ns.Feed(text, opts)
     opts = opts or {}
-    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash }
+    local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash, glow = opts.glow, pulse = opts.pulse, big = opts.big }
     if entry.key then
         for i = 1, #feed.rows do
             local row = feed.rows[i]
@@ -496,10 +510,15 @@ ns.Every(0.05, function(dt)
         if row:IsShown() then
             feedWidth(row)
             row.age = row.age + dt
-            if row.flashLeft then
-                row.flashLeft = row.flashLeft - dt
-                if row.flashLeft <= 0 then row.flashLeft = nil; row.flash:SetAlpha(0)
-                else row.flash:SetAlpha(0.55 * (row.flashLeft / 0.7) ^ 2) end
+            if row.glow then
+                local floor = row.glow
+                if row.pulse and floor > 0 then floor = floor * (0.6 + 0.4 * math.abs(math.sin(GetTime() * 3))) end
+                if row.flashLeft then
+                    row.flashLeft = row.flashLeft - dt
+                    if row.flashLeft <= 0 then row.flashLeft = nil end
+                end
+                local burst = row.flashLeft and 0.85 * (row.flashLeft / 1.2) ^ 2 or 0
+                row.flash:SetAlpha(math.max(floor, burst))
             end
             if row.state == "in" then
                 row:SetAlpha(math.min(1, row.age / 0.35))

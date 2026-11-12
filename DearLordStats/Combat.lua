@@ -164,6 +164,7 @@ local function recap(f)
     if f.wf and f.wf.procs > 0 then                              -- shaman: Windfury procs in this fight and the biggest of them
         parts[#parts + 1] = string.format("%swindfury|r %s×%d|r", L, W, f.wf.procs)
             .. (f.wf.best > 0 and string.format(" %sbest|r %s%d|r", L, W, f.wf.best) or "")
+            .. (f.wf.place and string.format(" %s(top %d)|r", L, f.wf.place) or "")
     end
     if f.died then parts[#parts + 1] = ns.RED .. "died|r" end
     return table.concat(parts, L .. "  ·  |r")
