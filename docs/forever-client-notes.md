@@ -53,6 +53,15 @@ attacks landing 0.15 to 0.3 s after the swing that set them off (inferred, the e
 In those party fights, guessing procs from three melee results within 0.3 s agreed with the meter in
 2 fights, missed Windfury damage in 11 and saw a proc without any in 3.
 
+A second save (12 November 2026, addon 2.29.0, window widened to 0.45 s): 16 more groups of hits, all
+in a party again, every amount hidden; hits together were up to 0.44 s apart. Over all fights so far
+the proc guess agreed with the meter in 74, missed in 27 and was extra in 32. The meter's per-spell
+total for `Windfury Weapon` was readable after every fight (117 fights), so the per-fight rating
+works. Not one of 375 procs seen had a readable amount. Solo is still unsampled: the 16 sample slots
+filled in the party first. From 2.29.1 hits alone and in a group are counted apart
+(`diag.windfury.amounts`, `diag.windfury.solo`, `diag.windfury.fights.solo`), and `diag.feedFmt`
+records whether `SetFormattedText` took the hidden amounts.
+
 ## The built-in damage meter is the way to get combat numbers
 
 About a second after combat ends:

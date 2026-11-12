@@ -162,6 +162,23 @@ function ns.HealthRows()
         end
     end
 
+    -- shaman: can the amount of a hit on the target be read? A single proc can only be added up and rated where it can
+    if class == "SHAMAN" and db and db.windfury ~= false then
+        local a = type(d.windfury) == "table" and type(d.windfury.amounts) == "table" and d.windfury.amounts or nil
+        if not a then add("Windfury hit amounts", "wait", "no melee hit with Windfury on the weapon yet")
+        else
+            local function part(where, read, hidden)
+                read, hidden = read or 0, hidden or 0
+                if read + hidden == 0 then return where .. ": not tried yet" end
+                if hidden == 0 then return where .. ": readable (" .. read .. " hits)" end
+                if read == 0 then return where .. ": hidden by the game (" .. hidden .. " hits)" end
+                return where .. ": " .. read .. " readable, " .. hidden .. " hidden"
+            end
+            local hidden = (a.soloHidden or 0) + (a.groupHidden or 0)
+            add("Windfury hit amounts", hidden == 0 and "ok" or "limited", part("alone", a.soloRead, a.soloHidden) .. "; " .. part("in a group", a.groupRead, a.groupHidden))
+        end
+    end
+
     if GetBuildInfo then
         local version, build, _, interface = GetBuildInfo()
         add("Game client", "ok", "version " .. tostring(S(version) or "?") .. ", build " .. tostring(S(build) or "?") .. ", interface " .. tostring(N(interface) or "?"))

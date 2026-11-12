@@ -47,7 +47,7 @@ local function diag()
     if not d then return {} end
     if type(d.windfury) ~= "table" or d.windfury.version ~= ns.version then
         local was = type(d.windfury) == "table" and d.windfury or {}
-        d.windfury = { version = ns.version, samples = {}, fights = was.fights }
+        d.windfury = { version = ns.version, samples = {}, solo = {}, fights = was.fights }
     end
     return d.windfury
 end
@@ -154,10 +154,10 @@ local function detail(b)
     return table.concat(parts, ", ")
 end
 
-local function shout(text, flash, top, fmt, args)
+local function shout(text, flash, top, fmt, args, probe)
     local db = ns.db or {}
     ns.Feed(text, { tab = "combat", key = "windfury", hold = db.windfuryHold or 15, big = db.windfuryBig or 6,
-        flash = flash, glow = top and 0.34 or 0.22, pulse = top, fmt = fmt, args = args })
+        flash = flash, glow = top and 0.34 or 0.22, pulse = top, fmt = fmt, args = args, probe = probe })
 end
 local BLUE_FLASH, GOLD_FLASH = { 0.25, 0.6, 1 }, { 1, 0.8, 0.2 }
 
@@ -174,7 +174,7 @@ local function announce(b, place)
         local slots = {}
         for i = 1, #b.raw do slots[i] = W .. "%.0f|r" end
         local fmt = #b.raw > 0 and (icon() .. " " .. SKY .. "Windfury|r  " .. table.concat(slots, L .. " + |r") .. tail) or nil
-        shout(plain, BLUE_FLASH, false, fmt, b.raw)
+        shout(plain, BLUE_FLASH, false, fmt, b.raw, b.tally ~= nil)   -- a real proc: note whether the game took the numbers
     elseif place and place <= 3 then
         shout(icon() .. " " .. GOLD .. "Windfury  TOP " .. place .. "|r  " .. W .. b.total .. "|r " .. GOLD .. "damage!|r" .. sep .. L .. detail(b) .. "|r", GOLD_FLASH, true)
     elseif place then
@@ -202,10 +202,12 @@ local function closeBurst()
     burst = nil
     if not b then return end
     local d = diag()
-    if b.n >= 2 and d.samples and #d.samples < 16 then            -- what hits landing together look like here
-        d.samples[#d.samples + 1] = string.format("n=%d span=%.2f hits=%s school=%s proc=%s group=%s mh=%s", b.n, (b.last or b.t0) - b.t0,
+    -- what hits landing together look like here; alone and in a group are kept apart, so one cannot crowd the other out
+    local list = b.group and d.samples or d.solo
+    if b.n >= 2 and list and #list < (b.group and 8 or 12) then
+        list[#list + 1] = string.format("n=%d span=%.2f hits=%s school=%s proc=%s group=%s mh=%s", b.n, (b.last or b.t0) - b.t0,
             table.concat(b.amounts, ","), table.concat(b.schools, ","), tostring(b.proc or false),
-            tostring(B(IsInGroup and IsInGroup()) or false), tostring(weapon.mh))
+            tostring(b.group), tostring(weapon.mh))
     end
     if not b.proc then return end
     local t = b.tally
@@ -222,7 +224,7 @@ local function onResult(action, indicator, amount, school, raw)
     if burst and now - burst.t0 > WINDOW then closeBurst() end
     if not burst then
         burst = { t0 = now, n = 0, hits = 0, crits = 0, total = 0, max = 0, amounts = {}, schools = {}, raw = {}, tally = tally,
-            mob = S(UnitName and UnitName("target")) }
+            mob = S(UnitName and UnitName("target")), group = B(IsInGroup and IsInGroup()) or false }
         local mine = burst
         ns.After(WINDOW + 0.05, function() if burst == mine then closeBurst() end end, "windfury:close")
     end
@@ -232,6 +234,12 @@ local function onResult(action, indicator, amount, school, raw)
     if action == "WOUND" then
         b.hits = b.hits + 1
         b.amounts[#b.amounts + 1] = tostring(amount or (ns.exists(raw) and "hidden" or "nil"))
+        do                                                       -- every hit counted: can its amount be read, alone and in a group
+            local d = diag()
+            d.amounts = d.amounts or {}
+            local key = (b.group and "group" or "solo") .. (amount and "Read" or (ns.exists(raw) and "Hidden" or "None"))
+            d.amounts[key] = (d.amounts[key] or 0) + 1
+        end
         if amount then
             b.total = b.total + amount
             if amount > b.max then b.max, b.maxCrit = amount, indicator == "CRITICAL" end
@@ -328,9 +336,13 @@ function ns.WindfuryCheck(f, fromMeter)
     d.fights = d.fights or { agree = 0, missed = 0, extra = 0 }
     local fd = d.fights
     local group = inGroup
-    if meter > 0 and seen > 0 then fd.agree = fd.agree + 1
-    elseif meter > 0 then fd.missed = fd.missed + 1
-    else fd.extra = fd.extra + 1 end
+    local verdictOf = (meter > 0 and seen > 0) and "agree" or (meter > 0 and "missed" or "extra")
+    fd[verdictOf] = (fd[verdictOf] or 0) + 1
+    if not group then                                            -- alone, every hit on the target is yours: the fair test
+        fd.solo = fd.solo or { agree = 0, missed = 0, extra = 0 }
+        fd.solo[verdictOf] = (fd.solo[verdictOf] or 0) + 1
+        fd.lastSolo = string.format("meter=%d seen=%d total=%d best=%d", meter, seen, t and t.total or 0, t and t.best or 0)
+    end
     fd.last = string.format("meter=%d seen=%d total=%d group=%s mh=%s oh=%s", meter, seen, t and t.total or 0, tostring(group), tostring(weapon.mh), tostring(weapon.oh))
     -- an enchant nothing is known about yet: the meter settles it
     local k = known()

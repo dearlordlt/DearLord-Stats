@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.29.0"
+ns.version = "2.29.1"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -473,9 +473,14 @@ local function feedShow(row, entry)
     row.big = entry.big
     ns.FeedFont(row)
     -- fmt and args: the game fills the numbers in itself, which is the only way to show ones it hides from addons
-    if not (entry.fmt and entry.args and pcall(row.text.SetFormattedText, row.text, entry.fmt, unpack(entry.args))) then
-        row.text:SetText(entry.text)
+    local wrote = entry.fmt and entry.args and pcall(row.text.SetFormattedText, row.text, entry.fmt, unpack(entry.args))
+    if entry.probe and entry.fmt and entry.args and ns.db.diag and not entry.probed then   -- did the game take the numbers it hides from addons?
+        entry.probed = true
+        local fd = ns.db.diag.feedFmt or {}
+        ns.db.diag.feedFmt = fd
+        fd[wrote and "written" or "refused"] = (fd[wrote and "written" or "refused"] or 0) + 1
     end
+    if not wrote then row.text:SetText(entry.text) end
     feedWidth(row)
     row:SetHeight(ns.db.fontSize + (entry.big or 0) + 4)
     row.tab, row.key = entry.tab, entry.key
@@ -496,7 +501,7 @@ end
 function ns.Feed(text, opts)
     opts = opts or {}
     local entry = { text = text, tab = opts.tab, key = opts.key, hold = opts.hold, flash = opts.flash, glow = opts.glow, pulse = opts.pulse, big = opts.big,
-        fmt = opts.fmt, args = opts.args }
+        fmt = opts.fmt, args = opts.args, probe = opts.probe }
     if entry.key then
         for i = 1, #feed.rows do
             local row = feed.rows[i]

@@ -1418,6 +1418,20 @@ if MODE ~= "bare" then
     wfT.fightLine3 = feedLine("windfury") or "-"
     local fd = ns.db.diag.windfury.fights
     wfT.fights = fd.agree == 2 and fd.missed == 1 and fd.extra == 1
+    -- alone and in a group are counted apart: the solo fights, the hits whose amount could be read, the lines the game wrote
+    do
+        local wd, a = ns.db.diag.windfury, ns.db.diag.windfury.amounts or {}
+        wfT.apart = fd.solo ~= nil and fd.solo.agree == 1 and fd.solo.missed == 1 and fd.solo.extra == 1 and type(fd.lastSolo) == "string"
+            and (a.soloRead or 0) > 0 and (a.soloHidden or 0) == 3 and (a.groupRead or 0) >= 3 and (a.groupHidden or 0) == 0 and #wd.solo > 0 and #wd.solo <= 12
+            and #wd.samples == 1 and wd.samples[1]:find("group=true", 1, true) ~= nil and wd.solo[1]:find("group=false", 1, true) ~= nil
+            and (ns.db.diag.feedFmt or {}).written == 1
+        wfT.apartSay = "solo read " .. tostring(a.soloRead) .. " hidden " .. tostring(a.soloHidden) .. ", group read " .. tostring(a.groupRead)
+            .. ", solo fights " .. tostring(fd.solo and (fd.solo.agree .. "/" .. fd.solo.missed .. "/" .. fd.solo.extra)) .. ", samples " .. #wd.solo .. "+" .. #wd.samples
+            .. ", written " .. tostring((ns.db.diag.feedFmt or {}).written)
+        world.class = "Shaman"
+        for _, r in ipairs(ns.HealthRows()) do if r.name == "Windfury hit amounts" then wfT.amountsRow = r.state .. ": " .. r.detail end end
+        world.class = nil
+    end
     world.class = "Shaman"
     for _, r in ipairs(ns.HealthRows()) do if r.name == "Windfury procs" then wfT.health = r.state end end
     world.class = nil
@@ -1743,6 +1757,9 @@ if MODE ~= "bare" then
     check("windfury: an unknown weapon enchant counts until the damage meter or the shaman's own cast says what it is",
         wfT.unknownCounted and wfT.learnedNot and wfT.unknownQuiet and wfT.learned and wfT.castNot and wfT.castIs)
     check("windfury: fights are compared with the damage meter and the client checks say so (" .. tostring(wfT.health) .. ")", wfT.fights and wfT.health == "limited")
+    check("windfury: hits alone and in a group are counted apart, with their own samples (" .. tostring(wfT.apartSay) .. ")", wfT.apart)
+    check("windfury: the client checks say where hit amounts can be read (" .. tostring(wfT.amountsRow) .. ")",
+        type(wfT.amountsRow) == "string" and wfT.amountsRow:find("alone", 1, true) ~= nil and wfT.amountsRow:find("in a group", 1, true) ~= nil)
     check("windfury: /dls windfury lists the biggest (" .. tostring(wfT.sayAll) .. ")", wfT.say:find("procs seen in all", 1, true) ~= nil and wfT.sayAll:find("#1  300 damage, 1 proc on Test Boar", 1, true) ~= nil and wfT.sayAll:find("#1  450 damage, 3 hits, 1 crit", 1, true) ~= nil)
     check("windfury: the preview shows made-up procs and keeps nothing (" .. tostring(wfT.preview1) .. " / " .. tostring(wfT.preview2) .. ")",
         wfT.preview1:find("Windfury  212 + 198 + 240", 1, true) ~= nil and wfT.preview2:find("Windfury  TOP 2  1134 damage!", 1, true) ~= nil
