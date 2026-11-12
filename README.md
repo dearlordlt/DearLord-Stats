@@ -148,9 +148,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   from a cheap or an expensive one; the usual row appears once three days are known. A stack shows its
   total, and a tooltip that is open while listings arrive is redrawn. Your own house is always
   shown; the neutral one and the other faction's appear while you hold Shift (Settings: Alt, Ctrl,
-  always or never). On an ore the same key adds `Horde AH smelted 1s 60c` with the bar's name beside
-  it: what each ore sells for as bars (your own smelting recipe sets the ratio, otherwise the usual
-  one), green when that beats selling the ore. The **Prices** tab starts with one line for the scans (each house's age, and Scan
+  always or never). On an ore the same key adds `Horde AH smelted 1s 60c` with the bar's name at the
+  end of the row: what each ore sells for as bars (your own smelting recipe sets the ratio, otherwise
+  the usual one), green when that beats selling the ore. The rows are set in columns: prices and stack
+  totals end at the same place, and the seen counts and ages line up under each other. The **Prices** tab starts with one line for the scans (each house's age, and Scan
   now), then a browser: search by name across every house, one labelled column per house, click an item
   for a table of every house (lowest, median, units up, usual price, age, and what a vendor pays) and a line
   chart per house, green where the price rose and red where it fell. Both the tooltip line and the

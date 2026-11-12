@@ -676,7 +676,7 @@ end, "ah:error")
 
 ----------------------------------------------------------------------
 -- tooltip rows: "Horde AH lowest  9s 31c     19 seen · 5 min ago" and "Horde AH usual  8s 0c     last 7 scan days",
--- plus the stack total when hovering a stack; on the modifier also "Horde AH smelted  1s 60c     Copper Bar · 512 seen · 4 h ago"
+-- plus the stack total when hovering a stack; on the modifier also "Horde AH smelted  1s 60c     512 seen · 4 h ago · Copper Bar"
 ----------------------------------------------------------------------
 local function modifierHeld()
     local m = ns.db and ns.db.ahCompare or "shift"
@@ -688,7 +688,7 @@ local function modifierHeld()
 end
 
 -- the tooltip has no columns of its own, so the rows are padded with spaces measured in the
--- tooltip's font: label | unit price | ×stack | stack total, each column lined up
+-- tooltip's font, every column lined up
 local meter
 local function measure(text)
     if not meter then
@@ -701,12 +701,20 @@ local function measure(text)
     meter:SetText(text)
     return N(meter:GetStringWidth()) or (#text * 6)
 end
-local function padTo(text, width, left)                      -- add spaces until the text is at least `width` wide
-    local space = math.max(1, measure("a a") - measure("aa"))
-    local missing = width - measure(text)
-    if missing <= 0 then return text end
-    local pad = string.rep(" ", math.ceil(missing / space))
-    return left and (pad .. text) or (text .. pad)
+local function spaceWidth() return math.max(1, measure("a a") - measure("aa")) end
+-- one tooltip row built column by column: `put` adds text so that it starts (or, with `right`, ends) x wide
+-- from the start of the row. The whole row is measured each time, so the rounding to a whole number of
+-- spaces never adds up from one column to the next.
+local function newRow() return { plain = "", text = "" } end
+local function put(row, text, x, right, color)
+    local n = 0
+    if row.plain ~= "" then
+        local target = right and x or (x + measure(text))
+        n = math.max(1, math.floor((target - measure(row.plain .. text)) / spaceWidth() + 0.5))
+    end
+    local pad = string.rep(" ", n)
+    row.plain = row.plain .. pad .. text
+    row.text = row.text .. pad .. (color or "") .. text .. (color and "|r" or "")
 end
 
 -- ore -> bar, ores per bar: what a stack is worth once smelted. The character's own Mining recipes (kept
@@ -746,10 +754,10 @@ local function addLines(tooltip, id)
         local p, a, n, sec = ns.AuctionPriceByID(id, k)
         if not p then return end
         local row = { label = name .. " lowest", unit = p, win = own and (not vendor or vendor <= 0 or ns.AuctionNet(p) > vendor),
-            note = n .. " seen  ·  " .. ns.AuctionAgeText(a, sec) }
+            seen = tostring(n), age = ns.AuctionAgeText(a, sec) }
         rows[#rows + 1] = row
         local usual, days = ns.AuctionUsual(id, k)
-        if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, note = "last " .. days .. " scan days" } end
+        if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, span = "last " .. days .. " scan days" } end
         return row
     end
     local ownName = ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH"
@@ -764,7 +772,7 @@ local function addLines(tooltip, id)
             local better = (not price or each > price) and (not vendor or vendor <= 0 or ns.AuctionNet(each) > vendor)
             if better and ownRow then ownRow.win = false end   -- one green row: the best way to sell
             rows[#rows + 1] = { label = ownName .. " smelted", unit = math.floor(each), total = math.floor(each * count), win = better,
-                note = barName .. "  ·  " .. bn .. " seen  ·  " .. ns.AuctionAgeText(ba, bsec) }
+                seen = tostring(bn), age = ns.AuctionAgeText(ba, bsec), extra = barName }
         end
     end
     if held then                                               -- the other houses: on a modifier (Shift by default), always, or never
@@ -774,17 +782,40 @@ local function addLines(tooltip, id)
     end
     tooltip.dlsAhShown = (#rows > 0 or bar) and id or nil       -- an ore with no price of its own still gains a row on the modifier
     if #rows == 0 then return end
-    local labelW, unitW, totalW = 0, 0, 0
+    -- columns: label | price each | · ×stack | stack total | seen count | "seen ·" | age (| what it is smelted into)
+    local labelW, unitW, totalW, seenW, ageW = 0, 0, 0, 0, 0
     for _, r in ipairs(rows) do
         r.unitText, r.totalText = ns.strip(ns.money(r.unit)), count > 1 and ns.strip(ns.money(r.total or r.unit * count)) or nil
         labelW, unitW = math.max(labelW, measure(r.label)), math.max(unitW, measure(r.unitText))
         if r.totalText then totalW = math.max(totalW, measure(r.totalText)) end
+        if r.seen then seenW, ageW = math.max(seenW, measure(r.seen)), math.max(ageW, measure(r.age)) end
     end
+    local sp = spaceWidth()
+    local gap, mid, word = sp * 3, "·   ×" .. count, "seen  ·"
+    local xUnit = labelW + gap + unitW                           -- right edge of the price
+    local xMid = xUnit + gap                                     -- "· ×6"
+    local xTotal = xMid + measure(mid) + gap + totalW            -- right edge of the stack total
+    local xSeen = (count > 1 and xTotal or xUnit) + gap * 2 + seenW   -- right edge of the seen count
+    local xWord = xSeen + sp
+    local xAge = xWord + measure(word) + sp * 2
     for _, r in ipairs(rows) do
         local col = r.win and ns.GREEN or ns.WHITE
-        local left = ns.LABEL .. padTo(r.label, labelW) .. "|r   " .. col .. padTo(r.unitText, unitW, true) .. "|r"
-        if r.totalText then left = left .. ns.LABEL .. "   ·   ×" .. count .. "   |r" .. col .. padTo(r.totalText, totalW, true) .. "|r" end
-        tooltip:AddDoubleLine(left, r.note and (ns.LABEL .. r.note .. "|r") or " ")
+        local row = newRow()
+        put(row, r.label, 0, false, ns.LABEL)
+        put(row, r.unitText, xUnit, true, col)
+        if r.totalText then
+            put(row, mid, xMid, false, ns.LABEL)
+            put(row, r.totalText, xTotal, true, col)
+        end
+        if r.seen then
+            put(row, r.seen, xSeen, true, ns.LABEL)
+            put(row, word, xWord, false, ns.LABEL)
+            put(row, r.age, xAge, false, ns.LABEL)
+            if r.extra then put(row, "·  " .. r.extra, xAge + ageW + sp * 2, false, ns.LABEL) end
+        elseif r.span then
+            put(row, r.span, xSeen - seenW, false, ns.LABEL)
+        end
+        tooltip:AddLine(row.text, 1, 1, 1)
     end
     tooltip:Show()
 end
