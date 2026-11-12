@@ -82,7 +82,10 @@ function GameTooltip:IsShown() return world.tooltip ~= nil end
 GameTooltipTextLeft1.GetText = function() return world.tooltip end
 GameTooltip.lines = {}; GameTooltip.forbidden = false
 local function plain(t) return (tostring(t):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
-function GameTooltip:AddDoubleLine(l, r) self.lines[#self.lines + 1] = plain(l) .. " | " .. plain(r) end
+function GameTooltip:AddDoubleLine(l, r)
+    self.lines[#self.lines + 1] = plain(l) .. " | " .. plain(r)
+    self.raw = self.raw or {}; self.raw[#self.lines] = l         -- with its colour codes, for checks on which row is green
+end
 function GameTooltip:AddLine(l) self.lines[#self.lines + 1] = plain(l) end
 function GameTooltip:IsForbidden() return self.forbidden end
 function GameTooltip:SetBagItem(bag, slot) self.lines = {} end
@@ -759,6 +762,30 @@ if MODE ~= "bare" then
     GameTooltip:SetBagItem(0, 2); hook(GameTooltip, { id = 783, dataInstanceID = 15 }); tipStack = { unpack(GameTooltip.lines) }
     world.alt = true; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 16 }); scanResult.tipAlt = { unpack(GameTooltip.lines) }; world.alt = false
     ns.db.ahCompare = "always"; GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 783, dataInstanceID = 23 }); scanResult.tipAlways = { unpack(GameTooltip.lines) }; ns.db.ahCompare = "alt"
+    -- an ore: the modifier adds what it is worth smelted (bars at 45c, ore at 30c)
+    do
+        local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
+        local function tip(inst, stack)
+            GameTooltip.lines = {}; GameTooltip.raw = {}; GameTooltip.dlsAhStack = stack; hook(GameTooltip, { id = 2770, dataInstanceID = inst })
+            local out = { unpack(GameTooltip.lines) }
+            out.green = {}
+            for i, l in ipairs(GameTooltip.raw) do out.green[i] = l:find(ns.GREEN, 1, true) ~= nil end
+            return out
+        end
+        items[2840] = { p = 45, n = 12, d = AH_DAY - 2 }
+        scanResult.smeltPlain = tip(301)
+        world.alt = true
+        scanResult.smelt = tip(302)
+        scanResult.smeltStack = tip(303, { id = 2770, count = 4 })
+        items[2840].p = 20; scanResult.smeltWorse = tip(304)                       -- bars cheaper than the ore
+        items[2840].p = 45
+        local keep = ns.char.recipes.Mining                                         -- the character's own recipe wins: 2 ore a bar
+        ns.char.recipes.Mining = { list = { { name = "Smelt Copper", out = 2840, reagents = { { id = 2770, qty = 2 } } } } }
+        scanResult.smeltOwn = tip(305)
+        ns.char.recipes.Mining = keep
+        items[2840] = nil; scanResult.smeltNoBar = tip(306)
+        world.alt = false; GameTooltip.dlsAhStack = nil; GameTooltip.lines = {}
+    end
     fire("MODIFIER_STATE_CHANGED", "LALT", 1)
     scanResult.unknownAndForbidden = tipUnknown == 0 and tipForbidden == 0
     -- the automatic scan is sent on the next key press (the game ignores a full-list request from a timer), not Escape
@@ -1398,6 +1425,16 @@ if MODE ~= "bare" then
     check("history: two days for the knife, newest first", #scanResult.historyRows == 2 and scanResult.historyRows[1].min == 150 and scanResult.historyRows[2].min == 200)
     check("tooltip: holding Alt adds the other faction's line (" .. tostring(scanResult.tipAlt[3]) .. ")", #scanResult.tipAlt == 3 and norm(scanResult.tipAlt[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
     check("tooltip: 'always' shows the other faction without a modifier (" .. tostring(scanResult.tipAlways[3]) .. ")", #scanResult.tipAlways == 3 and norm(scanResult.tipAlways[3]) == "Alliance AH lowest 3s 0c | 7 seen · yesterday")
+    do
+        local sm, st, sw, so = scanResult.smelt, scanResult.smeltStack, scanResult.smeltWorse, scanResult.smeltOwn
+        check("smelted: the modifier adds the bar price per ore under the ore's own (" .. norm(sm[3] or "-") .. ")",
+            #scanResult.smeltPlain == 2 and #sm == 3 and norm(sm[2]) == "Horde AH lowest 30c | 40 seen · 2 days ago" and norm(sm[3]) == "Horde AH smelted 45c | Copper Bar · 12 seen · 2 days ago")
+        check("smelted: a stack shows its total, and the better way to sell is the one green row (" .. norm(st[3] or "-") .. ")",
+            norm(st[3]) == "Horde AH smelted 45c · ×4 1s 80c | Copper Bar · 12 seen · 2 days ago"
+            and sm.green[3] and not sm.green[2] and sw.green[2] and not sw.green[3])
+        check("smelted: the character's own recipe sets the ratio, and no bar price means no row (" .. norm(so[3] or "-") .. ")",
+            norm(so[3]) == "Horde AH smelted 22c | Copper Bar · 12 seen · 2 days ago" and #scanResult.smeltNoBar == 2)
+    end
     check("history header: collapsed shows the newest day, a click shows both (" .. tostring(scanResult.collapsedRows) .. " -> " .. tostring(scanResult.expandedRows) .. ")", scanResult.collapsedRows == 2 and scanResult.expandedRows == 3)   -- the neutral house adds one row
     check("neutral AH: scan at a goblin auctioneer lands under the Neutral key and shows in tooltips while the modifier is held (" .. tostring(scanResult.tipNeutral[3]) .. ")",
         scanResult.neutral and scanResult.neutral.count == 4 and #scanResult.tipNeutral == 3 and norm(scanResult.tipNeutral[3]) == "Neutral AH lowest 3c | 10 seen · just now")

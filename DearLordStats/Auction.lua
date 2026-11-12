@@ -676,7 +676,7 @@ end, "ah:error")
 
 ----------------------------------------------------------------------
 -- tooltip rows: "Horde AH lowest  9s 31c     19 seen · 5 min ago" and "Horde AH usual  8s 0c     last 7 scan days",
--- plus the stack total when hovering a stack
+-- plus the stack total when hovering a stack; on the modifier also "Horde AH smelted  1s 60c     Copper Bar · 512 seen · 4 h ago"
 ----------------------------------------------------------------------
 local function modifierHeld()
     local m = ns.db and ns.db.ahCompare or "shift"
@@ -709,6 +709,26 @@ local function padTo(text, width, left)                      -- add spaces until
     return left and (pad .. text) or (text .. pad)
 end
 
+-- ore -> bar, ores per bar: what a stack is worth once smelted. The character's own Mining recipes (kept
+-- when the profession window was opened) come first, this list covers everyone else.
+local SMELT = {
+    [2770] = { 2840, 1, "Copper Bar" }, [2771] = { 3576, 1, "Tin Bar" }, [2775] = { 2842, 1, "Silver Bar" },
+    [2772] = { 3575, 1, "Iron Bar" }, [2776] = { 3577, 1, "Gold Bar" }, [3858] = { 3860, 1, "Mithril Bar" },
+    [7911] = { 6037, 1, "Truesilver Bar" }, [10620] = { 12359, 1, "Thorium Bar" }, [11370] = { 11371, 8, "Dark Iron Bar" },
+}
+-- returns bar id, ores per smelt, bars per smelt, bar name (may be nil)
+local function smeltOf(id)
+    local cache = ns.char and ns.char.recipes and ns.char.recipes.Mining
+    for _, r in ipairs(cache and cache.list or {}) do
+        local g = r.reagents
+        if r.out and g and #g == 1 and g[1].id == id and (g[1].qty or 0) > 0 then
+            return r.out, g[1].qty, r.qmin or 1, SMELT[id] and SMELT[id][1] == r.out and SMELT[id][3] or nil
+        end
+    end
+    local s = SMELT[id]
+    if s then return s[1], s[2], 1, s[3] end
+end
+
 local function addLines(tooltip, id)
     tooltip.dlsAhItem = id                                     -- a price seen while this is up redraws it
     if not (ns.db and ns.db.ahTooltip) then return end
@@ -725,22 +745,38 @@ local function addLines(tooltip, id)
     local function house(k, name, own)
         local p, a, n, sec = ns.AuctionPriceByID(id, k)
         if not p then return end
-        rows[#rows + 1] = { label = name .. " lowest", unit = p, win = own and (not vendor or vendor <= 0 or ns.AuctionNet(p) > vendor),
+        local row = { label = name .. " lowest", unit = p, win = own and (not vendor or vendor <= 0 or ns.AuctionNet(p) > vendor),
             note = n .. " seen  ·  " .. ns.AuctionAgeText(a, sec) }
+        rows[#rows + 1] = row
         local usual, days = ns.AuctionUsual(id, k)
         if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, note = "last " .. days .. " scan days" } end
+        return row
     end
-    house(nil, ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH", true)
-    if modifierHeld() then                                     -- the other houses: on a modifier (Shift by default), always, or never
+    local ownName = ((ns.AuctionKey() or ""):match("%-(%a+)$") or "Your") .. " AH"
+    local ownRow = house(nil, ownName, true)
+    local held = modifierHeld()
+    local bar, per, makes, barName = smeltOf(id)
+    if bar and held then                                       -- an ore: what it sells for as bars, per ore
+        local bp, ba, bn, bsec = ns.AuctionPriceByID(bar)
+        local each = bp and bp * makes / per
+        if each and each >= 1 then
+            barName = (C_Item and C_Item.GetItemInfo and S((C_Item.GetItemInfo("item:" .. bar)))) or barName or "bars"
+            local better = (not price or each > price) and (not vendor or vendor <= 0 or ns.AuctionNet(each) > vendor)
+            if better and ownRow then ownRow.win = false end   -- one green row: the best way to sell
+            rows[#rows + 1] = { label = ownName .. " smelted", unit = math.floor(each), total = math.floor(each * count), win = better,
+                note = barName .. "  ·  " .. bn .. " seen  ·  " .. ns.AuctionAgeText(ba, bsec) }
+        end
+    end
+    if held then                                               -- the other houses: on a modifier (Shift by default), always, or never
         if ns.db.ahTooltipNeutral ~= false then house(ns.AuctionNeutralKey(), "Neutral AH") end   -- the goblin house serves both factions
         local ok = ns.AuctionOtherKey()
         house(ok, ((ok or ""):match("%-(%a+)$") or "Other") .. " AH")
     end
-    tooltip.dlsAhShown = #rows > 0 and id or nil
+    tooltip.dlsAhShown = (#rows > 0 or bar) and id or nil       -- an ore with no price of its own still gains a row on the modifier
     if #rows == 0 then return end
     local labelW, unitW, totalW = 0, 0, 0
     for _, r in ipairs(rows) do
-        r.unitText, r.totalText = ns.strip(ns.money(r.unit)), count > 1 and ns.strip(ns.money(r.unit * count)) or nil
+        r.unitText, r.totalText = ns.strip(ns.money(r.unit)), count > 1 and ns.strip(ns.money(r.total or r.unit * count)) or nil
         labelW, unitW = math.max(labelW, measure(r.label)), math.max(unitW, measure(r.unitText))
         if r.totalText then totalW = math.max(totalW, measure(r.totalText)) end
     end
