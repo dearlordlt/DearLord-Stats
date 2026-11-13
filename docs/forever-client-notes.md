@@ -102,6 +102,9 @@ DearLord Stats meter (2.30.0) therefore uses:
   hidden GUID handed straight back is not known; the addon tries it and records the answer in
   `diag.meter.hiddenGuid`.
 - No hit counts, crits or overhealing exist in this API (Details switches those columns off).
+- The meter code never tests a possibly hidden value for truth or compares it, not even with `nil`
+  (`if v then`, `v or x`, `v == nil`): it asks `ns.exists(v)`, which calls `issecretvalue` first. The
+  harness cannot catch such a slip (Lua 5.1 has no hook for a truth test), so this is kept by reading.
 
 What the addon records for the next read of the saved variables: `diag.meter` with `api`, `interp`,
 `abbrev`, `events`, `liveDraws` / `readDraws`, `liveSolo` / `liveGroup` (which fields of the first

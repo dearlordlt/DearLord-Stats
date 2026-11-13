@@ -154,7 +154,8 @@ local function itemOf(e, demo)
     local unit = e.unit
     local class = demo and e.class or classOf(e.owner or unit)
     local pet = demo and e.pet or e.owner ~= nil
-    local it = { class = class, own = e.isPlayer and true or false, value = e.scaled or 0, max = 100, cells = {} }   -- 0-100, may be a hidden number
+    local it = { class = class, own = e.isPlayer and true or false, value = 0, max = 100, cells = {} }
+    if ns.exists(e.scaled) then it.value = e.scaled end                 -- 0-100, may be a hidden number
     it.r, it.g, it.b = colorFor(class, pet)
     if pet then
         it.class = nil
@@ -164,7 +165,7 @@ local function itemOf(e, demo)
     if demo then it.name, it.key = e.name, "demo:" .. e.name
     else
         local name = UnitName and UnitName(unit)
-        if name ~= nil then it.name = name else it.name = unit end       -- the name goes straight to the font string: it may be hidden
+        if ns.exists(name) then it.name = name else it.name = unit end   -- the name goes straight to the font string: it may be hidden
         it.key = S(UnitGUID and UnitGUID(unit)) or unit
     end
     local st = N(e.status)
@@ -298,7 +299,7 @@ local function show(entries, demo, mobName)
     setWarning(on, scaled, demo)
     tw.title:SetText(on and (ns.RED .. "Ease off|r") or (ns.WHITE .. "Threat|r"))
     -- the mob's name goes straight to its own font string: it may be a secret string
-    if mobName ~= nil then ns.BarSetText(tw.sub, mobName) else tw.sub:SetText("") end
+    ns.BarSetText(tw.sub, mobName)
     tw:Layout()
     tw:Show()
 end

@@ -139,7 +139,8 @@ local function colorOf(src, enemies)
     if class and class ~= "" then return ns.CensusClassColor(class) end
     if class == nil and ns.exists(src.classFilename) and C_ClassColor and C_ClassColor.GetClassColor then
         local ok, c = pcall(C_ClassColor.GetClassColor, src.classFilename)
-        if ok and c ~= nil and type(c) == "table" and c.GetRGB then
+        c = ok and T(c)
+        if c and c.GetRGB then
             local ok2, r, g, b = pcall(c.GetRGB, c)
             if ok2 and ns.exists(r) then diag().classColor = "hidden class coloured by the game"; return r, g, b end
         end
@@ -210,7 +211,7 @@ local function readColumn(view, seg)
     else
         -- hidden: keep the game's order, scale against the game's own largest value
         out.total = sess.totalAmount
-        out.max = ns.exists(sess.maxAmount) and sess.maxAmount or (out.items[1] and out.items[1].value)
+        if ns.exists(sess.maxAmount) then out.max = sess.maxAmount elseif out.items[1] then out.max = out.items[1].value end
         for i, it in ipairs(out.items) do it.rank = i; it.key = nil end
         probeLive(sources)
     end
@@ -472,19 +473,20 @@ local function shorten(v)
     if ok and ns.exists(s) then return s end
     ok, s = pcall(AbbreviateNumbers, v)
     if ok and ns.exists(s) then return s end
+    return nil
 end
 local function amountCell(v)
     local n = N(v)
     if n then return { text = ns.shortNumber(n) } end
-    if v == nil then return { text = "" } end
+    if not ns.exists(v) then return { text = "" } end
     local s = shorten(v)
-    if s ~= nil then return { text = s } end
+    if ns.exists(s) then return { text = s } end
     return { fmt = "%.0f", arg = v }
 end
 local function rateCell(v)
     local n = N(v)
     if n then return { text = rateText(n) } end
-    if v == nil then return { text = "" } end
+    if not ns.exists(v) then return { text = "" } end
     return { fmt = "%.1f/s", arg = v }
 end
 
@@ -550,10 +552,13 @@ local function segLabel(isDemo)
     local e, list = lastEntry()
     if type(seg) == "number" then
         e = nil
-        for _, x in ipairs(list) do if N(T(x) and x.sessionID) == seg then e = x end end
-        return e and e.name or ("fight " .. seg), durationOf(seg)
+        for _, x in ipairs(list) do if T(x) and N(x.sessionID) == seg then e = x end end
+        if e and ns.exists(e.name) then return e.name, durationOf(seg) end
+        return "fight " .. seg, durationOf(seg)
     end
-    return e and T(e) and e.name or nil, durationOf(state.use or "fight")
+    e = T(e)
+    if e and ns.exists(e.name) then return e.name, durationOf(state.use or "fight") end
+    return nil, durationOf(state.use or "fight")
 end
 
 local function drawTitle(isDemo)
@@ -561,10 +566,11 @@ local function drawTitle(isDemo)
     tabFight:SetLabel(type(state.seg) == "number" and "Fight*" or "Fight")
     local name, dur = segLabel(isDemo)
     state.segName, state.segDuration = S(name), N(dur)
-    if name == nil or name == "" then titleName:SetText(inCombat() and "in a fight" or "") else ns.BarSetText(titleName, name) end
+    -- the fight's name may be hidden: it is only looked at when it is readable
+    if not ns.exists(name) or state.segName == "" then titleName:SetText(inCombat() and "in a fight" or "") else ns.BarSetText(titleName, name) end
     local d = N(dur)
     if d then titleTime:SetText(clock(d))
-    elseif dur ~= nil then
+    elseif ns.exists(dur) then
         if not pcall(titleTime.SetFormattedText, titleTime, "%.0fs", dur) then titleTime:SetText("") end
     else titleTime:SetText("") end
 end
@@ -638,10 +644,10 @@ local function readSpells(c, it)
     local kind = TYPE[view.kind]
     local guid, cid = it.guid, nil
     local hiddenGuid = false
-    if it.creature then guid, cid = nil, it.creatureID
+    if it.creature then guid, cid = nil, N(it.creatureID)
     elseif it.own and UnitGUID then guid = UnitGUID("player")
     elseif not S(guid) then hiddenGuid = ns.exists(guid) end
-    if guid == nil and cid == nil then return nil, "none" end
+    if not ns.exists(guid) and cid == nil then return nil, "none" end
     local detail = fetchSource(kind, guid, cid)
     local spells = detail and T(detail.combatSpells)
     if hiddenGuid then diag().hiddenGuid = (spells and #spells > 0) and "accepted" or (detail and "empty" or "refused") end
@@ -652,18 +658,19 @@ local function readSpells(c, it)
         sp = T(sp)
         if sp then
             local name, plain = spellLabel(sp.spellID)
+            if not ns.exists(name) then name, plain = "?", true end
             local details = T(sp.combatSpellDetails)
             local creature = sp.creatureName
             local who = S(creature)
             local unitName = details and S(details.unitName)
-            local item = { index = i, name = name or "?", icon = spellIcon(sp.spellID), value = sp.totalAmount, rate = sp.amountPerSecond,
+            local item = { index = i, name = name, icon = spellIcon(sp.spellID), value = sp.totalAmount, rate = sp.amountPerSecond,
                 amount = N(sp.totalAmount), perSec = N(sp.amountPerSecond) }
             local pet = (details and B(details.isPet)) or (who ~= nil and who ~= "")
-            if who and who ~= "" and who == name then                 -- a totem's own spell carries the totem's name twice
+            if who and who ~= "" and plain and who == name then       -- a totem's own spell carries the totem's name twice
             elseif who and who ~= "" then
                 if plain then item.name = name .. " (" .. who .. ")" else item.nameFmt, item.nameArgs = "%s (%s)", { name, who } end
             elseif who == nil and ns.exists(creature) then
-                item.nameFmt, item.nameArgs = "%s  |cffb0b8c4%s|r", { name or "?", creature }     -- a hidden pet or totem name, written by the game
+                item.nameFmt, item.nameArgs = "%s  |cffb0b8c4%s|r", { name, creature }            -- a hidden pet or totem name, written by the game
             elseif (view.enemies or it.creature) and unitName and unitName ~= "" then
                 if plain then item.name = name .. " (" .. unitName .. ")" else item.nameFmt, item.nameArgs = "%s (%s)", { name, unitName } end
             end
@@ -685,7 +692,7 @@ local function readSpells(c, it)
             if item.key then if seen[item.key] then item.key = item.key .. "#" .. i end; seen[item.key] = true end
         end
     else
-        out.max = ns.exists(detail.maxAmount) and detail.maxAmount or (out.items[1] and out.items[1].value)
+        if ns.exists(detail.maxAmount) then out.max = detail.maxAmount elseif out.items[1] then out.max = out.items[1].value end
         for _, item in ipairs(out.items) do item.key = nil end
     end
     return out
@@ -732,7 +739,7 @@ local function drawTip()
     tip.title:ClearAllPoints(); tip.title:SetPoint("TOPLEFT", tip, "TOPLEFT", pad, -(headH - fsz) / 2 + 1); tip.title:SetWidth(W * 0.55)
     tip.sub:ClearAllPoints(); tip.sub:SetPoint("TOPRIGHT", tip, "TOPRIGHT", -pad, -(headH - fsz) / 2); tip.sub:SetWidth(W * 0.4)
     ns.BarSetText(tip.title, it.name)
-    tip.title:SetTextColor(it.r or 1, it.g or 1, it.b or 1)
+    if not (ns.exists(it.r) and pcall(tip.title.SetTextColor, tip.title, it.r, it.g, it.b)) then tip.title:SetTextColor(1, 1, 1) end
     tip.sub:SetText(c.view.name .. (state.seg == "total" and ", total" or ""))
 
     local data, why

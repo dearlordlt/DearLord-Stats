@@ -36,8 +36,9 @@ local function newText(parent, justify)
 end
 ns.BarText = newText
 -- a text that may be hidden: the font string takes it, Lua never looks at it
+-- (a hidden value is never compared or tested for truth, not even against nil: ns.exists asks the game first)
 local function setText(fs, v)
-    if v == nil then fs:SetText(""); return end
+    if not ns.exists(v) then fs:SetText(""); return end
     if not pcall(fs.SetText, fs, v) then fs:SetText("") end
 end
 ns.BarSetText = setText
@@ -277,8 +278,8 @@ end
 --         own, edge = {r,g,b}, dim }      value, max and the texts may be hidden values
 ----------------------------------------------------------------------
 local function setValue(sb, v, max, instant)
-    if v == nil then v = 0 end
-    if max == nil then max = 1 end
+    if not ns.exists(v) then v = 0 end
+    if not ns.exists(max) then max = 1 end
     local plain = N(max)
     if plain and plain <= 0 then max = 1 end
     if INTERP and not instant then
@@ -395,11 +396,12 @@ function ns.BarList(parent, hud)
     local function fill(r, it, fresh)
         r.item = it
         -- the icon is only touched when it changes (a hidden one cannot be compared, so it is always set)
-        local ik = it.icon or it.portraitKey or it.portrait or it.class or it.fallbackIcon or "?"
-        ik = S(ik) or N(ik)
+        local hasIcon = ns.exists(it.icon)
+        local ik
+        if hasIcon then ik = S(it.icon) or N(it.icon) else ik = it.portraitKey or it.portrait or it.class or it.fallbackIcon or "?" end
         if L.showIcon and (ik == nil or r.iconKey ~= ik) then
             r.iconKey = ik
-            if it.icon then
+            if hasIcon then
                 r.portraitOf = nil
                 if not pcall(r.icon.SetTexture, r.icon, it.icon) then r.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark") end
                 r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -411,7 +413,9 @@ function ns.BarList(parent, hud)
                 r.icon:SetTexture(it.fallbackIcon or "Interface\\Icons\\INV_Misc_QuestionMark"); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             else r.portraitOf = nil end
         end
-        if not pcall(r.bar.SetStatusBarColor, r.bar, it.r or 0.45, it.g or 0.6, it.b or 0.85) then r.bar:SetStatusBarColor(0.45, 0.6, 0.85) end
+        local cr, cg, cb = it.r, it.g, it.b                       -- may be hidden numbers, straight from the game's class colour
+        if not (ns.exists(cr) and ns.exists(cg) and ns.exists(cb)) then cr, cg, cb = 0.45, 0.6, 0.85 end
+        if not pcall(r.bar.SetStatusBarColor, r.bar, cr, cg, cb) then r.bar:SetStatusBarColor(0.45, 0.6, 0.85) end
         if fresh then setValue(r.bar, 0, 1, true) end           -- a new bar grows from nothing
         setValue(r.bar, it.value, it.max)
         r.rank:SetText(it.rank and (it.rank .. ".") or "")
