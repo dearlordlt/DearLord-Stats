@@ -41,7 +41,7 @@ local CONTROLS = {
     { type = "check", key = "showMeter", label = "Damage meter window: damage, healing and more for everyone in the fight, from the game's own meter" },
     { type = "check", key = "meterSecond", label = "Second column (healing beside damage; each column's title picks what it shows)" },
     { type = "choice", key = "meterNumbers", label = "Numbers on a bar", options = function() return ns.METER_NUMBERS end },
-    { type = "slider", key = "meterBarHeight", label = "Bar height", min = 12, max = 30, step = 1 },
+    { type = "slider", key = "meterBarHeight", label = "Bar height (meter and threat)", min = 12, max = 30, step = 1 },
     { type = "slider", key = "meterAlpha", label = "Window darkness (meter and threat)", min = 0.2, max = 1, step = 0.05, percent = true },
     { type = "check", key = "meterResetLogin", label = "Total starts over when you log in (off: only the reset button clears it)" },
     { type = "check", key = "meterHideIdle", label = "Hide the meter 20 s after a fight, until the next one" },

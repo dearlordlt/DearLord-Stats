@@ -50,6 +50,9 @@ meter has no per-hit data, so there are no crits, hit counts or overhealing.
 With a pet out or in a group: a **threat window** that opens with each fight and stays until you
 close it with its x (the last fight's bars stay, dimmed). One bar per unit on the mob's threat
 list: you and your pet when solo, the party and their pets in a dungeon, the top ten in a raid (always including you).
+It is drawn with the same animated bars as the damage meter; drag its corner to set the width and how
+tall it may grow (it is only ever as tall as its bars, and when it cannot hold everyone the top bars
+and your own stay).
 Bars are in class colours with class crests (pet portraits for pets), 100% means that unit pulls
 aggro, the holder is marked `aggro`, and a coloured edge shows the state (green safe, yellow above
 the tank, orange or red holding aggro). `/dls threat` shows or hides it, `/dls threat test` shows a

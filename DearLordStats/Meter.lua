@@ -449,14 +449,36 @@ mw.buttons = { copy = btnCopy, reset = btnReset, cols = btnCols, close = btnClos
 ----------------------------------------------------------------------
 -- drawing
 ----------------------------------------------------------------------
+-- the game's own number shortening, told to write numbers the way ns.shortNumber does (12.3k, 1.2m),
+-- so a bar reads the same during a fight (hidden, shortened by the game) and after it
+local abbrev
+local function abbrevOptions()
+    if abbrev == nil then
+        abbrev = false
+        if CreateAbbreviateConfig then
+            local ok, cfg = pcall(CreateAbbreviateConfig, {
+                { breakpoint = 1000000, abbreviation = "m", significandDivisor = 100000, fractionDivisor = 10, abbreviationIsGlobal = false },
+                { breakpoint = 10000, abbreviation = "k", significandDivisor = 100, fractionDivisor = 10, abbreviationIsGlobal = false },
+                { breakpoint = 0.000001, abbreviation = "", significandDivisor = 1, fractionDivisor = 1, abbreviationIsGlobal = false },
+            })
+            if ok and cfg ~= nil then abbrev = { config = cfg } end
+        end
+    end
+    return abbrev or nil
+end
+local function shorten(v)
+    if not AbbreviateNumbers then return nil end
+    local ok, s = pcall(AbbreviateNumbers, v, abbrevOptions())
+    if ok and ns.exists(s) then return s end
+    ok, s = pcall(AbbreviateNumbers, v)
+    if ok and ns.exists(s) then return s end
+end
 local function amountCell(v)
     local n = N(v)
     if n then return { text = ns.shortNumber(n) } end
     if v == nil then return { text = "" } end
-    if AbbreviateNumbers then
-        local ok, s = pcall(AbbreviateNumbers, v)
-        if ok and ns.exists(s) then return { text = s } end
-    end
+    local s = shorten(v)
+    if s ~= nil then return { text = s } end
     return { fmt = "%.0f", arg = v }
 end
 local function rateCell(v)
@@ -511,9 +533,7 @@ local function drawColumn(c, isDemo)
     if #bars == 0 then c.sum:SetText("")
     elseif total then
         c.sum:SetText(ns.shortNumber(total) .. ((data.rate and not c.view.count) and ("   " .. rateText(data.rate)) or ""))
-    elseif AbbreviateNumbers and ns.exists(data.total) then
-        local ok, s = pcall(AbbreviateNumbers, data.total)
-        ns.BarSetText(c.sum, ok and s or nil)
+    elseif ns.exists(data.total) then ns.BarSetText(c.sum, shorten(data.total))
     else c.sum:SetText("") end
     local d = diag()
     if #bars > 0 and not isDemo then
@@ -977,7 +997,7 @@ ns.OnLogin(function(isInitialLogin)
     local d = diag()
     d.api = (DM and DM.GetCombatSessionFromType and "by type") or (DM and DM.GetCombatSessionFromID and "by id") or "none"
     d.interp = (Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut ~= nil) or false
-    d.abbrev = AbbreviateNumbers ~= nil
+    d.abbrev = (AbbreviateNumbers ~= nil and (abbrevOptions() and "own format" or "game default")) or "none"
     d.sessions = #sessions()
     -- Total means this play session: it starts over when you log in (not on /reload)
     if isInitialLogin and ns.db.meterResetLogin ~= false and available() and not inCombat() then ns.MeterReset(true) end

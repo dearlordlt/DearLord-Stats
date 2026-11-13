@@ -688,7 +688,11 @@ advance(15)
 local function threatRows()
     local tw, out = ns.huds.threat, {}
     if not tw.shown then return nil end
-    for i = 1, tw.count or 0 do local r = tw.rows[i]; out[#out + 1] = strip(r.name.text) .. "=" .. strip(r.value.text) end
+    for i = 1, tw.count or 0 do
+        local r, v = tw.rows[i], {}
+        for k = 1, 2 do if r.cells[k].shown and r.cells[k].text ~= "" then v[#v + 1] = strip(r.cells[k].text) end end
+        out[#out + 1] = strip(r.name.text) .. "=" .. table.concat(v, "  ")
+    end
     return table.concat(out, ", ")
 end
 local threatSolo, threatSoloEdge, threatAfter, threatParty, threatPreview, threatDim, threatClosed
@@ -1751,6 +1755,21 @@ if MODE ~= "bare" then
     mT.diag = ns.db.diag.meter
     mT.errors = #(ns.db.errors or {})
 
+    -- the threat window is drawn with the same bars: sized by its corner, only as tall as its bars,
+    -- and when it cannot hold everyone your own bar stays
+    do
+        local tw = ns.huds.threat
+        local function names() local o = {}; for i = 1, tw.count or 0 do o[#o + 1] = strip(tw.rows[i].name.text) end; return table.concat(o, ",") end
+        ns.ThreatPreview(30); advance(1)
+        mT.threatFull = names() .. " " .. tw.w .. "x" .. tw.h
+        mT.threatEased = tw.rows[1] ~= nil and tw.rows[1].bar.eased == true and tw.rows[2].mark.shown == true and tw.grip ~= nil
+        tw.grip.scripts.OnMouseDown(tw.grip, "LeftButton"); tw:SetSize(320, 80); tw.grip.scripts.OnMouseUp(tw.grip); advance(1)
+        mT.threatSmall = names() .. " " .. tw.w .. "x" .. tw.h .. " kept " .. tostring(ns.db.threatW) .. "x" .. tostring(ns.db.threatH)
+        ns.ResetLayout(); advance(1)
+        mT.threatBack = names() .. " " .. tw.w .. "x" .. tw.h
+        ns.CloseThreat(); advance(1)
+    end
+
     world.party = keepParty
     putBack(ns.char, keepChar); putBack(ns.session, keepSession)
     ns.lastFight, ns.db.diag.fights, ns.db.diag.fightsFromMeter, ns.db.showRecap = keepLast, keepFights, keepMeter, keepRecap
@@ -2117,6 +2136,10 @@ check("meter: Total starts over at login, not on a reload; the reset button clea
 check("meter: closed with its x, back with /dls meter, hidden when idle if asked", mT.closed and mT.reopened and mT.idleHidden and mT.idleBack)
 check("meter: the client checks report it (" .. tostring(mT.health) .. ")", mT.health:find("^ok: bars drawn %d+ times during fights") ~= nil and mT.healthOff == "limited")
 check("meter: nothing in it raised an error", mT.errors == 0)
+check("threat: drawn with the meter's bars, as tall as its five bars (" .. tostring(mT.threatFull) .. ")",
+    mT.threatFull == "Tankard,You,Pet,Healbot,Frosty 250x127" and mT.threatEased)
+check("threat: sized by its corner; too small for everyone, the top bar and your own stay (" .. tostring(mT.threatSmall) .. ")",
+    mT.threatSmall == "Tankard,You 320x67 kept 320x80" and mT.threatBack == mT.threatFull)
 if os.getenv("MDUMP") then
     io.write("\n== meter capture\n")
     local keys = {}

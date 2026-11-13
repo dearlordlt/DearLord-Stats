@@ -7,57 +7,33 @@
 -- Not while you are the tank.
 -- On this client threat values may be secret in combat. Bars still fill (a status bar takes a
 -- secret value), but then there is no sorting and no percentage text, only the threat state.
+-- Drawn with the same bars as the damage meter (Bars.lua); the corner resizes it.
 local ADDON, ns = ...
 local N, S, B = ns.N, ns.S, ns.B
 
 local tw = ns.CreateHud("threat", 0, "LEFT")
 tw.panelTab = "combat"
 tw:Hide()
+ns.Chrome(tw, 20)
 
-local BAR_TEXTURE = "Interface\\Buttons\\WHITE8X8"
-local CLASS_ICONS = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
-local CLASS_TC = {
-    WARRIOR = { 0, 0.25, 0, 0.25 }, MAGE = { 0.25, 0.5, 0, 0.25 }, ROGUE = { 0.5, 0.75, 0, 0.25 }, DRUID = { 0.75, 1, 0, 0.25 },
-    HUNTER = { 0, 0.25, 0.25, 0.5 }, SHAMAN = { 0.25, 0.5, 0.25, 0.5 }, PRIEST = { 0.5, 0.75, 0.25, 0.5 }, WARLOCK = { 0.75, 1, 0.25, 0.5 },
-    PALADIN = { 0, 0.25, 0.5, 0.75 },
-}
 -- 0 lower than the tank, 1 higher than the tank (about to pull), 2 has aggro but someone is close, 3 has aggro
 local STATE_HEX = { [0] = "9fd89f", [1] = "ffd166", [2] = "ff9a3c", [3] = "ff5a5a" }
 local RAID_ROWS = 10
 -- the window opens itself when a fight starts (only with a pet out or in a group), keeps the
 -- last fight's bars dimmed afterwards, and stays until you close it with its x
 
-local rows = {}
-tw.rows = rows
 local state = { open = false, hasData = false, stale = false, demoUntil = 0, entries = {} }
 ns.threat = state
 
-local function text(parent, justify)
-    local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
-    fs:SetShadowColor(0, 0, 0, 1)
-    fs:SetShadowOffset(1, -1)
-    fs:SetJustifyH(justify or "LEFT")
-    tw.lines[#tw.lines + 1] = fs
-    return fs
-end
-local function font(fs, delta)
-    local db = ns.db
-    local size, flags = math.max(8, db.fontSize + delta), db.outline or "OUTLINE"
-    if not fs:SetFont(ns.FontPath(), size, flags) then fs:SetFont(STANDARD_TEXT_FONT, size, flags) end
-end
+-- the bars are the same animated list the damage meter uses
+local list = ns.BarList(tw, tw)
+tw.list = list
+tw.rows = list.order
+tw.title = ns.BarText(tw)
+tw.sub = ns.BarText(tw, "RIGHT")
+tw.sub:SetTextColor(0.75, 0.75, 0.75)
 
-tw.title = text(tw)
-tw.sub = text(tw, "RIGHT")
-
-local close = CreateFrame("Button", nil, tw)
-close.tex = close:CreateTexture(nil, "ARTWORK")
-close.tex:SetAllPoints()
-close.tex:SetTexture("Interface\\Buttons\\UI-StopButton")
-close.tex:SetVertexColor(0.65, 0.65, 0.65)
-close:SetScript("OnEnter", function(self) self.tex:SetVertexColor(1, 0.35, 0.35) end)
-close:SetScript("OnLeave", function(self) self.tex:SetVertexColor(0.65, 0.65, 0.65) end)
-close:SetScript("OnClick", function() ns.CloseThreat() end)
+local close = ns.TextButton(tw, "×", function() ns.CloseThreat() end, "Close it until the next fight.")
 tw.close = close
 
 -- the warning: a red border that pulses while you are about to pull
@@ -73,29 +49,6 @@ for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT", nil, 2 }, { "BOTTOMLEFT", "BOTT
 end
 warn:SetScript("OnUpdate", function(self) self:SetAlpha(0.3 + 0.7 * math.abs(math.sin(GetTime() * 5))) end)
 tw.warn = warn
-
-local function row(i)
-    if rows[i] then return rows[i] end
-    local r = CreateFrame("Frame", nil, tw)
-    r.icon = r:CreateTexture(nil, "ARTWORK")
-    local sb = CreateFrame("StatusBar", nil, r)
-    sb:SetStatusBarTexture(BAR_TEXTURE)
-    sb:SetMinMaxValues(0, 100)
-    local bg = sb:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.55)
-    r.edge = sb:CreateTexture(nil, "OVERLAY")          -- a thin strip in the threat-state colour
-    r.edge:SetTexture(BAR_TEXTURE)
-    r.mark = sb:CreateTexture(nil, "OVERLAY")          -- outline for your own row
-    r.mark:SetTexture(BAR_TEXTURE)
-    r.mark:SetVertexColor(1, 1, 1, 0.10)
-    r.name = text(sb)
-    r.value = text(sb, "RIGHT")
-    r.bar = sb
-    r:Hide()
-    rows[i] = r
-    return r
-end
 
 local function attackable(unit)
     if not (UnitExists and B(UnitExists(unit))) then return false end
@@ -195,87 +148,79 @@ local function colorFor(class, pet)
     return r, g, b
 end
 
-local function fill(r, e, demo)
+-- one bar: class colour and crest (a portrait for a pet), the scaled threat as its length, the raw
+-- amount and the percentage on the right, a strip in the threat-state colour on the left
+local function itemOf(e, demo)
     local unit = e.unit
     local class = demo and e.class or classOf(e.owner or unit)
     local pet = demo and e.pet or e.owner ~= nil
-    -- icon: class crest for players, portrait for pets
+    local it = { class = class, own = e.isPlayer and true or false, value = e.scaled or 0, max = 100, cells = {} }   -- 0-100, may be a hidden number
+    it.r, it.g, it.b = colorFor(class, pet)
     if pet then
-        if demo then r.portraitOf = nil; r.icon:SetTexture("Interface\\Icons\\Ability_Hunter_Pet_Wolf"); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        elseif SetPortraitTexture then
-            local guid = S(UnitGUID and UnitGUID(unit)) or unit
-            if r.portraitOf ~= guid then SetPortraitTexture(r.icon, unit); r.portraitOf = guid end
-            r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        end
-    elseif class and CLASS_TC[class] then
-        local t = CLASS_TC[class]
-        r.portraitOf = nil
-        r.icon:SetTexture(CLASS_ICONS); r.icon:SetTexCoord(t[1] + 0.02, t[2] - 0.02, t[3] + 0.02, t[4] - 0.02)
-    else
-        r.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark"); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        it.class = nil
+        if demo then it.icon = "Interface\\Icons\\Ability_Hunter_Pet_Wolf"
+        else it.portrait, it.portraitKey = unit, S(UnitGUID and UnitGUID(unit)) or unit end
     end
-    local cr, cg, cb = colorFor(class, pet)
-    r.bar:SetStatusBarColor(cr, cg, cb)
-    r.bar:SetValue(e.scaled or 0)                  -- 0-100, may be a secret number
-    if demo then r.name:SetText(e.name)
+    if demo then it.name, it.key = e.name, "demo:" .. e.name
     else
         local name = UnitName and UnitName(unit)
-        if name ~= nil then r.name:SetText(name) else r.name:SetText(unit) end
+        if name ~= nil then it.name = name else it.name = unit end       -- the name goes straight to the font string: it may be hidden
+        it.key = S(UnitGUID and UnitGUID(unit)) or unit
     end
     local st = N(e.status)
     local hex = st and STATE_HEX[st]
-    if hex then r.edge:SetVertexColor(tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, 1); r.edge:Show()
-    else r.edge:Hide() end
+    if hex then it.edge = { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 } end
     local scaled = N(e.scaled)
-    local tanking = B(e.tanking)
-    if tanking then
-        r.value:SetText("|cff" .. (hex or STATE_HEX[3]) .. "aggro|r")
+    if B(e.tanking) then
+        it.cells[2] = { text = "|cff" .. (hex or STATE_HEX[3]) .. "aggro|r" }
     elseif scaled then
         local v = N(e.value)
-        local amount = v and v > 0 and (ns.LABEL .. ns.shortNumber(math.floor(v / 100)) .. "|r  ") or ""
-        r.value:SetText(amount .. "|cff" .. (hex or "ffffff") .. math.floor(scaled + 0.5) .. "%|r")
+        if v and v > 0 then it.cells[1] = { text = ns.LABEL .. ns.shortNumber(math.floor(v / 100)) .. "|r" } end
+        it.cells[2] = { text = "|cff" .. (hex or "ffffff") .. math.floor(scaled + 0.5) .. "%|r" }
     else
-        -- secret: let the game write the number if it can, otherwise only the state colour shows
-        if not pcall(r.value.SetFormattedText, r.value, "%.0f%%", e.scaled) then r.value:SetText("") end
+        it.cells[2] = { fmt = "%.0f%%", arg = e.scaled }               -- hidden: the game writes the number if it can
     end
-    r.mark:SetShown(e.isPlayer and true or false)
+    return it
+end
+
+-- the corner sets the width and how tall the window may grow; it is only as tall as its bars
+local PAD, GAP = 5, 2
+local function metrics()
+    local db = ns.db
+    local fsz = db.fontSize or 13
+    local headH, barH = fsz + 8, math.max(10, db.meterBarHeight or 18)
+    local W, maxH = math.max(150, N(db.threatW) or 250), math.max(60, N(db.threatH) or 150)
+    if tw.sizing then W, maxH = N(tw:GetWidth()) or W, N(tw:GetHeight()) or maxH end
+    local fit = math.max(1, math.floor((maxH - headH - 2 - PAD + GAP) / (barH + GAP)))
+    return fsz, headH, barH, W, fit
 end
 
 function tw:Layout()
-    local fsz = ns.db.fontSize
-    local pad, gap = 6, 3
-    local barH = fsz + 7
-    local W = fsz * 16
-    font(self.title, -1); font(self.sub, -2)
-    for _, r in ipairs(rows) do font(r.name, -1); font(r.value, -1) end
-    for i = 1, self.count or 0 do
-        local r = rows[i]
-        -- a secret name gives a secret width; such a row just takes the default width
-        W = math.max(W, (N(r.name:GetStringWidth()) or 0) + (N(r.value:GetStringWidth()) or 0) + 24)
+    if not ns.db then return end
+    local fsz, headH, barH, W = metrics()
+    self:ApplyChrome(headH)
+    ns.BarFont(self.title, -1); ns.BarFont(self.sub, -2)
+    local cw = close:Fit(2, headH)
+    close:ClearAllPoints(); close:SetPoint("TOPRIGHT", self, "TOPRIGHT", -2, 0)
+    self.title:ClearAllPoints(); self.title:SetPoint("TOPLEFT", self, "TOPLEFT", PAD + 1, -(headH - fsz) / 2 + 1)
+    local titleW = (N(self.title:GetStringWidth()) or 50) + 6
+    self.title:SetWidth(titleW)
+    self.sub:ClearAllPoints(); self.sub:SetPoint("TOPRIGHT", self, "TOPRIGHT", -cw - 4, -(headH - fsz) / 2)
+    self.sub:SetWidth(math.max(1, W - titleW - cw - PAD - 10))
+    -- the bars are only laid out again when something they depend on changed, so they keep sliding
+    local sig = table.concat({ W, barH, fsz, tostring(ns.db.font), tostring(ns.db.outline) }, ":")
+    if sig ~= self.barSig then
+        self.barSig = sig
+        list.fontDelta = -1
+        list:Layout(W - PAD * 2, barH, GAP, { math.floor(fsz * 3), math.floor(fsz * 3.2) }, 0)
     end
-    W = math.max(W, (N(self.title:GetStringWidth()) or 0) + (N(self.sub:GetStringWidth()) or 0) + fsz + 16 - barH - 4)
-    self.title:ClearAllPoints(); self.title:SetPoint("TOPLEFT", self, "TOPLEFT", pad, -pad)
-    local csz = fsz
-    close:ClearAllPoints(); close:SetPoint("TOPRIGHT", self, "TOPRIGHT", -pad + 1, -pad + 1); close:SetSize(csz, csz)
-    self.sub:ClearAllPoints(); self.sub:SetPoint("TOPRIGHT", self, "TOPRIGHT", -pad - csz - 4, -pad - 1)
-    local y = pad + fsz + 4
-    for i = 1, self.count or 0 do
-        local r = rows[i]
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", self, "TOPLEFT", pad, -y)
-        r:SetSize(barH + 4 + W, barH)
-        r.icon:ClearAllPoints(); r.icon:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0); r.icon:SetSize(barH, barH)
-        r.bar:ClearAllPoints(); r.bar:SetPoint("TOPLEFT", r, "TOPLEFT", barH + 4, 0); r.bar:SetSize(W, barH)
-        r.edge:ClearAllPoints(); r.edge:SetPoint("TOPLEFT", r.bar, "TOPLEFT", 0, 0); r.edge:SetSize(3, barH)
-        r.mark:ClearAllPoints(); r.mark:SetAllPoints(r.bar)
-        r.name:ClearAllPoints(); r.name:SetPoint("LEFT", r.bar, "LEFT", 8, 0)
-        r.value:ClearAllPoints(); r.value:SetPoint("RIGHT", r.bar, "RIGHT", -5, 0)
-        y = y + barH + gap
-    end
-    self:SetWidth(pad * 2 + barH + 4 + W)
-    self:SetHeight(y - gap + pad)
+    list.frame:ClearAllPoints(); list.frame:SetPoint("TOPLEFT", self, "TOPLEFT", PAD, -headH - 2)
+    local n = math.max(1, self.count or 0)
+    list.frame:SetSize(W - PAD * 2, list:Height(n))
+    if not self.sizing then self:SetSize(W, headH + 2 + list:Height(n) + PAD) end
 end
 function tw:Fit() self:Layout() end
+ns.MakeResizable(tw, "threatW", "threatH", 150, 60, function() tw:Layout(); if ns.RefreshThreat then ns.RefreshThreat() end end)
 
 -- a tank is meant to be on top: no warning for one. Tanking shows as the tank role, or as what a tank
 -- wears: a warrior in Defensive Stance, a druid in bear form, a paladin with Righteous Fury on.
@@ -333,23 +278,27 @@ local function setWarning(on, scaled, demo)
     warn:SetShown(state.warn)
 end
 
-local function show(list, demo, mobName)
-    local n = 0
-    for i, e in ipairs(list) do
-        n = i
-        local r = row(i)
-        fill(r, e, demo)
-        r:SetAlpha(1)
-        r:Show()
+local function show(entries, demo, mobName)
+    -- more units than the window may hold: the top ones, and always your own
+    local _, _, _, _, fit = metrics()
+    if #entries > fit then
+        local keep, mine = {}, nil
+        for i, e in ipairs(entries) do
+            if i <= fit - 1 then keep[#keep + 1] = e elseif e.isPlayer then mine = e end
+        end
+        keep[#keep + 1] = mine or entries[fit]
+        entries = keep
     end
-    for i = n + 1, #rows do rows[i]:Hide() end
-    tw.count = n
-    local on, scaled = pulling(list, demo)
+    local items = {}
+    for i, e in ipairs(entries) do items[i] = itemOf(e, demo) end
+    list:SetLive(not demo and not state.stale and B(UnitAffectingCombat and UnitAffectingCombat("player")) == true)
+    list:SetData(items)
+    tw.rows, tw.count = list.order, #items
+    local on, scaled = pulling(entries, demo)
     setWarning(on, scaled, demo)
     tw.title:SetText(on and (ns.RED .. "Ease off|r") or (ns.WHITE .. "Threat|r"))
     -- the mob's name goes straight to its own font string: it may be a secret string
-    tw.sub:SetTextColor(0.75, 0.75, 0.75)
-    if mobName ~= nil then tw.sub:SetText(mobName) else tw.sub:SetText("") end
+    if mobName ~= nil then ns.BarSetText(tw.sub, mobName) else tw.sub:SetText("") end
     tw:Layout()
     tw:Show()
 end
@@ -367,7 +316,8 @@ local function goStale()
     setWarning(false)
     state.warnPlayed = false
     tw.title:SetText(ns.WHITE .. "Threat|r")
-    for i = 1, tw.count or 0 do rows[i]:SetAlpha(0.5) end
+    list:SetLive(false)
+    list:SetDim(true)
 end
 
 local function refresh()
@@ -429,9 +379,8 @@ function ns.ThreatPreview(seconds)
     refresh()
 end
 
-tw:SetScript("OnEnter", function(self)
-    self.bg:Show()
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+local function explain()
+    GameTooltip:SetOwner(tw, "ANCHOR_BOTTOM")
     GameTooltip:AddLine("DearLord Stats: threat")
     GameTooltip:AddLine("100% = that unit pulls aggro from whoever has it.", 0.8, 0.8, 0.8, true)
     GameTooltip:AddLine("Edge colour: green safe, yellow above the tank, orange has aggro barely, red has aggro.", 0.8, 0.8, 0.8, true)
@@ -450,9 +399,15 @@ tw:SetScript("OnEnter", function(self)
         end
     end
     if state.stale then GameTooltip:AddLine("Dimmed: the last fight. Opens again with the next one; the x closes it.", 0.6, 0.6, 0.6, true) end
-    GameTooltip:AddLine("Drag: move.  Right-click: options.  /dls threat: show or hide.  /dls threat test: preview.", 0.6, 0.8, 1)
+    GameTooltip:AddLine("Drag: move.  Corner: width and how tall it may grow.  Right-click: options.  /dls threat: show or hide.  /dls threat test: preview.", 0.6, 0.8, 1, true)
     GameTooltip:Show()
-end)
+end
+tw:SetScript("OnEnter", explain)
+list.onEnter = explain
+list.onLeave = function() GameTooltip:Hide() end
+list.onClick = function(_, button)
+    if button == "RightButton" then ns.ShowMenu(tw) else ns.TogglePanel(tw.panelTab) end
+end
 
 -- every fight opens it again, even after a close
 ns.On("PLAYER_REGEN_DISABLED", function() if eligible() then state.open = true end; refresh() end, "threat:combat")

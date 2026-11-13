@@ -394,7 +394,11 @@ function ns.BarList(parent, hud)
 
     local function fill(r, it, fresh)
         r.item = it
-        if L.showIcon then
+        -- the icon is only touched when it changes (a hidden one cannot be compared, so it is always set)
+        local ik = it.icon or it.portraitKey or it.portrait or it.class or it.fallbackIcon or "?"
+        ik = S(ik) or N(ik)
+        if L.showIcon and (ik == nil or r.iconKey ~= ik) then
+            r.iconKey = ik
             if it.icon then
                 r.portraitOf = nil
                 if not pcall(r.icon.SetTexture, r.icon, it.icon) then r.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark") end
@@ -465,6 +469,12 @@ function ns.BarList(parent, hud)
         if self.live == on then return end
         self.live = on
         for _, r in ipairs(self.rows) do r.spark:SetShown(on and r.active and not r.leaving) end
+        wake()
+    end
+
+    -- the last fight's bars, kept but faded
+    function L:SetDim(on)
+        for _, r in ipairs(self.rows) do if r.active then r.dim = on and 0.5 or 1 end end
         wake()
     end
 
