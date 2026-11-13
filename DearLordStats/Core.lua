@@ -2,7 +2,7 @@
 -- Shared plumbing: secret-value guards, formatting, saved data, events, ticker,
 -- error capture, the on-screen HUD windows, and the quiet message feed.
 local ADDON, ns = ...
-ns.version = "2.31.1"
+ns.version = "2.32.0"
 
 ----------------------------------------------------------------------
 -- secret values: this client hides some combat numbers from addons.
@@ -193,7 +193,7 @@ local defaults = {
     ahTooltip = true, ahAutoScan = false, ahTooltipNeutral = true, ahCompare = "shift", panelEsc = true,
     censusPassive = true, censusWho = true,
     showMeter = true, meterSecond = true, meterViewL = "damage", meterViewR = "healing", meterNumbers = "all", meterBarHeight = 18,
-    meterHideIdle = false, meterResetLogin = true, meterReportLines = 5, meterAlpha = 0.8, meterW = 520, meterH = 158, threatW = 250, threatH = 150,
+    meterHideIdle = false, meterResetLogin = true, meterReportLines = 5, meterAlpha = 0.8, meterW = 560, meterH = 158, threatW = 250, threatH = 150,
     xp     = { point = "TOP", x = 0, y = -12 },
     threat = { point = "TOP", x = 330, y = -40 },
     meter  = { point = "BOTTOM", x = 330, y = 40 },

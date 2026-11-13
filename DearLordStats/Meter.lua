@@ -71,6 +71,48 @@ local function lastEntry()
     return list[#list], list
 end
 
+----------------------------------------------------------------------
+-- the fight clock. The game's meter keeps a fight open a moment after you leave combat, so its
+-- per-second numbers come out lower than those of a fight timed by your own combat flag (which is
+-- how Details times it). The meter times each fight itself, from entering to leaving combat, and
+-- falls back on the game's clock for fights it did not see or where the two disagree badly.
+----------------------------------------------------------------------
+local fight = {}                -- start (in a fight); pending = { dur, at } (over, not yet matched to the game's session); knownId
+ns.meterFight = fight
+local function clockStore()
+    local db = ns.db
+    if not db then return { own = {}, game = {}, base = 0 } end
+    local ck = db.meterClock
+    if type(ck) ~= "table" or type(ck.own) ~= "table" or type(ck.game) ~= "table" then
+        ck = { own = {}, game = {}, base = 0 }
+        db.meterClock = ck
+    end
+    return ck
+end
+local function clockWipe()
+    if ns.db then ns.db.meterClock = nil end
+    fight.pending, fight.knownId = nil, nil
+end
+-- our own time for one of the game's fights, unless it is far from the game's (then the two did not time the same thing)
+local function ownFor(id)
+    if not id then return nil end
+    local ck = clockStore()
+    local own, game = ck.own[id], ck.game[id]
+    if not own then return nil end
+    if game and (own > game + 2 or own < game - 6) then return nil end
+    return own
+end
+-- how much longer the game's clock ran than ours, over all fights since the last reset
+local function clockTail()
+    local ck = clockStore()
+    local t = ck.base or 0
+    for id, own in pairs(ck.own) do
+        local game = ck.game[id]
+        if game and ownFor(id) then t = t + (game - own) end
+    end
+    return t
+end
+
 -- Fight means the fight running now, or the last one. If the game's "current" session is empty once
 -- a fight is over, the last finished fight is read by its id instead.
 local function resolve()
@@ -115,7 +157,7 @@ local function fetchSource(kind, guid, creatureID, seg)
     return ok and T(s) or nil, ok
 end
 
-local function durationOf(seg, sess)
+local function gameDuration(seg, sess)
     seg = seg or state.use or state.seg
     if type(seg) ~= "number" and DM and DM.GetSessionDurationSeconds then
         local ok, d = pcall(DM.GetSessionDurationSeconds, seg == "total" and OVERALL or CURRENT)
@@ -129,6 +171,77 @@ local function durationOf(seg, sess)
             for _, x in ipairs(list) do if N(x.sessionID) == seg then e = x end end
         end
         if e and ns.exists(e.durationSeconds) then return e.durationSeconds end
+    end
+end
+
+-- how long a fight (or the total) lasted, and whether that is our own clock
+local function durationOf(seg, sess)
+    seg = seg or state.use or state.seg
+    local game = gameDuration(seg, sess)
+    if seg == "total" then
+        local g, tail = N(game), clockTail()
+        if g and tail ~= 0 then return math.max(1, g - tail), true end
+        return game, false
+    end
+    local own
+    if type(seg) == "number" then own = ownFor(seg)
+    elseif fight.start then own = GetTime() - fight.start
+    elseif inCombat() then own = nil                                  -- loaded in the middle of a fight: no start seen
+    elseif fight.pending then own = fight.pending.dur
+    else
+        local e = T((lastEntry()))
+        own = ownFor(e and N(e.sessionID))
+    end
+    if own then return own, true end
+    return game, false
+end
+
+-- once a fight is over, its time is tied to the session the game made of it
+local function clockMatch()
+    if inCombat() then return end
+    local e, list = lastEntry()
+    e = T(e)
+    local id = e and N(e.sessionID)
+    if not id then
+        if fight.pending and GetTime() - fight.pending.at > 15 then fight.pending = nil end
+        return
+    end
+    local ck = clockStore()
+    if fight.pending then
+        if id ~= fight.knownId then
+            ck.own[id] = fight.pending.dur
+            fight.pending, fight.knownId = nil, id
+            local ids = {}
+            for k in pairs(ck.own) do ids[#ids + 1] = k end
+            if #ids > 40 then                                       -- old fights only keep their share of the total
+                table.sort(ids)
+                for i = 1, #ids - 40 do
+                    local k = ids[i]
+                    if ck.game[k] and ownFor(k) then ck.base = (ck.base or 0) + (ck.game[k] - ck.own[k]) end
+                    ck.own[k], ck.game[k] = nil, nil
+                end
+            end
+        elseif GetTime() - fight.pending.at > 15 then fight.pending = nil end
+    else
+        fight.knownId = id
+    end
+    if ck.own[id] then
+        local game = N(e.durationSeconds)
+        if game and game ~= ck.game[id] then
+            ck.game[id] = game
+            local d = diag()
+            d.clock = d.clock or {}
+            local line = string.format("%d own=%.1f game=%.1f%s", id, ck.own[id], game, ownFor(id) and "" or " (game's used)")
+            if d.clockId == id then d.clock[math.max(1, #d.clock)] = line
+            else
+                d.clock[#d.clock + 1] = line; d.clockId = id
+                if #d.clock > 12 then table.remove(d.clock, 1) end
+            end
+            local sum = 0
+            for _, x in ipairs(list) do x = T(x); sum = sum + ((x and N(x.durationSeconds)) or 0) end
+            local overall = N(gameDuration("total"))
+            d.clockOverall = string.format("overall=%s list=%.1f n=%d", overall and string.format("%.1f", overall) or "?", sum, #list)
+        end
     end
 end
 
@@ -173,7 +286,7 @@ local function readColumn(view, seg)
         if ns.exists(sess.combatSources) then out.locked = true; diag().sourcesHidden = true end
         return out
     end
-    out.duration = durationOf(seg, sess)
+    out.duration, out.own = durationOf(seg, sess)
     local total, top, seen = 0, 0, {}
     for i, src in ipairs(sources) do
         src = T(src)
@@ -207,6 +320,8 @@ local function readColumn(view, seg)
         for i, it in ipairs(out.items) do
             it.rank = i
             it.share = total > 0 and (it.amount or 0) / total or nil
+            -- per second by our own clock, so a bar, the sum and the breakdown all use one fight time
+            if out.own and dur and dur > 0 and it.amount and not view.count then it.perSec = it.amount / dur; it.rate = it.perSec end
         end
     else
         -- hidden: keep the game's order, scale against the game's own largest value
@@ -277,7 +392,7 @@ local function fightsMenu(owner)
         local e = T(list[i])
         local id = e and N(e.sessionID)
         if id then
-            local name, dur = S(e.name), N(e.durationSeconds)
+            local name, dur = S(e.name), ownFor(N(e.sessionID)) or N(e.durationSeconds)
             local label = ((name and name ~= "") and name or ("fight " .. id)) .. (dur and ("  " .. clock(dur)) or "")
             items[#items + 1] = { text = label, fn = function() setSeg(id) end }
         end
@@ -356,21 +471,27 @@ mw:SetScript("OnMouseWheel", function(_, delta)
 end)
 
 -- which numbers a bar carries, and how wide each one is
-local function cellSpec(view, colW, fsz)
+local function cellSpec(view, colW, fsz, barH, rankW)
     local mode = ns.db.meterNumbers or "all"
     local spec = {}
     if view.count then spec = { "amount" }
     elseif mode == "rate" then spec = { "rate" }
     elseif mode == "amount" then spec = { "amount", "rate" }
     else spec = { "amount", "rate", "pct" } end
-    local widths = { amount = fsz * 3.0, rate = fsz * 3.9, pct = fsz * 2.4 }
-    -- a narrow column drops numbers rather than the name: the share first, then the amount
-    local function need() local w = fsz * 6; for _, k in ipairs(spec) do w = w + widths[k] + 4 end return w end
+    local widths = { amount = fsz * 3.0, rate = fsz * 3.9, rateS = fsz * 2.8, pct = fsz * 2.9 }
+    -- the name keeps room for about eight letters. A narrow column first writes the per-second number
+    -- without its "/s", then drops the share, then the amount
+    local fixed = (barH + 2) + 6 + rankW + 2 + 7 + fsz * 4.5
+    local function need() local w = fixed; for _, k in ipairs(spec) do w = w + widths[k] + 4 end return w end
+    if #spec > 1 and need() > colW then
+        for i, k in ipairs(spec) do if k == "rate" then spec[i] = "rateS" end end
+    end
     while #spec > 1 and need() > colW do
         local drop = 1
         for i, k in ipairs(spec) do if k == "pct" then drop = i end end
         table.remove(spec, drop)
     end
+    if #spec == 1 and spec[1] == "rateS" then spec[1] = "rate" end
     local cw = {}
     for i, k in ipairs(spec) do cw[i] = math.floor(widths[k]) end
     return spec, cw
@@ -384,8 +505,8 @@ function mw:Layout()
     local headH, colHeadH = fsz + 8, fsz + 5
     local barH = math.max(10, db.meterBarHeight or 18)
     self:ApplyChrome(headH)
-    if not self.sizing then self:ApplySize(520, 158) end
-    local W, H = N(self:GetWidth()) or 520, N(self:GetHeight()) or 158
+    if not self.sizing then self:ApplySize(560, 158) end
+    local W, H = N(self:GetWidth()) or 560, N(self:GetHeight()) or 158
     local second = db.meterSecond ~= false
 
     -- title strip: tabs on the left, buttons on the right, the fight's name between them
@@ -434,7 +555,7 @@ function mw:Layout()
             c.list.frame:SetSize(colW, areaH)
             ns.BarFont(c.empty, -2)
             c.empty:ClearAllPoints(); c.empty:SetPoint("TOP", c.list.frame, "TOP", 0, -6); c.empty:SetWidth(colW - 8)
-            c.spec, c.cellW = cellSpec(c.view, colW, fsz)
+            c.spec, c.cellW = cellSpec(c.view, colW, fsz, barH, fsz * 1.5)
             c.list:Layout(colW, barH, gap, c.cellW, fsz * 1.5)
         end
     end
@@ -483,11 +604,14 @@ local function amountCell(v)
     if ns.exists(s) then return { text = s } end
     return { fmt = "%.0f", arg = v }
 end
-local function rateCell(v)
+local function rateCell(v, short)
     local n = N(v)
-    if n then return { text = rateText(n) } end
+    if n then
+        if short then return { text = n >= 10000 and ns.shortNumber(n) or string.format("%.1f", n) } end
+        return { text = rateText(n) }
+    end
     if not ns.exists(v) then return { text = "" } end
-    return { fmt = "%.1f/s", arg = v }
+    return { fmt = short and "%.1f" or "%.1f/s", arg = v }
 end
 
 local function barOf(c, it, data)
@@ -499,7 +623,7 @@ local function barOf(c, it, data)
     end
     for i, k in ipairs(c.spec or {}) do
         if k == "amount" then bar.cells[i] = amountCell(it.value)
-        elseif k == "rate" then bar.cells[i] = rateCell(it.rate)
+        elseif k == "rate" or k == "rateS" then bar.cells[i] = rateCell(it.rate, k == "rateS")
         elseif k == "pct" then bar.cells[i] = { text = it.share and string.format("%d%%", math.floor(it.share * 100 + 0.5)) or "" } end
     end
     return bar
@@ -511,6 +635,9 @@ local function drawColumn(c, isDemo)
         diag().readError = tostring(data):sub(1, 160)
         data = { view = c.view, items = {}, readable = true, locked = true }
     end
+    -- the moment after a fight the game still counts while the numbers stay hidden: the bars wait for the final ones
+    if not isDemo and not data.readable and #data.items > 0 and c.data and c.list.count > 0
+        and not inCombat() and GetTime() < (state.freezeUntil or 0) then return end
     c.data = data
     local items = data.items
     local visible, from = state.visible, math.min(state.scroll, math.max(0, #items - state.visible))
@@ -581,6 +708,7 @@ refresh = function()
     local now = GetTime()
     local isDemo = state.demoUntil > now
     if state.wasDemo and not isDemo then state.wasDemo = false; state.dirty = true end
+    if not isDemo and available() then clockMatch() end
     if db.showMeter == false and not isDemo then mw:Hide(); if hideTip then hideTip() end; return end
     if not isDemo and not available() then mw:Hide(); return end
     local fighting = inCombat()
@@ -687,8 +815,10 @@ local function readSpells(c, it)
         table.sort(out.items, function(a, b) if a.amount ~= b.amount then return (a.amount or 0) > (b.amount or 0) end return a.index < b.index end)
         out.total, out.max = total, top
         local seen = {}
+        local dur = c.data and c.data.own and N(c.data.duration)
         for i, item in ipairs(out.items) do
             item.share = total > 0 and (item.amount or 0) / total or nil
+            if dur and dur > 0 and item.amount and not view.count then item.perSec = item.amount / dur; item.rate = item.perSec end
             if item.key then if seen[item.key] then item.key = item.key .. "#" .. i end; seen[item.key] = true end
         end
     else
@@ -934,6 +1064,7 @@ function ns.MeterReset(quiet)
     local ok = pcall(DM.ResetAllCombatSessions)
     d.reset = ok and "ok" or "refused"
     if ok and ns.CombatMeterReset then ns.CombatMeterReset() end
+    if ok then clockWipe() end
     if type(state.seg) == "number" then state.seg = "fight" end
     state.scroll, state.dirty = 0, true
     targetCache = {}
@@ -973,13 +1104,18 @@ end
 local function mark() state.dirty = true; state.events = state.events + 1; local d = diag(); d.events = (d.events or 0) + 1 end
 ns.On("DAMAGE_METER_COMBAT_SESSION_UPDATED", mark, "meter:updated")
 ns.On("DAMAGE_METER_CURRENT_SESSION_UPDATED", mark, "meter:current")
-ns.On("DAMAGE_METER_RESET", function() state.dirty = true; targetCache = {} end, "meter:reset")
+ns.On("DAMAGE_METER_RESET", function() state.dirty = true; targetCache = {}; clockWipe() end, "meter:reset")
 ns.On("PLAYER_REGEN_DISABLED", function()
+    fight.start, fight.pending = GetTime(), nil
     if type(state.seg) == "number" then state.seg = "fight" end     -- a new fight: back from an earlier one to this one
     state.scroll, state.dirty = 0, true
     refresh()
 end, "meter:fight")
 ns.On("PLAYER_REGEN_ENABLED", function()
+    local now = GetTime()
+    if fight.start then fight.pending = { dur = now - fight.start, at = now } end
+    fight.start = nil
+    state.freezeUntil = now + 3
     state.settleUntil = GetTime() + 6                              -- the numbers become readable a moment after the fight
     state.dirty = true
 end, "meter:after")
@@ -1006,6 +1142,7 @@ ns.OnLogin(function(isInitialLogin)
     d.interp = (Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut ~= nil) or false
     d.abbrev = (AbbreviateNumbers ~= nil and (abbrevOptions() and "own format" or "game default")) or "none"
     d.sessions = #sessions()
+    if isInitialLogin then clockWipe() end                         -- the game's fights do not outlive a restart, nor do their ids
     -- Total means this play session: it starts over when you log in (not on /reload)
     if isInitialLogin and ns.db.meterResetLogin ~= false and available() and not inCombat() then ns.MeterReset(true) end
     state.idleAt = GetTime() + 20

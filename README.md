@@ -34,6 +34,8 @@ numbers on this client).
   in. Right-click `Fight` for the earlier fights. `reset` clears the game's meter.
 - *Bars* in class colours with crests: rank, name, amount, per second, share in percent. They fill
   smoothly, slide when players overtake each other, and the leading edge glows while a fight runs.
+- *Fight time* is the time you were in combat, the same way Details counts it. The game keeps a fight
+  open a moment longer; those extra seconds are left out, so the per-second numbers match Details.
 - *Point at a bar* for the breakdown: every ability with amount, per second and share, pet and totem
   abilities marked (`Bite (Joy)`), and for damage the targets that player hit.
 - *`copy`* opens a menu: send what the window shows to Say, Party, Raid, Guild or your target as a

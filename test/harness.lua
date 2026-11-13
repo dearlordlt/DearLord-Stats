@@ -299,7 +299,7 @@ Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, 
 local dmSessions = { { sessionID = 83, name = "Old Boar", durationSeconds = 20, dmg = 100, taken = 10, spells = { { 75, 100 } } } }
 local function dmFind(id) for _, s in ipairs(dmSessions) do if s.sessionID == id then return s end end end
 -- in a fight the meter's values are hidden, but they still carry what the game will draw
-local function hideV(v) if world.combat then return secret(v) end return v end
+local function hideV(v) if world.combat or world.linger then return secret(v) end return v end
 -- one session's sources for one kind of number: you, your pet, the others in the group (s.others), the enemies
 local function dmSources(s, kind)
     local out = {}
@@ -641,6 +641,7 @@ local function runFight(o)
     world.threat = {}
     for i = 1, o.mobs or 1 do world.threat["nameplate" .. i] = "Creature-0-" .. nextSession .. "-" .. i end
     world.threat.target = world.threat.nameplate1
+    local t0 = now
     fire("PLAYER_REGEN_DISABLED")
     for i = 1, o.mobs or 1 do fire("UNIT_THREAT_LIST_UPDATE", "nameplate" .. i) end
     for _, c in ipairs(o.casts or {}) do
@@ -654,14 +655,17 @@ local function runFight(o)
     fire("UNIT_COMBAT", "player", "WOUND", "", o.taken, 1)
     fire("UNIT_COMBAT", "target", "WOUND", "", o.dmg, 1)
     for _ = 1, o.oom or 0 do fire("UI_ERROR_MESSAGE", 50, "Not enough mana") end
-    advance(o.duration or 12)
+    advance((o.duration or 12) - (o.exact and (now - t0) or 0))        -- exact: the combat flag is up for just the duration
+    if o.tail then world.liveSession.durationSeconds = (o.duration or 12) + o.tail end   -- the game's clock runs on after the fight
     world.hp = math.max(0, world.hp - o.taken); world.mana = math.max(0, world.mana - (o.manaUsed or 40))
     if o.die then world.hp = 0; fire("PLAYER_DEAD") end
     nextSession = nextSession + 1
     dmSessions[#dmSessions + 1] = world.liveSession
     world.liveSession.sessionID = nextSession
     world.combat = false; world.threat = {}; world.liveSession = nil
+    if o.linger then world.linger = true end                       -- left combat, the game still hides the numbers
     fire("PLAYER_REGEN_ENABLED")
+    if o.linger then o.linger(); world.linger = nil end
     for _ = 1, o.kills or (o.die and 0 or 1) do
         fire("CHAT_MSG_COMBAT_XP_GAIN", (o.name or "Mob") .. " dies, you gain 80 experience.")
         world.xp = world.xp + 80; fire("PLAYER_XP_UPDATE", "player")
@@ -1632,7 +1636,7 @@ if MODE ~= "bare" then
         { name = "Healbot", guid = "Player-1-HEAL", class = "PRIEST", dmg = 40, healed = 520, taken = 30, dmgSpells = { { 6603, 40 } }, healedSpells = { { 2050, 520 } } },
     }
     SPELLS[2050], SPELLS[8190], SPELLS[2139] = "Lesser Heal", "Magma Totem", "Counterspell"
-    local fightOpts = { name = "Test Ogre", kills = 0, dmg = 600, taken = 80, healed = 60, duration = 20, others = others, interrupts = 1,
+    local fightOpts = { exact = true, name = "Test Ogre", kills = 0, dmg = 600, taken = 80, healed = 60, duration = 20, others = others, interrupts = 1,
         spells = { { 75, 350 }, { 3044, 150 }, { 17253, 70, "Joy" }, { 8190, 30, "Magma Totem" } }, healedSpells = { { 2050, 60 } },
         takenSpells = { { 6603, 80, "Test Ogre" } }, interruptsSpells = { { 2139, 1 } }, enemySpells = { { 75, 350, nil, "Tess Ter" }, { 6603, 200, nil, "Tankard" } } }
     fightOpts.during = function()
@@ -1701,6 +1705,32 @@ if MODE ~= "bare" then
     world.currentEmpty = true; advance(3)
     mT.byId = rows(1) .. " // " .. strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text) .. " // " .. tostring(ns.meter.seg) .. " " .. type(ns.meter.use)
     world.currentEmpty = nil; advance(3)
+
+    -- the meter's own fight clock: the game keeps this fight open 3 s after combat ends. The per-second
+    -- numbers use the 17 s in combat, and the bars wait while the game still hides the final numbers
+    local function totalOver()                                     -- Total's time in the title, against the game's own
+        mw.tabTotal.scripts.OnClick(mw.tabTotal, "LeftButton")
+        local m, sec = strip(mw.titleTime.text):match("(%d+):(%d+)")
+        mw.tabFight.scripts.OnClick(mw.tabFight, "LeftButton")
+        return (m * 60 + sec) - C_DamageMeter.GetSessionDurationSeconds(0)
+    end
+    local over0 = totalOver()
+    runFight({ name = "Test Tail", kills = 0, dmg = 170, taken = 5, duration = 17, tail = 3, spells = { { 75, 170 } },
+        linger = function()
+            advance(1)
+            mT.clockFrozen = rows(1) .. " // " .. strip(mw.titleTime.text)
+        end })
+    mT.clockRow = rows(1) .. " // " .. strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text) .. " // " .. strip(mw.cols[1].sum.text)
+    do local r = rowOf(1, "Tess Ter"); mw.cols[1].list.onEnter(r.item, r); mT.clockTip = tipRows(); mw.cols[1].list.onLeave() end
+    mT.clockReport = table.concat(ns.MeterReport(1) or {}, " / ")
+    mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
+    for text in pairs(MenuUtil.buttons) do if text:find("^Test Tail") then mT.clockMenu = text end end
+    mT.clockTotal = totalOver() - over0
+    -- a fight the game timed very differently (joined late, or it ran on): the game's clock is used
+    runFight({ name = "Test Long", kills = 0, dmg = 100, taken = 5, duration = 10, tail = 30, spells = { { 75, 100 } } })
+    mT.clockFar = rows(1) .. " // " .. strip(mw.titleTime.text)
+    mT.clockDiag = table.concat(ns.db.diag.meter.clock or {}, " | ")
+
     mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
     for text, fn in pairs(MenuUtil.buttons) do if text:find("^Test Ogre") then fn() end end
 
@@ -1719,6 +1749,13 @@ if MODE ~= "bare" then
     mT.twoCol = ns.db.meterSecond == true and mw.cols[2].shown == true
     ns.db.meterNumbers = "rate"; mw:Layout(); mT.rateOnly = rows(1)
     ns.db.meterNumbers = "all"; mw:Layout()
+    -- a column too narrow for everything: the per-second number loses its "/s" before the share goes
+    do
+        local w = ns.db.meterW
+        ns.db.meterW = 530; ns.ApplyHudSettings(); mT.narrow = rows(1)
+        ns.db.meterW = 480; ns.ApplyHudSettings(); mT.narrower = rows(1)
+        ns.db.meterW = w; ns.ApplyHudSettings()
+    end
 
     -- resize by the corner: kept, and more rows fit; locked windows do not size
     local before = ns.meter.visible
@@ -1752,6 +1789,7 @@ if MODE ~= "bare" then
     local resetsBefore = dmResets
     mw.buttons.reset.scripts.OnClick(mw.buttons.reset, "LeftButton"); advance(1)
     mT.reset = dmResets == resetsBefore + 1 and mw.cols[1].list.count == 0 and mw.cols[1].empty.shown and strip(mw.cols[1].empty.text) or "-"
+    mT.clockWiped = ns.db.meterClock == nil or next(ns.db.meterClock.own) == nil
     mT.diag = ns.db.diag.meter
     mT.errors = #(ns.db.errors or {})
 
@@ -2128,6 +2166,17 @@ check("meter: damage taken, interrupts and enemies views (" .. tostring(mT.taken
     and mT.tipEnemy == "Auto Shot (Tess Ter) 350 17.5/s 64% | Melee (Tankard) 200 10.0/s 36%")
 check("meter: the second column switches off and on, a bar can carry the rate alone (" .. tostring(mT.rateOnly) .. ")",
     mT.oneCol and mT.twoCol and mT.oneColRows == mT.after1 and mT.rateOnly == "1. Tess Ter 30.0/s | 2. Tankard 15.0/s | 3. Healbot 2.0/s")
+check("meter: a fight is timed by the combat flag, not by the game's longer clock (" .. tostring(mT.clockRow) .. ")",
+    mT.clockRow == "1. Tess Ter 170 10.0/s 100% // Test Tail 0:17 // 170   10.0/s" and mT.clockTip == "Auto Shot 170 10.0/s 100%"
+    and mT.clockReport == "DearLord Stats: Damage, Test Tail (0:17) / 1. Tess Ter  170 (10.0/s, 100%)" and mT.clockMenu == "Test Tail  0:17")
+check("meter: after combat the bars wait for the final numbers instead of sinking (" .. tostring(mT.clockFrozen) .. ")",
+    mT.clockFrozen == "1. Tess Ter 170 10.0/s // 0:17")
+check("meter: Total leaves the game's extra seconds out too (" .. tostring(mT.clockTotal) .. " s)", mT.clockTotal == -3)
+check("meter: a fight the game timed very differently keeps the game's clock (" .. tostring(mT.clockFar) .. " // " .. tostring(mT.clockDiag) .. ")",
+    mT.clockFar == "1. Tess Ter 100 2.5/s 100% // 0:40" and mT.clockDiag:find("own=17.0 game=20.0", 1, true) ~= nil
+    and mT.clockDiag:find("own=10.0 game=40.0 (game's used)", 1, true) ~= nil and mT.clockWiped)
+check("meter: a narrow column shortens the per-second number, then drops the share (" .. tostring(mT.narrow) .. " // " .. tostring(mT.narrower) .. ")",
+    mT.narrow:find("^1%. Tess Ter 600 30%.0 64%%") ~= nil and mT.narrower:find("^1%. Tess Ter 600 30%.0 |") ~= nil)
 check("meter: resized by the corner, kept, not while locked, back to default on reset", mT.resized and mT.resizeKept and mT.lockedSize and mT.resetSize)
 check("meter: more players than rows: the wheel scrolls (" .. tostring(mT.fewRows) .. " -> " .. tostring(mT.scrolled) .. ")",
     mT.fewVisible == 2 and mT.fewRows:find("^1%. Tess Ter") ~= nil and mT.scrolled:find("^2%. Tankard .* | 3%. Healbot") ~= nil)

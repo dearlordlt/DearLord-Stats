@@ -106,6 +106,25 @@ DearLord Stats meter (2.30.0) therefore uses:
   (`if v then`, `v or x`, `v == nil`): it asks `ns.exists(v)`, which calls `issecretvalue` first. The
   harness cannot catch such a slip (Lua 5.1 has no hook for a truth test), so this is kept by reading.
 
+### Fight time: the game's clock runs longer than the combat flag (first look, 13 November 2026)
+
+Details times a fight itself, from `PLAYER_REGEN_DISABLED` to `PLAYER_REGEN_ENABLED`
+(`core/parser_nocleu1.lua`), and after the fight shows total / that time. The game's session stays
+open a little longer, so numbers taken from the game's clock come out lower; the owner saw this as
+"a few more ticks after the mob died" against Details. One fight from a screenshot (solo hunter,
+479 damage, both meters at 0:08): the source's `amountPerSecond` was 59.9 (479 / 8.0), while the
+spells' `amountPerSecond` were 20.9 for 180, 18.7 for 161 and 8.9 for 77, which is each amount / 8.61.
+So within one finished session the per-source and per-spell rates use different times (inferred from
+that one fight; which fields carry 8.0 and 8.61 has not been read directly).
+
+From 2.32.0 the meter keeps its own fight clock by the combat flag, like Details: bars, sum,
+breakdown, title and copy text all use amount / own time once the numbers are readable, and Total
+subtracts the measured extra seconds. If own time and the game's differ by more than +2 / -6 s the
+game's is used (joined late, or the session ran on). For about 3 s after combat, while the numbers
+are still hidden, the bars are not redrawn, so they do not sink. `diag.meter.clock` keeps the last
+12 fights as `id own=… game=…`, and `clockOverall` the game's overall time against the sum of its
+session list.
+
 What the addon records for the next read of the saved variables: `diag.meter` with `api`, `interp`,
 `abbrev`, `events`, `liveDraws` / `readDraws`, `liveSolo` / `liveGroup` (which fields of the first
 source were hidden), `hiddenGuid`, `classColor`, `fightById` (the Current session was empty after a
