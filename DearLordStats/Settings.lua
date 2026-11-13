@@ -37,6 +37,17 @@ local CONTROLS = {
     { type = "check", key = "showKeys", label = "Key bindings on the game's cooldown manager icons" },
     { type = "button", label = "Preview the threat window (20 s, to move it)", action = function() ns.ThreatPreview(20) end },
 
+    { header = "Damage meter" },
+    { type = "check", key = "showMeter", label = "Damage meter window: damage, healing and more for everyone in the fight, from the game's own meter" },
+    { type = "check", key = "meterSecond", label = "Second column (healing beside damage; each column's title picks what it shows)" },
+    { type = "choice", key = "meterNumbers", label = "Numbers on a bar", options = function() return ns.METER_NUMBERS end },
+    { type = "slider", key = "meterBarHeight", label = "Bar height", min = 12, max = 30, step = 1 },
+    { type = "slider", key = "meterAlpha", label = "Window darkness (meter and threat)", min = 0.2, max = 1, step = 0.05, percent = true },
+    { type = "check", key = "meterResetLogin", label = "Total starts over when you log in (off: only the reset button clears it)" },
+    { type = "check", key = "meterHideIdle", label = "Hide the meter 20 s after a fight, until the next one" },
+    { type = "slider", key = "meterReportLines", label = "Lines per column when sent to chat", min = 3, max = 15, step = 1 },
+    { type = "button", label = "Preview the damage meter (20 s, to move and size it)", action = function() ns.MeterPreview(20) end },
+
     { header = "Shield bar" },
     { type = "check", key = "shieldBar", label = "Shield bar: how much is left of the absorb shield on you (move it in the game's Edit Mode)" },
     { type = "slider", key = "shieldWidth", label = "Width", min = 100, max = 420, step = 10 },
@@ -90,8 +101,9 @@ end
 
 function ns.ResetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "meter", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.panelSize = nil
+    for _, k in ipairs({ "meterW", "meterH", "threatW", "threatH" }) do db[k] = d[k] end
     applyAll()
     ns.say("window positions and sizes reset")
 end

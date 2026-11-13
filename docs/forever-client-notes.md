@@ -77,6 +77,37 @@ Types seen: `DamageDone 0, Dps 1, HealingDone 2, Hps 3, Absorbs 4, Interrupts 5,
 DamageTaken 7, AvoidableDamageTaken 8, Deaths 9, EnemyDamageTaken 10`. Session ids keep counting
 across `/reload`.
 
+### Live values during a fight (from Details' code, build 20261109, not yet probed by us)
+
+Details draws its bars on this client from `C_DamageMeter` alone and never registers the combat log
+(`Details/Libs/DF/fw.lua` treats interface 16001 like 12.x). What its code relies on, and what the
+DearLord Stats meter (2.30.0) therefore uses:
+
+- `GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall | Current, type)` and
+  `GetCombatSessionSourceFromType(sessionType, type, guid, creatureID)`, beside the `...FromID` pair;
+  `GetSessionDurationSeconds(sessionType)`; `ResetAllCombatSessions()`; event
+  `DAMAGE_METER_COMBAT_SESSION_UPDATED(type, sessionID)` (and `DAMAGE_METER_RESET`).
+- In a fight the session table is there, `combatSources[i]` comes sorted by the game, and
+  `totalAmount`, `amountPerSecond`, `maxAmount`, `name`, `sourceGUID` are hidden. They can be shown:
+  `StatusBar:SetMinMaxValues(0, max, Enum.StatusBarInterpolation.ExponentialEaseOut)` and
+  `SetValue(v, interpolation)` take hidden numbers (and ease the bar), `AbbreviateNumbers(v)` returns a
+  hidden text, `FontString:SetText` takes it. No sorting, summing or percent in Lua until the fight ends.
+- Session fields: `maxAmount`, `durationSeconds`; source fields also `classFilename`, `specIconID`,
+  `sourceCreatureID`, `classification`, `deathRecapID`, `deathTimeSeconds`; spell fields also
+  `amountPerSecond`, `creatureName` (the pet or totem), `combatSpellDetails.unitName`.
+- A creature source (an enemy, a pet listed on its own) is asked for with `guid = nil` and its
+  `sourceCreatureID`. Targets of a player come from `EnemyDamageTaken`: each enemy's spell list, kept
+  where `combatSpellDetails.unitName` is that player.
+- Details shows another player's spells only once their GUID is readable. Whether the API accepts the
+  hidden GUID handed straight back is not known; the addon tries it and records the answer in
+  `diag.meter.hiddenGuid`.
+- No hit counts, crits or overhealing exist in this API (Details switches those columns off).
+
+What the addon records for the next read of the saved variables: `diag.meter` with `api`, `interp`,
+`abbrev`, `events`, `liveDraws` / `readDraws`, `liveSolo` / `liveGroup` (which fields of the first
+source were hidden), `hiddenGuid`, `classColor`, `fightById` (the Current session was empty after a
+fight), `readError` / `tipError`, `chat`, `reset`.
+
 ## Smaller things that bit
 
 - `FontString:SetText()` errors with "Font not set" unless `SetFont` was called first.

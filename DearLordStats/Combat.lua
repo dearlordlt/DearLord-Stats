@@ -401,6 +401,10 @@ function ns.LevelAggregate(char, level)
     return agg
 end
 
+-- the game's meter was cleared (the meter window's reset, or anything else): session ids may start over
+function ns.CombatMeterReset() lastSessionID = 0 end
+ns.On("DAMAGE_METER_RESET", function() lastSessionID = 0 end, "combat:meterReset")
+
 ns.OnLogin(function()
     if dmReady() then
         local list = T(DM.GetAvailableCombatSessions()) or {}

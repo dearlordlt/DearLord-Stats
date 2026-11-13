@@ -46,6 +46,21 @@ function ns.HealthRows()
     elseif d.damageMeter then add("Fights", "ok", "read from the game's damage meter (" .. (d.fightsFromMeter or 0) .. " of " .. (d.fights or 0) .. " fights)")
     else add("Fights", "limited", "the game's damage meter is not there: counted from hit events alone") end
 
+    -- the meter window: is the game's meter there and switched on, and what a fight lets through
+    if ns.MeterStatus and db and db.showMeter ~= false then
+        local m = ns.MeterStatus()
+        if not m.available then add("Damage meter", "bad", "this client has no damage meter for addons to read")
+        elseif m.cvar == "0" then add("Damage meter", "limited", "the game's own damage meter is switched off in its options; switch it on if the bars stay empty")
+        elseif m.liveDraws + m.readDraws == 0 then add("Damage meter", "wait", "no fight shown yet (/dls meter test previews it)")
+        else
+            local parts = { "bars drawn " .. m.liveDraws .. " times during fights and " .. m.readDraws .. " times with readable numbers" }
+            if m.hiddenGuid == "accepted" then parts[#parts + 1] = "other players' abilities show during a fight"
+            elseif m.hiddenGuid then parts[#parts + 1] = "other players' abilities show once the fight ends" end
+            if m.chat then parts[#parts + 1] = "chat: " .. m.chat end
+            add("Damage meter", (m.liveDraws > 0 and m.readDraws == 0) and "limited" or "ok", table.concat(parts, "; "))
+        end
+    end
+
     local tp = S(d.threatProbe)
     if not tp then add("Threat numbers", "wait", "fight once with a pet out or in a group")
     else

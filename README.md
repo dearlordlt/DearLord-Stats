@@ -23,6 +23,30 @@ On screen, always: one small window you can drag anywhere.
   (rested-aware), time to level; a pet block (portrait, XP bar coloured by happiness, loyalty,
   training points); net gold and gold per hour; a skill bar for the profession you are working on.
 
+**Damage meter:** one window for the whole group, solo, in a party or in a raid, drawn from the
+game's own meter (the combat log is closed to addons here, so this is also where Details gets its
+numbers on this client).
+
+- *Two columns*, damage on the left and healing on the right; `1 col` / `2 col` in the title switches
+  the second one off and on. Click a column's title to pick what it shows: damage, healing, damage
+  taken, absorbs, interrupts, dispels, deaths, or enemies (damage per enemy).
+- *Fight / Total* in the title: the fight running now (or the last one), or everything since you logged
+  in. Right-click `Fight` for the earlier fights. `reset` clears the game's meter.
+- *Bars* in class colours with crests: rank, name, amount, per second, share in percent. They fill
+  smoothly, slide when players overtake each other, and the leading edge glows while a fight runs.
+- *Point at a bar* for the breakdown: every ability with amount, per second and share, pet and totem
+  abilities marked (`Bite (Joy)`), and for damage the targets that player hit.
+- *`copy`* opens a menu: send what the window shows to Say, Party, Raid, Guild or your target as a
+  whisper, or open it as text to copy anywhere (`/dls meter copy`, `/dls meter party` do the same).
+- Drag the corner to size it, the mouse wheel scrolls when there are more players than rows, the x
+  hides it (`/dls meter` brings it back, `/dls meter test` previews it with made-up players).
+
+During a fight the game hides every number from addons. The bars, amounts and per-second numbers are
+still live, because the game's own widgets draw the hidden values and the game hands the players over
+already sorted. What needs arithmetic appears about a second after the fight ends: the share in
+percent, the copy text, and other players' abilities (your own show during the fight too). The game's
+meter has no per-hit data, so there are no crits, hit counts or overhealing.
+
 With a pet out or in a group: a **threat window** that opens with each fight and stays until you
 close it with its x (the last fight's bars stay, dimmed). One bar per unit on the mob's threat
 list: you and your pet when solo, the party and their pets in a dungeon, the top ten in a raid (always including you).
@@ -201,7 +225,7 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Settings**: HUD font, size, edge, opacity, scale and background; which lines are shown; how long the
   recap and reminders stay; drop announcements; report opacity and text size; resets.
 
-Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls shield`, `/dls windfury [test]`, `/dls ready`, `/dls check`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
+Commands: `/dls`, `/dls settings`, `/dls economy`, `/dls loot`, `/dls census`, `/dls prices [name]`, `/dls scan [force]`, `/dls shield`, `/dls meter [test|on|off|reset|copy|say|party|raid|guild]`, `/dls windfury [test]`, `/dls ready`, `/dls check`, `/dls resetloot`, `/dls note <text>`, `/dls levels`, `/dls summary`, `/dls resetxp`, `/dls lock`,
 `/dls size <9-24>`, `/dls scale`, `/dls alpha`, `/dls bg`, `/dls recap`, `/dls nudges`, `/dls reset`,
 `/dls errors`. Right-click either text block for a menu.
 

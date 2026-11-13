@@ -9,9 +9,10 @@ local function toggle(key, after)
 end
 local function resetLayout()
     local db, d = ns.db, ns.defaults
-    for _, k in ipairs({ "xp", "threat", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
+    for _, k in ipairs({ "xp", "threat", "meter", "growl", "ready", "shieldPos", "panel" }) do db[k] = { point = d[k].point, x = d[k].x, y = d[k].y } end
     db.scale, db.alpha, db.fontSize = d.scale, d.alpha, d.fontSize
     db.panelSize = nil
+    for _, k in ipairs({ "meterW", "meterH", "threatW", "threatH" }) do db[k] = d[k] end
     ns.ApplyHudSettings()
     ns.say("positions and look reset")
 end
@@ -26,6 +27,7 @@ local ITEMS = {
     { divider = true },
     { text = "Show XP window", key = "showXP", after = applyAndRefresh },
     { text = "Show threat window", key = "showThreat", after = function() if ns.RefreshThreat then ns.RefreshThreat() end end },
+    { text = "Show damage meter", key = "showMeter", after = function() if ns.RefreshMeter then ns.RefreshMeter() end end },
     { text = "Fight recap after combat", key = "showRecap" },
     { text = "Gentle reminders", key = "nudges" },
     { text = "Dark background", key = "background", after = applyAndRefresh },
@@ -69,7 +71,7 @@ function ns.ShowMenu(owner)
     ToggleDropDownMenu(1, nil, legacy, "cursor", 0, 0)
 end
 
-local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | ready | shield | windfury [test|on|off] | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
+local HELP = "/dls (report) | settings | economy | loot | prices [name] | census | perf [on|off] | scan [force] | resetloot | note <text> | levels | summary | resetxp | lock | xp | threat [test|on|off] | meter [test|on|off|reset|copy|say|party|raid|guild] | ready | shield | windfury [test|on|off] | check | recap | nudges | bg | size <9-24> | scale <0.5-3> | alpha <0.2-1> | reset | errors"
 
 SLASH_DEARLORDSTATS1 = "/dls"
 SLASH_DEARLORDSTATS2 = "/dearlordstats"
@@ -104,6 +106,14 @@ SlashCmdList["DEARLORDSTATS"] = function(msg)
             elseif arg == "off" or arg == "on" then db.showThreat = arg == "on"; ns.RefreshThreat(); ns.say("threat window " .. arg)
             elseif db.showThreat == false then ns.say("the threat window is off: /dls threat on")
             elseif not ns.ToggleThreat() then ns.say("threat window closed; it opens with your next fight (with a pet out or in a group)") end
+        elseif cmd == "meter" or cmd == "dps" then
+            if arg == "test" or arg == "preview" then ns.MeterPreview(20); ns.say("damage meter preview for 20 s: drag it, size it by the corner, point at a bar")
+            elseif arg == "off" or arg == "on" then db.showMeter = arg == "on"; ns.RefreshMeter(); ns.say("damage meter " .. arg)
+            elseif arg == "reset" then ns.MeterReset()
+            elseif arg == "copy" or arg == "report" then ns.MeterCopyBox()
+            elseif arg == "say" or arg == "party" or arg == "raid" or arg == "guild" then ns.MeterSend(arg:upper())
+            elseif not ns.MeterAvailable() then ns.say("this client has no damage meter to read")
+            else ns.say("damage meter " .. (ns.ToggleMeter() and "shown" or "hidden")) end
         elseif cmd == "recap" then db.showRecap = not db.showRecap; ns.say("fight recap " .. (db.showRecap and "on" or "off"))
         elseif cmd == "nudges" then db.nudges = not db.nudges; ns.say("reminders " .. (db.nudges and "on" or "off"))
         elseif cmd == "bg" then db.background = not db.background; applyAndRefresh()

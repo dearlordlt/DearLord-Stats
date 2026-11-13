@@ -35,7 +35,11 @@ local function widget(kind, name)
     local function needFont(self) if self.kind == "FontString" and not self.fontSet then error("FontString:SetText(): Font not set", 3) end end
     function M:SetFont() self.fontSet = true end
     function M:SetFontObject() self.fontSet = true end
-    function M:SetText(t) needFont(self); self.text = tostring(t or ""); self.secretText = nil end
+    function M:SetText(t)
+        needFont(self)
+        if issecretvalue(t) then self.text, self.secretText = tostring(SECRET_OF[t] or ""), true; return end   -- a hidden text: drawn, never readable
+        self.text = tostring(t or ""); self.secretText = nil
+    end
     function M:GetText() return self.text end
     function M:SetFormattedText(fmt, ...)                       -- the game fills hidden numbers in itself; the text is then hidden too
         needFont(self)
@@ -68,7 +72,9 @@ local function widget(kind, name)
     function M:SetAlpha(a) self.alpha = a end
     function M:SetStatusBarColor(r, g, b) self.color = { r, g, b } end
     function M:GetStatusBarTexture() if self.kind ~= "StatusBar" then return nil end; self.fill = self.fill or widget("Texture"); return self.fill end
-    function M:SetValue(v) self.value = v end
+    function M:SetValue(v, how) self.value = v; self.eased = how ~= nil end
+    function M:SetMinMaxValues(lo, hi) self.min, self.max = lo, hi end
+    function M:GetCenter() return (self.cx or 400), 300 end
     function M:SetFrameLevel(l) self.level = l end
     function M:GetFrameLevel() return self.level or 1 end
     function M:GetTop() return 900 end
@@ -220,7 +226,8 @@ local SPELLS = { [6603] = "Attack", [75] = "Auto Shot", [3044] = "Arcane Shot", 
 local CAST_TIME = { [19434] = 3000 }        -- Aimed Shot: a real cast; everything else is instant
 SPELLS[19434] = "Aimed Shot"
 C_Spell = {
-    GetSpellName = function(id) return SPELLS[id] end,
+    GetSpellName = function(id) if issecretvalue(id) then return secret(SPELLS[SECRET_OF[id]]) end return SPELLS[id] end,   -- a hidden id gives a hidden name
+    GetSpellTexture = function(id) if issecretvalue(id) then return secret("icon") end return "icon" .. tostring(id) end,
     GetSpellInfo = function(id) return SPELLS[id] and { name = SPELLS[id], castTime = CAST_TIME[id] or 0 } or nil end,
     GetSpellCooldown = function(id)
         if id ~= 29515 then return nil end
@@ -281,7 +288,9 @@ C_Item = { GetItemInfo = function(link)
     GetItemCount = function(id) return world.bags[id] or 0 end,
     RequestLoadItemDataByID = function(id) world.requested = world.requested or {}; world.requested[id] = true end,
     GetItemNameByID = function(id) return ({ [2589] = "Linen Cloth", [2835] = "Rough Stone", [2840] = "Copper Bar", [2836] = "Coarse Stone" })[id] end }
-Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, DamageTaken = 7, Deaths = 9, EnemyDamageTaken = 10 },
+Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, Hps = 3, Absorbs = 4, Interrupts = 5, Dispels = 6, DamageTaken = 7,
+        AvoidableDamageTaken = 8, Deaths = 9, EnemyDamageTaken = 10 },
+    StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 },
     DamageMeterSessionType = { Overall = 0, Current = 1, Expired = 2 },
     SpellBookItemType = { None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4 },
     SpellBookSpellBank = { Player = 0, Pet = 1 }, TooltipDataType = { Item = 0, Unit = 2 } }
@@ -289,6 +298,88 @@ Enum = { DamageMeterType = { DamageDone = 0, Dps = 1, HealingDone = 2, DamageTak
 -- built-in damage meter ------------------------------------------------------------
 local dmSessions = { { sessionID = 83, name = "Old Boar", durationSeconds = 20, dmg = 100, taken = 10, spells = { { 75, 100 } } } }
 local function dmFind(id) for _, s in ipairs(dmSessions) do if s.sessionID == id then return s end end end
+-- in a fight the meter's values are hidden, but they still carry what the game will draw
+local function hideV(v) if world.combat then return secret(v) end return v end
+-- one session's sources for one kind of number: you, your pet, the others in the group (s.others), the enemies
+local function dmSources(s, kind)
+    local out = {}
+    local function add(name, guid, class, own, amount, spells, extra)
+        if amount and amount > 0 then
+            local e = { name = name, guid = guid, class = class, own = own, amount = amount, spells = spells or {} }
+            for k, v in pairs(extra or {}) do e[k] = v end
+            out[#out + 1] = e
+        end
+    end
+    local key = ({ [0] = "dmg", [2] = "healed", [5] = "interrupts", [7] = "taken" })[kind]
+    if kind == 10 then
+        for i = 1, s.enemies or 1 do add(s.name, nil, "", false, i == 1 and (s.dmg + (s.petDmg or 0)) or 10, s.enemySpells, { creatureID = 3000 + i, classification = "normal" }) end
+        return out
+    end
+    if not key then return out end
+    add("Tess Ter", "Player-1-0000ABCD", "HUNTER", true, s[key], kind == 0 and s.spells or s[key .. "Spells"])
+    if kind == 0 and s.petDmg then add(world.pet or "Humar", "Pet-0-1", nil, false, s.petDmg, s.petSpells) end
+    for _, o in ipairs(s.others or {}) do add(o.name, o.guid, o.class, false, o[key], o[key .. "Spells"]) end
+    return out
+end
+local function dmSession(s, kind)
+    local list = dmSources(s, kind)
+    table.sort(list, function(a, b) return a.amount > b.amount end)       -- the game hands them over sorted
+    local total, top, sources = 0, 0, {}
+    local dur = s.durationSeconds or 12
+    for i, e in ipairs(list) do
+        total = total + e.amount
+        if e.amount > top then top = e.amount end
+        sources[i] = { isLocalPlayer = e.own, name = hideV(e.name), sourceGUID = hideV(e.guid), classFilename = e.class ~= nil and hideV(e.class) or nil,
+            totalAmount = hideV(e.amount), amountPerSecond = hideV(e.amount / dur), sourceCreatureID = e.creatureID, classification = e.classification }
+        if kind == 10 then sources[i].name = hide(e.name) end
+    end
+    -- the legacy shape the fight recorder reads: the total of a damage session is yours plus your pet's
+    return { durationSeconds = hideV(dur), totalAmount = hideV(total), maxAmount = hideV(top), combatSources = sources }
+end
+local function dmSpells(s, kind, guid, creatureID)
+    local found
+    for _, e in ipairs(dmSources(s, kind)) do
+        if (guid ~= nil and e.guid == guid) or (guid == nil and creatureID ~= nil and e.creatureID == creatureID) then found = e end
+    end
+    if not found then return nil end
+    local list, top = {}, 0
+    local dur = s.durationSeconds or 12
+    for i, sp in ipairs(found.spells) do
+        if sp[2] > top then top = sp[2] end
+        list[i] = { spellID = hideV(sp[1]), totalAmount = hideV(sp[2]), amountPerSecond = hideV(sp[2] / dur), creatureName = hideV(sp[3] or ""),
+            combatSpellDetails = { isPet = sp[3] ~= nil, unitName = hideV(sp[4] or "") } }
+    end
+    return { combatSpells = list, totalAmount = hideV(found.amount), maxAmount = hideV(top) }
+end
+-- everything since the last reset, folded into one session
+local function dmOverall()
+    local all = { sessionID = 0, name = "Overall", durationSeconds = 0, dmg = 0, taken = 0, healed = 0, interrupts = 0, spells = {}, others = {}, enemies = 1 }
+    local byGuid = {}
+    local function fold(into, from) for _, sp in ipairs(from or {}) do into[#into + 1] = sp end end
+    local list = {}
+    for _, s in ipairs(dmSessions) do list[#list + 1] = s end
+    if world.combat and world.liveSession then list[#list + 1] = world.liveSession end
+    for _, s in ipairs(list) do
+        all.durationSeconds = all.durationSeconds + (s.durationSeconds or 12)
+        for _, k in ipairs({ "dmg", "taken", "healed", "interrupts" }) do all[k] = all[k] + (s[k] or 0) end
+        fold(all.spells, s.spells)
+        if s.petDmg then all.petDmg = (all.petDmg or 0) + s.petDmg; all.petSpells = all.petSpells or {}; fold(all.petSpells, s.petSpells) end
+        for _, o in ipairs(s.others or {}) do
+            local t = byGuid[o.guid]
+            if not t then t = { name = o.name, guid = o.guid, class = o.class, dmg = 0, taken = 0, healed = 0, interrupts = 0, dmgSpells = {}, healedSpells = {} }; byGuid[o.guid] = t; all.others[#all.others + 1] = t end
+            for _, k in ipairs({ "dmg", "taken", "healed", "interrupts" }) do t[k] = t[k] + (o[k] or 0) end
+            fold(t.dmgSpells, o.dmgSpells); fold(t.healedSpells, o.healedSpells)
+        end
+    end
+    return all
+end
+local function dmByType(stype)
+    if stype == 1 and world.currentEmpty and not world.combat then return { sessionID = 0, name = "", durationSeconds = 0 } end   -- "current" empties when the fight ends
+    if stype == 0 then if #dmSessions == 0 and not (world.combat and world.liveSession) then return nil end return dmOverall() end
+    if world.combat and world.liveSession then return world.liveSession end
+    return dmSessions[#dmSessions]
+end
+dmResets, chatSent = 0, {}
 C_DamageMeter = {
     IsDamageMeterAvailable = function() return true end,
     GetAvailableCombatSessions = function()
@@ -298,27 +389,42 @@ C_DamageMeter = {
     end,
     GetCombatSessionFromID = function(id, kind)
         local s = dmFind(id); if not s then return nil end
-        local me = { isLocalPlayer = true, name = hide("Tess Ter"), sourceGUID = hide("Player-1-0000ABCD"), classFilename = "HUNTER" }
-        if kind == 0 then
-            me.totalAmount = hide(s.dmg)
-            local sources = { me }
-            if s.petDmg then sources[2] = { isLocalPlayer = false, name = hide(world.pet or "Humar"), sourceGUID = hide("Pet-0-1"), totalAmount = hide(s.petDmg) } end
-            return { durationSeconds = hide(s.durationSeconds), totalAmount = hide(s.dmg + (s.petDmg or 0)), combatSources = sources }
-        elseif kind == 7 then me.totalAmount = hide(s.taken); return { totalAmount = hide(s.taken), combatSources = { me } }
-        elseif kind == 2 then me.totalAmount = hide(s.healed or 0); return { totalAmount = hide(s.healed or 0), combatSources = (s.healed or 0) > 0 and { me } or {} }
-        elseif kind == 10 then
-            local src = {}; for i = 1, s.enemies or 1 do src[i] = { name = hide(s.name), totalAmount = hide(10) } end
-            return { totalAmount = hide(s.dmg), combatSources = src }
-        end
+        return dmSession(s, kind)
     end,
-    GetCombatSessionSourceFromID = function(id, kind, guid)
-        local s = dmFind(id); if not s or kind ~= 0 then return nil end
-        local list = {}
-        local src = guid == "Pet-0-1" and (s.petSpells or {}) or s.spells
-        for i, sp in ipairs(src) do list[i] = { spellID = hide(sp[1]), totalAmount = hide(sp[2]), creatureName = hide("") } end
-        return { combatSpells = list }
+    GetCombatSessionSourceFromID = function(id, kind, guid, creatureID)
+        local s = dmFind(id); if not s then return nil end
+        if issecretvalue(guid) then if world.hiddenGuidOk then guid = SECRET_OF[guid] else return nil end end
+        return dmSpells(s, kind, guid, creatureID)
+    end,
+    GetCombatSessionFromType = function(stype, kind)
+        local s = dmByType(stype); if not s then return nil end
+        return dmSession(s, kind)
+    end,
+    GetCombatSessionSourceFromType = function(stype, kind, guid, creatureID)
+        local s = dmByType(stype); if not s then return nil end
+        if issecretvalue(guid) then if world.hiddenGuidOk then guid = SECRET_OF[guid] else return nil end end
+        return dmSpells(s, kind, guid, creatureID)
+    end,
+    GetSessionDurationSeconds = function(stype) local s = dmByType(stype); return s and hideV(s.durationSeconds or 12) or nil end,
+    ResetAllCombatSessions = function()
+        if world.combat then error("cannot reset in combat") end
+        for i = #dmSessions, 1, -1 do dmSessions[i] = nil end
+        dmResets = dmResets + 1
+        if dmFire then dmFire("DAMAGE_METER_RESET") end
     end,
 }
+-- the game's own number shortening: takes a hidden number and gives a hidden text
+function AbbreviateNumbers(v)
+    if issecretvalue(v) then return secret(tostring(math.floor((SECRET_OF[v] or 0) + 0.5))) end
+    return tostring(math.floor(v + 0.5))
+end
+function SendChatMessage(msg, channel, _, target)
+    if world.chatRefuse then error("chat is not available") end
+    chatSent[#chatSent + 1] = { msg = msg, channel = channel, target = target }
+end
+function IsInGuild() return world.guild == true end
+function UnitIsFriend() return world.friendTarget == true end
+function GetCVar(name) if name == "damageMeterEnabled" then return world.meterCVar or "1" end end
 
 -- professions, recipes, trainer, spellbook, bars ---------------------------------------
 local PROFS = { [7] = { "Mining", 136248, 50, 75 }, [8] = { "Engineering", 136243, 34, 75 }, [5] = { "First Aid", 135966, 15, 75 }, [6] = { "Cooking", 133971, 1, 75 } }
@@ -484,6 +590,7 @@ local function fire(event, ...)
         if f.events and f.events[event] and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
     end
 end
+dmFire = fire
 local function advance(seconds)
     local step = 0.25
     for _ = 1, math.floor(seconds / step + 0.5) do
@@ -526,6 +633,11 @@ local nextSession = 100
 local function runFight(o)
     world.targetLevel, world.targetName = o.mobLevel or world.level, o.name
     world.combat = true
+    -- the fight as the game's meter has it while it runs (hidden from addons until it ends)
+    world.liveSession = { sessionID = nextSession + 1, name = o.name or "Mob", durationSeconds = o.duration or 12, dmg = o.dmg, taken = o.taken,
+        healed = o.healed, enemies = o.mobs or 1, spells = o.spells or { { 75, o.dmg } }, petDmg = o.petDmg, petSpells = o.petSpells,
+        others = o.others, interrupts = o.interrupts, healedSpells = o.healedSpells, takenSpells = o.takenSpells, enemySpells = o.enemySpells,
+        interruptsSpells = o.interruptsSpells }
     world.threat = {}
     for i = 1, o.mobs or 1 do world.threat["nameplate" .. i] = "Creature-0-" .. nextSession .. "-" .. i end
     world.threat.target = world.threat.nameplate1
@@ -537,6 +649,7 @@ local function runFight(o)
         fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-" .. (now - 0.25) .. c, c)
         advance(1.5)
     end
+    fire("DAMAGE_METER_COMBAT_SESSION_UPDATED", 0, nextSession + 1)
     if o.during then advance(0.5); o.during() end
     fire("UNIT_COMBAT", "player", "WOUND", "", o.taken, 1)
     fire("UNIT_COMBAT", "target", "WOUND", "", o.dmg, 1)
@@ -545,9 +658,9 @@ local function runFight(o)
     world.hp = math.max(0, world.hp - o.taken); world.mana = math.max(0, world.mana - (o.manaUsed or 40))
     if o.die then world.hp = 0; fire("PLAYER_DEAD") end
     nextSession = nextSession + 1
-    dmSessions[#dmSessions + 1] = { sessionID = nextSession, name = o.name or "Mob", durationSeconds = o.duration or 12, dmg = o.dmg, taken = o.taken,
-        healed = o.healed, enemies = o.mobs or 1, spells = o.spells or { { 75, o.dmg } }, petDmg = o.petDmg, petSpells = o.petSpells }
-    world.combat = false; world.threat = {}
+    dmSessions[#dmSessions + 1] = world.liveSession
+    world.liveSession.sessionID = nextSession
+    world.combat = false; world.threat = {}; world.liveSession = nil
     fire("PLAYER_REGEN_ENABLED")
     for _ = 1, o.kills or (o.die and 0 or 1) do
         fire("CHAT_MSG_COMBAT_XP_GAIN", (o.name or "Mob") .. " dies, you gain 80 experience.")
@@ -1458,6 +1571,191 @@ if MODE ~= "bare" then
     world.hp, world.mana, world.targetLevel, world.targetName = keepWorld[1], keepWorld[2], keepWorld[3], keepWorld[4]
     ns.char.classFile = keepClass
 end
+-- the damage meter ----------------------------------------------------------------------
+local mT = {}
+if MODE ~= "bare" then
+    local mw = ns.huds.meter
+    local function copy(v) if type(v) ~= "table" then return v end; local o = {}; for k, x in pairs(v) do o[k] = copy(x) end; return o end
+    local function putBack(into, from) for k in pairs(into) do into[k] = nil end; for k, x in pairs(from) do into[k] = copy(x) end end
+    local keepChar, keepSession, keepLast = copy(ns.char), copy(ns.session), ns.lastFight
+    local keepFights, keepMeter, keepWorld = ns.db.diag.fights, ns.db.diag.fightsFromMeter, { world.hp, world.mana, world.targetLevel, world.targetName }
+    local keepParty, keepRecap = world.party, ns.db.showRecap
+    ns.db.showRecap = false
+    local function rows(ci)
+        local c, out = mw.cols[ci], {}
+        if not (mw.shown and c.shown) then return "-" end
+        for i = 1, c.list.count do
+            local r = c.list:Row(i)
+            local cells = {}
+            for k = 1, 3 do if r.cells[k].shown and r.cells[k].text ~= "" then cells[#cells + 1] = strip(r.cells[k].text) end end
+            out[#out + 1] = strip(r.rank.text) .. " " .. strip(r.name.text) .. " " .. table.concat(cells, " ")
+        end
+        return table.concat(out, " | ")
+    end
+    local function rowOf(ci, name)
+        local c = mw.cols[ci]
+        for i = 1, c.list.count do local r = c.list:Row(i); if strip(r.name.text) == name then return r end end
+    end
+    local function tipRows()
+        local t, out = ns.meterTip, {}
+        if not (t and t.shown) then return "-" end
+        for i = 1, t.list.count do
+            local r = t.list:Row(i)
+            local cells = {}
+            for k = 1, 3 do if r.cells[k].shown and r.cells[k].text ~= "" then cells[#cells + 1] = strip(r.cells[k].text) end end
+            out[#out + 1] = strip(r.name.text) .. " " .. table.concat(cells, " ")
+        end
+        return table.concat(out, " | ") .. (t.note.shown and (" // " .. t.note.text) or "")
+    end
+    mT.loginResets = dmResets
+    fire("PLAYER_ENTERING_WORLD", false, true); advance(1); mT.reloadNoReset = dmResets == mT.loginResets     -- a /reload keeps Total
+    mT.startShown = mw.shown
+
+    -- the preview: made-up players, sorted, both columns
+    SlashCmdList["DEARLORDSTATS"]("meter test"); advance(3)
+    mT.preview1, mT.preview2 = rows(1), rows(2)
+    do
+        local a, b = mw.cols[1].list:Row(1), mw.cols[1].list:Row(2)
+        mT.previewSorted = a ~= nil and b ~= nil and a.bar.value >= b.bar.value and a.bar.eased == true
+        mw.cols[1].list.onEnter(a.item, a); mT.previewTip = tipRows(); mw.cols[1].list.onLeave()
+    end
+    advance(21); mT.previewOver = ns.meter.demoUntil < now
+
+    -- a fight in a party of three: during it every number is hidden, the bars still fill and the game's order is kept
+    world.party = { party1 = { name = "Tankard", class = "Warrior" }, party2 = { name = "Healbot", class = "Priest" } }
+    local others = {
+        { name = "Tankard", guid = "Player-1-TANK", class = "WARRIOR", dmg = 300, taken = 400, interrupts = 2, dmgSpells = { { 6603, 200 }, { 2973, 100 } } },
+        { name = "Healbot", guid = "Player-1-HEAL", class = "PRIEST", dmg = 40, healed = 520, taken = 30, dmgSpells = { { 6603, 40 } }, healedSpells = { { 2050, 520 } } },
+    }
+    SPELLS[2050], SPELLS[8190], SPELLS[2139] = "Lesser Heal", "Magma Totem", "Counterspell"
+    local fightOpts = { name = "Test Ogre", kills = 0, dmg = 600, taken = 80, healed = 60, duration = 20, others = others, interrupts = 1,
+        spells = { { 75, 350 }, { 3044, 150 }, { 17253, 70, "Joy" }, { 8190, 30, "Magma Totem" } }, healedSpells = { { 2050, 60 } },
+        takenSpells = { { 6603, 80, "Test Ogre" } }, interruptsSpells = { { 2139, 1 } }, enemySpells = { { 75, 350, nil, "Tess Ter" }, { 6603, 200, nil, "Tankard" } } }
+    fightOpts.during = function()
+        advance(0.5)
+        mT.live1, mT.live2 = rows(1), rows(2)
+        local r1 = mw.cols[1].list:Row(1)
+        mT.liveHidden = r1 ~= nil and issecretvalue(r1.bar.value) and issecretvalue(r1.bar.max) and r1.name.secretText == true and r1.cells[1].secretText == true
+            and r1.cells[2].secretText == true and r1.spark.shown == true
+        mT.liveTitle = strip(mw.titleTime.text)
+        -- the breakdown: your own row works in a fight; another player's only if the game takes the hidden id
+        local mine, other
+        for i = 1, mw.cols[1].list.count do local r = mw.cols[1].list:Row(i); if r.item.own then mine = r else other = other or r end end
+        if mine then mw.cols[1].list.onEnter(mine.item, mine); mT.liveTipOwn = tipRows() end
+        if other then mw.cols[1].list.onEnter(other.item, other); mT.liveTipOther = tipRows() end
+        world.hiddenGuidOk = true
+        if other then mw.cols[1].list.onEnter(other.item, other); mT.liveTipOtherOk = tipRows() end
+        world.hiddenGuidOk = nil
+        mw.cols[1].list.onLeave()
+        mT.liveReport = select(2, ns.MeterReport())
+    end
+    runFight(fightOpts)
+    mT.after1, mT.after2 = rows(1), rows(2)
+    mT.afterTitle = strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text)
+    mT.afterSum = strip(mw.cols[1].sum.text)
+    mT.afterPlain = mw.cols[1].list:Row(1) ~= nil and mw.cols[1].list:Row(1).name.secretText == nil and mw.cols[1].list:Row(1).spark.shown == false
+    do
+        local r = rowOf(1, "Tess Ter"); mw.cols[1].list.onEnter(r.item, r); mT.tipOwn = tipRows()
+        local t = ns.meterTip
+        mT.tipTargets = t.targetsHead.shown and (strip(t.targets[1].name.text) .. " " .. strip(t.targets[1].value.text)) or "-"
+        r = rowOf(1, "Tankard"); mw.cols[1].list.onEnter(r.item, r); mT.tipOther = tipRows()
+        r = rowOf(2, "Healbot"); mw.cols[2].list.onEnter(r.item, r); mT.tipHeal = tipRows()
+        mw.cols[1].list.onLeave(); mT.tipGone = ns.meterTip.shown == false
+    end
+
+    -- copy: lines for chat, all inside the click; a refusal opens the text box instead
+    mT.report = table.concat(ns.MeterReport(2) or {}, " / ")
+    chatSent = {}
+    mw.buttons.copy.scripts.OnClick(mw.buttons.copy, "LeftButton")
+    mT.menu = (MenuUtil.buttons["Say"] and "say " or "") .. (MenuUtil.buttons["Party"] and "party " or "") .. (MenuUtil.buttons["Open as text to copy"] and "box" or "")
+    MenuUtil.buttons["Party"](); advance(4)
+    mT.chat = #chatSent .. " lines to " .. tostring(chatSent[1] and chatSent[1].channel) .. ": " .. tostring(chatSent[1] and chatSent[1].msg) .. " / " .. tostring(chatSent[2] and chatSent[2].msg)
+    world.chatRefuse = true; chatSent = {}
+    ns.MeterSend("PARTY"); advance(4)
+    world.chatRefuse = nil
+    mT.refused = #chatSent == 0 and ns.copyBox ~= nil and ns.copyBox.shown and ns.copyBox.box.text:find("1. Tess Ter  600", 1, true) ~= nil
+    if ns.copyBox then ns.copyBox:Hide() end
+    MenuUtil.buttons["Open as text to copy"](); mT.box = ns.copyBox.shown and ns.copyBox.box.text or "-"
+    ns.copyBox:Hide()
+
+    -- a second fight, then Total adds the two up; Fight stays on the last one
+    runFight({ name = "Test Wolf", kills = 0, dmg = 100, taken = 10, duration = 10, others = { { name = "Tankard", guid = "Player-1-TANK", class = "WARRIOR", dmg = 500 } } })
+    mT.fight2 = rows(1)
+    mw.tabTotal.scripts.OnClick(mw.tabTotal, "LeftButton"); mT.total = rows(1); mT.totalTitle = strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text)
+    -- earlier fights: right-click on Fight lists them, a new fight comes back to the running one
+    mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
+    local pick; for text, fn in pairs(MenuUtil.buttons) do if text:find("^Test Ogre") then pick = fn; mT.earlierLabel = text end end
+    if pick then pick() end
+    mT.earlier, mT.earlierTab = rows(1), strip(mw.tabFight.text.text)
+    runFight({ name = "Test Rat", kills = 0, dmg = 50, taken = 5, duration = 5 })
+    mT.backToFight = ns.meter.seg == "fight" and rows(1) or "-"
+    mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
+    for text, fn in pairs(MenuUtil.buttons) do if text:find("^Test Ogre") then fn() end end
+
+    -- a client whose "current" session is empty after the fight: the last fight is read by its id
+    mw.tabFight.scripts.OnClick(mw.tabFight, "LeftButton")
+    world.currentEmpty = true; advance(3)
+    mT.byId = rows(1) .. " // " .. strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text) .. " // " .. tostring(ns.meter.seg) .. " " .. type(ns.meter.use)
+    world.currentEmpty = nil; advance(3)
+    mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
+    for text, fn in pairs(MenuUtil.buttons) do if text:find("^Test Ogre") then fn() end end
+
+    -- other views, and the second column switched off
+    ns.db.meterViewL, ns.db.meterViewR = "taken", "interrupts"; mw:Layout()
+    mT.taken, mT.interrupts = rows(1), rows(2)
+    do local r = rowOf(1, "Tess Ter"); mw.cols[1].list.onEnter(r.item, r); mT.tipTaken = tipRows(); mw.cols[1].list.onLeave() end
+    ns.db.meterViewL = "enemies"; mw:Layout(); mT.enemies = rows(1)
+    do local r = mw.cols[1].list:Row(1); mw.cols[1].list.onEnter(r.item, r); mT.tipEnemy = tipRows(); mw.cols[1].list.onLeave() end
+    ns.db.meterViewL, ns.db.meterViewR = "damage", "healing"
+    local wide = mw.cols[1].list.width
+    mw.buttons.cols.scripts.OnClick(mw.buttons.cols, "LeftButton")
+    mT.oneCol = ns.db.meterSecond == false and mw.cols[2].shown == false and mw.cols[2].list.frame.shown == false and mw.cols[1].list.width > wide * 1.8
+    mT.oneColRows = rows(1)
+    mw.buttons.cols.scripts.OnClick(mw.buttons.cols, "LeftButton")
+    mT.twoCol = ns.db.meterSecond == true and mw.cols[2].shown == true
+    ns.db.meterNumbers = "rate"; mw:Layout(); mT.rateOnly = rows(1)
+    ns.db.meterNumbers = "all"; mw:Layout()
+
+    -- resize by the corner: kept, and more rows fit; locked windows do not size
+    local before = ns.meter.visible
+    mw.grip.scripts.OnMouseDown(mw.grip, "LeftButton"); mw:SetSize(600, 300); mw.grip.scripts.OnMouseUp(mw.grip)
+    mT.resized = ns.db.meterW == 600 and ns.db.meterH == 300 and ns.meter.visible > before
+    ns.ApplyHudSettings(); mT.resizeKept = mw.w == 600 and mw.h == 300
+    ns.db.locked = true
+    mw.grip.scripts.OnMouseDown(mw.grip, "LeftButton"); mw:SetSize(700, 400); mw.grip.scripts.OnMouseUp(mw.grip)
+    mT.lockedSize = ns.db.meterW == 600
+    ns.db.locked = false
+    ns.ResetLayout(); mT.resetSize = ns.db.meterW == ns.defaults.meterW and mw.w == ns.defaults.meterW
+
+    -- scrolling, with your own row kept in view
+    ns.db.meterBarHeight = 30; mw:SetSize(520, 110); mw.grip.scripts.OnMouseDown(mw.grip, "LeftButton"); mw.grip.scripts.OnMouseUp(mw.grip)
+    mw.tabTotal.scripts.OnClick(mw.tabTotal, "LeftButton")
+    mT.fewVisible, mT.fewRows = ns.meter.visible, rows(1)
+    mw.scripts.OnMouseWheel(mw, -1); mT.scrolled = rows(1)
+    mw.scripts.OnMouseWheel(mw, 1)
+    ns.db.meterBarHeight = 18; ns.ResetLayout()
+
+    -- client checks, the close button, hiding when idle, reset
+    world.class = nil
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Damage meter" then mT.health = r.state .. ": " .. r.detail end end
+    world.meterCVar = "0"
+    for _, r in ipairs(ns.HealthRows()) do if r.name == "Damage meter" then mT.healthOff = r.state end end
+    world.meterCVar = nil
+    mw.buttons.close.scripts.OnClick(mw.buttons.close, "LeftButton"); mT.closed = mw.shown == false and ns.db.showMeter == false
+    SlashCmdList["DEARLORDSTATS"]("meter"); mT.reopened = mw.shown == true and ns.db.showMeter == true
+    ns.db.meterHideIdle = true; advance(25); mT.idleHidden = mw.shown == false
+    ns.db.meterHideIdle = false; advance(1); mT.idleBack = mw.shown == true
+    local resetsBefore = dmResets
+    mw.buttons.reset.scripts.OnClick(mw.buttons.reset, "LeftButton"); advance(1)
+    mT.reset = dmResets == resetsBefore + 1 and mw.cols[1].list.count == 0 and mw.cols[1].empty.shown and strip(mw.cols[1].empty.text) or "-"
+    mT.diag = ns.db.diag.meter
+    mT.errors = #(ns.db.errors or {})
+
+    world.party = keepParty
+    putBack(ns.char, keepChar); putBack(ns.session, keepSession)
+    ns.lastFight, ns.db.diag.fights, ns.db.diag.fightsFromMeter, ns.db.showRecap = keepLast, keepFights, keepMeter, keepRecap
+    world.hp, world.mana, world.targetLevel, world.targetName = keepWorld[1], keepWorld[2], keepWorld[3], keepWorld[4]
+end
 local function check(name, ok) io.write(string.format("   [%s] %s\n", ok and "ok" or "FAIL", name)); if not ok then os.exit_code = 1 end end
 local c = ns.char.combat
 if MODE == "bare" then
@@ -1465,6 +1763,12 @@ if MODE == "bare" then
     check("6 fights recorded from live hit events alone", c.fights == 6 and ns.db.diag.fightsFromMeter == 0)
     check("damage taken still known (64+150+20+175+120+130)", c.taken == 659)
     check("note saved", #ns.char.journal == 1)
+    do
+        local state
+        ns.meter.demoUntil = 0; ns.RefreshMeter()                 -- the settings page's preview button was pressed on the way here
+        for _, r in ipairs(ns.HealthRows()) do if r.name == "Damage meter" then state = r.state end end
+        check("meter: without the game's damage meter the window stays away and the client checks say so", ns.huds.meter.shown == false and state == "bad")
+    end
     check("summary keeps the safety line when health is never readable", ns.SummaryText(false):find("Safety: a fight costs %d+%% of its health") ~= nil)
     io.write("\n" .. ns.SummaryText(false) .. "\n")
     if #(ns.db.errors or {}) > 0 then for _, e in ipairs(ns.db.errors) do io.write("   x" .. e.count .. " [" .. e.where .. "] " .. e.msg .. "\n") end end
@@ -1768,5 +2072,61 @@ end
 if #(ns.db.errors or {}) > 0 then
     io.write("\n-- INTERNAL ERRORS\n")
     for _, e in ipairs(ns.db.errors) do io.write("   x" .. e.count .. " [" .. e.where .. "] " .. e.msg .. "\n") end
+end
+-- the damage meter
+check("meter: the preview shows made-up players in both columns, sorted, with eased bars (" .. tostring(mT.preview1) .. ")",
+    mT.startShown and mT.previewSorted and mT.preview1:find("^1%. %a+ %d+ [%d%.]+/s %d+%%") ~= nil and mT.preview2:find("Moonleaf", 1, true) ~= nil and mT.previewOver)
+check("meter: pointing at a bar lists the abilities, pets in brackets (" .. tostring(mT.previewTip) .. ")", mT.previewTip:find("Attack (Joy)", 1, true) ~= nil)
+check("meter: during a fight the hidden numbers are drawn by the game, in the game's order, without a share (" .. tostring(mT.live1) .. ")",
+    mT.liveHidden and mT.live1 == "1. Tess Ter 600 30.0/s | 2. Tankard 300 15.0/s | 3. Healbot 40 2.0/s" and mT.live2 == "1. Healbot 520 26.0/s | 2. Tess Ter 60 3.0/s")
+check("meter: in a fight your own abilities show, with pet and totem (" .. tostring(mT.liveTipOwn) .. ")",
+    mT.liveTipOwn:find("Auto Shot", 1, true) ~= nil and mT.liveTipOwn:find("Bite  Joy 70", 1, true) ~= nil and mT.liveTipOwn:find("Shares appear when the fight ends", 1, true) ~= nil)
+check("meter: another player's abilities in a fight only if the game takes the hidden id (" .. tostring(mT.liveTipOtherOk) .. ")",
+    mT.liveTipOther:find("until the fight ends", 1, true) ~= nil and mT.liveTipOtherOk:find("Raptor Strike", 1, true) ~= nil and mT.diag.hiddenGuid == "accepted")
+check("meter: after the fight the bars are sorted with their share, the title names the fight (" .. tostring(mT.after1) .. " // " .. tostring(mT.afterTitle) .. ")",
+    mT.after1 == "1. Tess Ter 600 30.0/s 64% | 2. Tankard 300 15.0/s 32% | 3. Healbot 40 2.0/s 4%" and mT.after2 == "1. Healbot 520 26.0/s 90% | 2. Tess Ter 60 3.0/s 10%"
+    and mT.afterTitle == "Test Ogre 0:20" and mT.afterSum == "940   47.0/s" and mT.afterPlain)
+check("meter: the breakdown after a fight: abilities, pet, totem, shares, targets (" .. tostring(mT.tipOwn) .. " // " .. tostring(mT.tipTargets) .. ")",
+    mT.tipOwn == "Auto Shot 350 17.5/s 58% | Arcane Shot 150 7.5/s 25% | Bite (Joy) 70 3.5/s 12% | Magma Totem 30 1.5/s 5%" and mT.tipTargets == "Test Ogre 350   100%"
+    and mT.tipOther == "Melee 200 10.0/s 67% | Raptor Strike 100 5.0/s 33%" and mT.tipHeal == "Lesser Heal 520 26.0/s 100%" and mT.tipGone)
+check("meter: the copy text has both columns (" .. tostring(mT.report) .. ")",
+    mT.report == "DearLord Stats: Damage, Test Ogre (0:20) / 1. Tess Ter  600 (30.0/s, 64%) / 2. Tankard  300 (15.0/s, 32%) / DearLord Stats: Healing, Test Ogre (0:20) / 1. Healbot  520 (26.0/s, 90%) / 2. Tess Ter  60 (3.0/s, 10%)"
+    and mT.liveReport == "hidden")
+check("meter: the copy button's menu sends the lines to chat, or opens them as text (" .. tostring(mT.chat) .. ")",
+    mT.menu == "say party box" and mT.chat == "7 lines to PARTY: DearLord Stats: Damage, Test Ogre (0:20) / 1. Tess Ter  600 (30.0/s, 64%)"
+    and mT.box:find("2. Tankard  300 (15.0/s, 32%)", 1, true) ~= nil)
+check("meter: a refused chat message opens the text box instead", mT.refused and mT.diag.chat == "refused (PARTY)")
+check("meter: Fight shows the last fight, Total adds them up (" .. tostring(mT.fight2) .. " // " .. tostring(mT.total) .. ")",
+    mT.fight2 == "1. Tankard 500 50.0/s 83% | 2. Tess Ter 100 10.0/s 17%" and mT.total:find("^1%. Tess Ter %d+ [%d%.]+/s %d+%% | 2%. Tankard 800") ~= nil
+    and mT.totalTitle:find("^this session %d+:%d%d$") ~= nil)
+check("meter: an earlier fight can be picked, and the next fight comes back to the running one (" .. tostring(mT.earlierLabel) .. ")",
+    mT.earlierLabel == "Test Ogre  0:20" and mT.earlierTab == "Fight*" and mT.earlier == mT.after1 and mT.backToFight == "1. Tess Ter 50 10.0/s 100%")
+check("meter: if the game's current session is empty after a fight, the last one is read by its id (" .. tostring(mT.byId) .. ")",
+    mT.byId == "1. Tess Ter 50 10.0/s 100% // Test Rat 0:05 // fight number")
+check("meter: damage taken, interrupts and enemies views (" .. tostring(mT.taken) .. " // " .. tostring(mT.interrupts) .. " // " .. tostring(mT.enemies) .. ")",
+    mT.taken == "1. Tankard 400 20.0/s 78% | 2. Tess Ter 80 4.0/s 16% | 3. Healbot 30 1.5/s 6%" and mT.interrupts == "1. Tankard 2 | 2. Tess Ter 1"
+    and mT.enemies == "1. Test Ogre 600 30.0/s 100%" and mT.tipTaken == "Melee (Test Ogre) 80 4.0/s 100%"
+    and mT.tipEnemy == "Auto Shot (Tess Ter) 350 17.5/s 64% | Melee (Tankard) 200 10.0/s 36%")
+check("meter: the second column switches off and on, a bar can carry the rate alone (" .. tostring(mT.rateOnly) .. ")",
+    mT.oneCol and mT.twoCol and mT.oneColRows == mT.after1 and mT.rateOnly == "1. Tess Ter 30.0/s | 2. Tankard 15.0/s | 3. Healbot 2.0/s")
+check("meter: resized by the corner, kept, not while locked, back to default on reset", mT.resized and mT.resizeKept and mT.lockedSize and mT.resetSize)
+check("meter: more players than rows: the wheel scrolls (" .. tostring(mT.fewRows) .. " -> " .. tostring(mT.scrolled) .. ")",
+    mT.fewVisible == 2 and mT.fewRows:find("^1%. Tess Ter") ~= nil and mT.scrolled:find("^2%. Tankard .* | 3%. Healbot") ~= nil)
+check("meter: Total starts over at login, not on a reload; the reset button clears it (" .. tostring(mT.reset) .. ")",
+    mT.loginResets >= 1 and mT.reloadNoReset and mT.reset == "nothing yet" and mT.diag.reset == "ok")
+check("meter: closed with its x, back with /dls meter, hidden when idle if asked", mT.closed and mT.reopened and mT.idleHidden and mT.idleBack)
+check("meter: the client checks report it (" .. tostring(mT.health) .. ")", mT.health:find("^ok: bars drawn %d+ times during fights") ~= nil and mT.healthOff == "limited")
+check("meter: nothing in it raised an error", mT.errors == 0)
+if os.getenv("MDUMP") then
+    io.write("\n== meter capture\n")
+    local keys = {}
+    for k in pairs(mT) do keys[#keys + 1] = k end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        local v = mT[k]
+        if type(v) == "table" then local t = {}; for a, b in pairs(v) do t[#t + 1] = a .. "=" .. tostring(b) end; table.sort(t); v = table.concat(t, " ") end
+        io.write("   " .. k .. " = " .. tostring(v) .. "\n")
+    end
+    for _, e in ipairs(ns.db.errors or {}) do io.write("   x" .. e.count .. " [" .. e.where .. "] " .. e.msg .. "\n") end
 end
 os.exit(os.exit_code or 0)
