@@ -159,6 +159,12 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Professions**: skill-ups this session, what you can craft *right now* from your bags for points
   (orange / yellow / green), a rough shopping list to the next milestone, remembered trainer unlocks,
   gathering by zone, nodes your skill was too low for.
+- **In the game's profession window**, under the materials of the recipe you select: `Materials 95c`
+  and `Profit 2s 40c  sold to a vendor` (or `Loss 90c`). Materials count at their cheapest known source
+  (your last auction scan, or a vendor you have met); the product at the auction house after the cut
+  (its usual price) or at a vendor, whichever pays more. Point at the lines for each material with
+  its source and the age of its price. A material without a price is named and no profit is promised.
+  This is what Auctionator writes in the same place; with both installed, ours sits under its lines.
 - **Economy** (was Loot), three views:
   - **Advice**: ways to earn gold, built only from real numbers: your auction scans, this character's
     recipes and gathering skills, your bags, what vendors pay, and the prices of vendors you have talked

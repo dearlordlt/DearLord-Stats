@@ -73,6 +73,7 @@ local CONTROLS = {
 
     { header = "Auction house" },
     { type = "check", key = "ahTooltip", label = "Auction price in item tooltips" },
+    { type = "check", key = "craftInfo", label = "Cost and profit of the selected recipe in the profession window" },
     { type = "check", key = "ahAutoScan", label = "Scan automatically on your first key press at the auction house" },
     { type = "check", key = "ahTooltipNeutral", label = "Include the goblin (neutral) auction house among the other houses" },
     { type = "choice", key = "ahCompare", label = "Smelted, neutral and other faction's prices: show while holding", options = function() return ns.AH_MODIFIERS end },
@@ -97,6 +98,7 @@ local function applyAll()
     if ns.RefreshXP then ns.RefreshXP() end
     if ns.ApplyPanelStyle then ns.ApplyPanelStyle() end
     if ns.PanelDirty then ns.PanelDirty() end
+    if ns.RefreshCraftInfo then ns.RefreshCraftInfo() end
 end
 
 function ns.ResetLayout()

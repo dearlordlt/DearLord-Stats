@@ -1122,6 +1122,7 @@ end
 -- the economy advisor: prices for craft products and materials, a vendor visit, then the Advice view
 local adv, advAfterHide, advWide, advTip, advOpened, advKept, advLoaded, advPatched, advNewBuild = nil, nil, nil, nil, false, false, false, false, false
 local usualResult = {}
+local craftT = {}
 if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
@@ -1131,6 +1132,30 @@ if MODE ~= "bare" then
     fire("MERCHANT_SHOW"); advance(1); world.merchant = nil; world.npc = nil
     ns.AdviceDirty(true); advance(1); advance(3)
     adv = ns.Advice()
+    -- the profession window: under the selected recipe's materials, what a craft costs and brings in
+    do
+        local form = CreateFrame("Frame")
+        local selected
+        form.Init = function() end
+        form.GetRecipeInfo = function() return selected end
+        form.Reagents = CreateFrame("Frame", nil, form)
+        ProfessionsFrame = { CraftingPage = { SchematicForm = form } }
+        local function pick(id)
+            selected = C_TradeSkillUI.GetRecipeInfo(id); form:Init(selected)
+            return ns.craftInfo and ns.craftInfo.shown and (strip(ns.craftInfo.text.text):gsub("\n", " / ")) or "-"
+        end
+        world.tradeskillOpen = "Engineering"; fire("TRADE_SKILL_SHOW"); advance(1)
+        craftT.bolts, craftT.powder, craftT.dynamite = pick(3921), pick(3918), pick(3919)
+        GameTooltip.lines = {}; ns.craftInfo.scripts.OnEnter(ns.craftInfo); craftT.tip = table.concat(GameTooltip.lines, " / "); ns.craftInfo.scripts.OnLeave(ns.craftInfo)
+        -- with Auctionator's own lines in the window, ours sit under them
+        AuctionatorCraftingInfoProfessionsFrame = CreateFrame("Frame", nil, form)
+        AuctionatorCraftingInfoProfessionsFrame.Total = AuctionatorCraftingInfoProfessionsFrame:CreateFontString()
+        pick(3921); craftT.under = ns.craftInfo.point ~= nil and ns.craftInfo.point[2] == AuctionatorCraftingInfoProfessionsFrame.Total
+        AuctionatorCraftingInfoProfessionsFrame = nil
+        pick(3921); craftT.below = ns.craftInfo.point ~= nil and ns.craftInfo.point[2] == form.Reagents
+        ns.db.craftInfo = false; craftT.off = pick(3921); ns.db.craftInfo = true
+        world.tradeskillOpen = nil
+    end
     advKept = ns.db.sellPrices and ns.db.sellPrices[2140] == 350
     -- an item the client has not loaded yet: asked for, and its price read when it arrives
     world.uncached = { [5000] = true }
@@ -2027,6 +2052,14 @@ if MODE ~= "bare" then
     check("usual price: an odd high listing counts at its usual price (" .. tostring(usualResult.fair) .. ", " .. tostring(usualResult.vs) .. "%)", usualResult.fair == "42/200/42" and usualResult.vs == 376)
     check("usual price: the craft that only paid at the odd price is no longer advised, and the price search lists the usual price", usualResult.craftGone == true and usualResult.search == 42)
     check("advisor: Copper Bolts pay more at a vendor, +2s 40c (" .. tostring(bolts and strip(bolts.right)) .. ")", bolts and bolts.value == 240 and strip(bolts.right):find("to vendor"))
+    check("profession window: cost and profit under the materials (" .. tostring(craftT.bolts) .. " // " .. tostring(craftT.powder) .. ")",
+        craftT.bolts == "Materials 60c / Profit 2s 40c  sold to a vendor" and craftT.powder:find("^Materials %d+c / Profit 1s 87c  sold at the auction house$") ~= nil)
+    check("profession window: a material without a price is named, no profit promised (" .. tostring(craftT.dynamite) .. ")",
+        craftT.dynamite:find("no price for Linen Cloth", 1, true) ~= nil and craftT.dynamite:find("Profit", 1, true) == nil)
+    check("profession window: pointing at it lists each material with its source (" .. tostring(craftT.tip) .. ")",
+        craftT.tip:find("Rough Dynamite  (makes 2)", 1, true) ~= nil and craftT.tip:find("no price", 1, true) ~= nil)
+    check("profession window: under Auctionator's lines while it is installed, under the materials without it; off by its setting",
+        craftT.under and craftT.below and craftT.off == "-")
     check("advisor: Rough Dynamite skipped, Linen Cloth has no price", adv and adv.craftSkipped and adv.craftSkipped.n >= 1 and table.concat(adv.craftSkipped.names, ","):find("Linen Cloth"))
     local bow = adv and find(adv.flips, 2506)
     check("advisor: the vendor's bow flips for +75s (" .. tostring(bow and strip(bow.right)) .. ")", bow and bow.value == 7500 and ns.db.vendors[2506].c == 2000 and not ns.db.vendors[2589])

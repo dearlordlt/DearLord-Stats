@@ -130,6 +130,19 @@ What the addon records for the next read of the saved variables: `diag.meter` wi
 source were hidden), `hiddenGuid`, `classColor`, `fightById` (the Current session was empty after a
 fight), `readError` / `tipError`, `chat`, `reset`.
 
+## The profession window (from Auctionator's code, build 339; ours not yet seen in the game)
+
+The window is the modern `ProfessionsFrame`. The recipe pane is
+`ProfessionsFrame.CraftingPage.SchematicForm`; it calls its own `Init(recipeInfo)` each time a recipe
+is picked, so `hooksecurefunc(form, "Init", fn)` is the place to redraw (Auctionator notes that the
+events can fire before the pane has finished). `form:GetRecipeInfo()` gives the selected recipe,
+`form.Reagents`, `form.OptionalReagents` and `form.extraSlotFrames` are the frames above the free
+space where Auctionator puts its cost and profit (its frame is the global
+`AuctionatorCraftingInfoProfessionsFrame`, text in `.Total`, anchored by both LEFT and TOP, so the
+frame's own bottom edge is not where its text ends). DearLord Stats 2.33.0 draws its own two lines
+there the same way. SkillUpForever (the recipe tooltip with the skill range and "Net per craft")
+takes its auction prices from Auctionator or TradeSkillMaster only.
+
 ## Smaller things that bit
 
 - `FontString:SetText()` errors with "Font not set" unless `SetFont` was called first.

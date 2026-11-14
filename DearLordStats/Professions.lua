@@ -200,6 +200,20 @@ end
 ----------------------------------------------------------------------
 -- recipe memory: open a profession window and the addon remembers your recipes
 ----------------------------------------------------------------------
+-- the materials a recipe always needs: { { id, qty } }
+local function reagentsOf(sch)
+    local reagents = {}
+    for _, slot in ipairs(sch and T(sch.reagentSlotSchematics) or {}) do
+        slot = T(slot)
+        local first = slot and T(slot.reagents) and T(slot.reagents[1])
+        local itemID, qty = first and N(first.itemID), slot and N(slot.quantityRequired)
+        if itemID and qty and qty > 0 and B(slot.required) ~= false and (N(slot.reagentType) or 1) == 1 then
+            reagents[#reagents + 1] = { id = itemID, qty = qty }
+        end
+    end
+    return reagents
+end
+
 -- returns nil when done, or a short reason when the window was not ready yet (the caller retries)
 local function scanRecipes()
     TS = TS or C_TradeSkillUI
@@ -217,15 +231,8 @@ local function scanRecipes()
     for _, id in ipairs(ids) do
         local info = T(TS.GetRecipeInfo(id))
         if info and B(info.learned) and not B(info.isGatheringRecipe) and not B(info.isDummyRecipe) then
-            local reagents = {}
             local sch = TS.GetRecipeSchematic and T(TS.GetRecipeSchematic(id, false))
-            for _, slot in ipairs(sch and T(sch.reagentSlotSchematics) or {}) do
-                local first = T(slot.reagents) and T(slot.reagents[1])
-                local itemID, qty = first and N(first.itemID), N(slot.quantityRequired)
-                if itemID and qty and qty > 0 and B(slot.required) ~= false and (N(slot.reagentType) or 1) == 1 then
-                    reagents[#reagents + 1] = { id = itemID, qty = qty }
-                end
-            end
+            local reagents = reagentsOf(sch)
             -- what it makes and how many: the advisor prices the product against its materials
             local out = sch and N(sch.outputItemID)
             local qmin, qmax = sch and N(sch.quantityMin), sch and N(sch.quantityMax)
@@ -368,6 +375,140 @@ function ns.ProfessionsView()
     end)
     return out
 end
+
+----------------------------------------------------------------------
+-- the profession window: under the materials of the selected recipe, what one craft costs and what it
+-- brings in, from the addon's own auction scans and the vendors it has met
+----------------------------------------------------------------------
+local craftInfo, craftHooked
+local function schematicForm()
+    local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+    return page and page.SchematicForm or nil
+end
+local function coin(c) return ns.money(c) end
+local function craftMoney(form, info)
+    info = T(info) or (form.GetRecipeInfo and T(form:GetRecipeInfo()))
+    local id = info and N(info.recipeID)
+    TS = TS or C_TradeSkillUI
+    if not (id and TS and TS.GetRecipeSchematic and ns.RecipeMoney) then return nil end
+    local sch = T(TS.GetRecipeSchematic(id, false))
+    if not sch then return nil end
+    local reagents = reagentsOf(sch)
+    if #reagents == 0 then return nil end
+    local qmin, qmax = N(sch.quantityMin) or 1, N(sch.quantityMax) or 1
+    local m = ns.RecipeMoney(reagents, N(sch.outputItemID), (math.max(1, qmin) + math.max(qmin, qmax, 1)) / 2)
+    m.recipe = S(info.name) or "Recipe"
+    return m
+end
+local function craftLines(m)
+    local L, W = ns.LABEL, ns.WHITE
+    local one
+    if #m.missing == 0 then one = L .. "Materials|r " .. W .. coin(m.cost) .. "|r"
+    elseif #m.missing == #m.parts then one = L .. "Materials:|r " .. ns.AMBER .. "no price yet|r"
+    else one = L .. "Materials|r " .. W .. coin(m.cost) .. "|r" .. L .. " + |r" .. ns.AMBER .. "no price for " .. table.concat(m.missing, ", ") .. "|r" end
+    local two
+    local where = m.where == "AH" and "at the auction house" or "to a vendor"
+    if m.profit then
+        if m.profit >= 0 then two = ns.GREEN .. "Profit|r " .. W .. coin(m.profit) .. "|r"
+        else two = ns.RED .. "Loss|r " .. W .. coin(-m.profit) .. "|r" end
+        two = two .. L .. "  sold " .. where .. "|r"
+    elseif m.rev then two = L .. "Sells for|r " .. W .. coin(m.rev) .. "|r" .. L .. " " .. where .. "|r"
+    elseif m.out then two = L .. "No sale price known for what it makes|r" end
+    return one, two
+end
+local function craftTip(self)
+    local m = self.money
+    if not m then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(m.recipe .. (m.qty ~= 1 and ("  (makes " .. m.qty .. ")") or ""))
+    for _, p in ipairs(m.parts) do
+        local right
+        if p.cost then right = ns.strip(ns.money(p.cost)) .. (p.from == "vendor" and "  vendor" or ("  auction, " .. (p.age or "?")))
+        else right = "no price" end
+        GameTooltip:AddDoubleLine(p.qty .. " " .. p.name, right, 0.86, 0.88, 0.92, p.cost and 1 or 1, p.cost and 1 or 0.7, p.cost and 1 or 0.3)
+    end
+    if m.out then
+        GameTooltip:AddLine(" ")
+        if m.ahPrice then
+            GameTooltip:AddDoubleLine("Auction house", ns.strip(ns.money(m.ahPrice)) .. " each, " .. ns.strip(ns.money(m.ahRev)) .. " after the cut", 0.86, 0.88, 0.92, 1, 1, 1)
+            if m.ahLowest and m.ahLowest ~= m.ahPrice then
+                GameTooltip:AddLine("That is its usual price; the lowest today is " .. ns.strip(ns.money(m.ahLowest)) .. ".", 0.6, 0.6, 0.6, true)
+            end
+        else
+            GameTooltip:AddLine("Not on the auction house at your last scan.", 0.6, 0.6, 0.6, true)
+        end
+        if (m.vendorRev or 0) > 0 then GameTooltip:AddDoubleLine("A vendor pays", ns.strip(ns.money(m.vendorRev)), 0.86, 0.88, 0.92, 1, 1, 1) end
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Auction prices come from your own scans (the Scan button at the auction house, or /dls scan).", 0.6, 0.6, 0.6, true)
+    GameTooltip:Show()
+end
+local function placeCraftInfo(f, form)
+    f:ClearAllPoints()
+    -- Auctionator writes its own two lines in this place: while it is installed, ours go under them
+    local other = _G.AuctionatorCraftingInfoProfessionsFrame
+    if other and other.Total and other.IsShown and other:IsShown() then
+        f:SetPoint("TOPLEFT", other.Total, "BOTTOMLEFT", 0, -6)
+        return
+    end
+    local reagents = form.Reagents
+    if type(reagents) ~= "table" then f:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 28, 64); return end
+    local low, lowY = reagents, N(reagents:GetBottom())
+    local list = {}
+    if type(form.OptionalReagents) == "table" then list[#list + 1] = form.OptionalReagents end
+    for _, x in ipairs(type(form.extraSlotFrames) == "table" and form.extraSlotFrames or {}) do
+        if type(x) == "table" then list[#list + 1] = x end
+    end
+    for _, x in ipairs(list) do
+        local y = x.IsShown and x:IsShown() and x.GetBottom and N(x:GetBottom())
+        if y and lowY and y < lowY then low, lowY = x, y end
+    end
+    local dx = (N(reagents:GetLeft()) or 0) - (N(low:GetLeft()) or N(reagents:GetLeft()) or 0)
+    f:SetPoint("TOPLEFT", low, "BOTTOMLEFT", dx, -8)
+end
+local function updateCraftInfo(info)
+    local form = schematicForm()
+    if not form then return end
+    if ns.db and ns.db.craftInfo == false then if craftInfo then craftInfo:Hide() end return end
+    local m = craftMoney(form, info)
+    if not m then if craftInfo then craftInfo:Hide() end return end
+    if not craftInfo then
+        craftInfo = CreateFrame("Frame", "DearLordStatsCraftInfo", form)
+        craftInfo:SetSize(320, 30)
+        craftInfo.text = craftInfo:CreateFontString(nil, "OVERLAY")
+        craftInfo.text:SetPoint("TOPLEFT", craftInfo, "TOPLEFT", 0, 0)
+        craftInfo.text:SetJustifyH("LEFT")
+        craftInfo.text:SetWidth(320)
+        if craftInfo.text.SetSpacing then craftInfo.text:SetSpacing(3) end
+        craftInfo:EnableMouse(true)
+        craftInfo:SetScript("OnEnter", function(self) ns.safe("craftinfo:tip", function() craftTip(self) end) end)
+        craftInfo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        ns.craftInfo = craftInfo
+    end
+    craftInfo.text:SetFont(ns.FontPath(), 12, "")
+    craftInfo.text:SetShadowColor(0, 0, 0, 1); craftInfo.text:SetShadowOffset(1, -1)
+    local one, two = craftLines(m)
+    craftInfo.money = m
+    craftInfo.text:SetText(two and (one .. "\n" .. two) or one)
+    craftInfo:SetHeight(two and 32 or 16)
+    placeCraftInfo(craftInfo, form)
+    craftInfo:Show()
+end
+function ns.RefreshCraftInfo()
+    local form = schematicForm()
+    if form and form.IsShown and form:IsShown() then ns.safe("craftinfo", updateCraftInfo) end
+end
+local function hookCraftInfo()
+    local form = schematicForm()
+    if not form then return end
+    if not craftHooked and hooksecurefunc and type(form.Init) == "function" then
+        craftHooked = true
+        -- the window calls Init each time a recipe is picked
+        hooksecurefunc(form, "Init", function(_, info) ns.safe("craftinfo", function() updateCraftInfo(info) end) end)
+    end
+    ns.After(0.1, ns.RefreshCraftInfo, "prof:craftinfo")
+end
+ns.On("TRADE_SKILL_SHOW", hookCraftInfo, "prof:craftinfo")
 
 local queuedRecipes, queuedTrainer = false, false
 local function tryRecipes(attempt)

@@ -85,6 +85,7 @@ end
 function ns.AdviceDirty(scanned)
     dirty = true
     if scanned then warm() end
+    if ns.RefreshCraftInfo then ns.RefreshCraftInfo() end
 end
 ns.OnLogin(function() saved(); ns.After(5, warm, "adv:warm") end, "adv:warm")
 
@@ -250,6 +251,42 @@ local function adviseSell(out)
 end
 
 local GATHERING = { Mining = true, Herbalism = true, Skinning = true, Fishing = true }
+-- what one craft costs and what it brings in. Materials at their cheapest known source (the lowest auction
+-- or a vendor you have met); the product at the auction house (its usual price, after the cut) or at a
+-- vendor, whichever pays more. `reagents` is { { id, qty } }, `qty` how many one craft makes.
+function ns.RecipeMoney(reagents, outID, qty)
+    local res = { cost = 0, parts = {}, missing = {}, qty = qty or 1 }
+    for _, g in ipairs(reagents or {}) do
+        local unit, from = buyCost(g.id)
+        local part = { id = g.id, qty = g.qty, name = nameOf(g.id), from = from }
+        if unit then
+            part.cost = unit * g.qty
+            res.cost = res.cost + part.cost
+            if from == "auction" then
+                local _, days, _, secs = ns.AuctionPriceByID(g.id)
+                part.age = ns.AuctionAgeText(days, secs)
+            end
+        else
+            res.missing[#res.missing + 1] = part.name
+        end
+        res.parts[#res.parts + 1] = part
+    end
+    res.complete = #res.parts > 0 and #res.missing == 0
+    if outID then
+        local p, lowest = ns.AuctionFairPrice(outID)
+        local sv = ns.SellPrice(outID) or 0
+        res.out, res.outName = outID, nameOf(outID)
+        res.ahPrice, res.ahLowest = p, lowest
+        res.ahRev = p and math.floor(net(p) * res.qty) or 0
+        res.vendorRev = math.floor(sv * res.qty)
+        if res.ahRev > 0 or res.vendorRev > 0 then
+            if res.vendorRev > res.ahRev then res.rev, res.where = res.vendorRev, "vendor" else res.rev, res.where = res.ahRev, "AH" end
+            if res.complete then res.profit = res.rev - res.cost end
+        end
+    end
+    return res
+end
+
 local function adviseCraft(out)
     local seenOut = {}
     local skipped, missing = 0, {}
