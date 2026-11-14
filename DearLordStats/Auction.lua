@@ -462,12 +462,21 @@ ns.On("ITEM_SEARCH_RESULTS_UPDATED", function(itemKey)
     if not (ahOpen and itemKey and AH and AH.GetNumItemSearchResults and AH.GetItemSearchResultInfo) then return end
     local id, n = N(itemKey.itemID), N(AH.GetNumItemSearchResults(itemKey)) or 0
     if not id or n == 0 then return end
+    -- A row is a group of identical auctions: quantity says how many, the buyout is for ONE of them
+    -- (read 14 Nov 2026: 57 bags at 21s 78c each came out as 38c apiece while this divided). Only an
+    -- item that stacks could be a stack sold whole; none has been seen in this list, so one is noted.
+    local stack = C_Item and ((C_Item.GetItemMaxStackSizeByID and N(C_Item.GetItemMaxStackSizeByID(id)))
+        or (C_Item.GetItemInfo and N((select(8, C_Item.GetItemInfo("item:" .. id))))))
+    local whole = stack and stack > 1
     local low, units, list = nil, 0, {}
     for i = 1, math.min(n, SIGHT_ROWS) do
         local info = T(AH.GetItemSearchResultInfo(itemKey, i))
         local buyout, qty = info and N(info.buyoutAmount), math.max(1, info and N(info.quantity) or 1)
         if buyout and buyout > 0 then                          -- auctions with a bid only have no price to compare
-            local unit = math.floor(buyout / qty)
+            local unit = whole and math.floor(buyout / qty) or buyout
+            if whole and qty > 1 then
+                ns.diagOnce("ahItemStack", function() return "item=" .. id .. " stack=" .. stack .. " quantity=" .. qty .. " buyout=" .. buyout end)
+            end
             if not low or unit < low then low = unit end
             units = units + qty
             list[#list + 1] = unit

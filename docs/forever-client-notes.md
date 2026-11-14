@@ -200,6 +200,21 @@ Isle, report no faction (or Neutral), so they are kept under `<Realm>-Neutral`.
 `learned` flag has to be checked. The item vendor price is position 11 of `C_Item.GetItemInfo`, and
 is nil until the item is cached.
 
+
+### An item's listing: rows are groups, the buyout is per auction (read 14 November 2026)
+
+`C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)` gives one row per group of identical auctions:
+`quantity` is how many auctions are in the group, `buyoutAmount` is the buyout of ONE of them. Up to
+2.34.0 we divided the buyout by the quantity, as for a stack. A seller with 57 Red Woolen Bags at
+21s 78c each then read as 38c apiece (2178 / 57), and the middle price of the day as 3s 92c, while
+the search list beside it showed 21s 78c as the lowest. Since 2.34.1 the buyout is taken as it is;
+only an item that stacks is still divided, and the first such row is kept in `diag.ahItemStack`
+(none seen so far: things that stack go through the commodity listing).
+
+The full scan (`GetReplicateItemInfo`) is not affected: the scan of 14:33 that day read 209,915 rows
+and had the bag at 21s 48c; the six lows it set aside as giveaways were all single auctions
+(`count=1`), so they were real listings.
+
 ## /who
 
 `C_FriendList.SendWho` only works from a key press or click, and a hook on a player's own key press

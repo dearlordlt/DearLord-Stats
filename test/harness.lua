@@ -1117,6 +1117,11 @@ if MODE ~= "bare" then
     fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.partialLower, sight.redrawn = at(9101), redrawn
     world.full, world.itemRows = true, { { buyoutAmount = 400, quantity = 1 } }
     fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.completeHigher = at(9101)
+    -- a row of 57 identical auctions: the buyout is for one of them, not for the 57
+    world.itemRows = { { buyoutAmount = 2178, quantity = 57 }, { buyoutAmount = 2352, quantity = 6 }, { buyoutAmount = 2400, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 9105 }); sight.grouped = at(9105)
+    house.items[9105] = nil; house.count = house.count - 1
+    world.itemRows = { { buyoutAmount = 400, quantity = 1 } }
     world.tooltip = tipWas; GameTooltip.GetOwner = nil
     world.commodityRows = { { unitPrice = 20, quantity = 50 }, { unitPrice = 25, quantity = 10 } }
     fire("COMMODITY_SEARCH_RESULTS_UPDATED", 9102); sight.commodity = at(9102)
@@ -2094,6 +2099,7 @@ if MODE ~= "bare" then
     local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
     check("advisor: Rough Blasting Powder +1s 87c to AH, 14 craftable (" .. tostring(powder and strip(powder.right)) .. ")",
         powder and powder.value == 187 and strip(powder.right):find("to AH") and strip(powder.left):find("make 14"))
+    check("prices on screen: a row of 57 identical auctions is priced per auction (" .. tostring(scanResult.sight.grouped) .. ")", scanResult.sight.grouped == "2178/64")
     check("auction scan: a giveaway among the listings is set aside, the next price kept (" .. tostring(scanResult.give) .. ")",
         scanResult.give:find("^2178/38/%d+:2178:2300/1/5763 .- low=38 next=2178 rows=11 count=1 buyout=38$") ~= nil)
     check("auction scan: the item tooltip names the giveaway, the fair price leaves it out (" .. tostring(scanResult.giveFair) .. ")",
