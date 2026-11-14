@@ -72,12 +72,14 @@ local function lastEntry()
 end
 
 ----------------------------------------------------------------------
--- the fight clock. The game's meter keeps a fight open a moment after you leave combat, so its
--- per-second numbers come out lower than those of a fight timed by your own combat flag (which is
--- how Details times it). The meter times each fight itself, from entering to leaving combat, and
--- falls back on the game's clock for fights it did not see or where the two disagree badly.
+-- the fight clock. The game lists a fight's length in whole seconds, rounded down, and works out each
+-- player's per-second number with that (so it reads high: 479 damage in 8.6 s shows as 59.9/s), while
+-- the abilities under it use the exact time (and add up to 55.6/s). The meter times each fight itself,
+-- from entering to leaving combat, and uses that one time for bars, sum and breakdown. It falls back on
+-- the game's clock for fights it did not see or where the two disagree badly.
 ----------------------------------------------------------------------
-local fight = {}                -- start (in a fight); pending = { dur, at } (over, not yet matched to the game's session); knownId
+local fight = {}                -- start (in a fight); carry (combat time earlier in the same game session);
+                                -- pending = { dur, at } (over, not yet matched to the game's session); knownId
 ns.meterFight = fight
 local function clockStore()
     local db = ns.db
@@ -185,7 +187,7 @@ local function durationOf(seg, sess)
     end
     local own
     if type(seg) == "number" then own = ownFor(seg)
-    elseif fight.start then own = GetTime() - fight.start
+    elseif fight.start then own = GetTime() - fight.start + (fight.carry or 0)
     elseif inCombat() then own = nil                                  -- loaded in the middle of a fight: no start seen
     elseif fight.pending then own = fight.pending.dur
     else
@@ -1106,6 +1108,9 @@ ns.On("DAMAGE_METER_COMBAT_SESSION_UPDATED", mark, "meter:updated")
 ns.On("DAMAGE_METER_CURRENT_SESSION_UPDATED", mark, "meter:current")
 ns.On("DAMAGE_METER_RESET", function() state.dirty = true; targetCache = {}; clockWipe() end, "meter:reset")
 ns.On("PLAYER_REGEN_DISABLED", function()
+    -- back in combat before the game closed the last fight: it is one fight to the game, so the time adds up
+    local p = fight.pending
+    fight.carry = (p and GetTime() - p.at < 15) and p.dur or nil
     fight.start, fight.pending = GetTime(), nil
     if type(state.seg) == "number" then state.seg = "fight" end     -- a new fight: back from an earlier one to this one
     state.scroll, state.dirty = 0, true
@@ -1113,8 +1118,8 @@ ns.On("PLAYER_REGEN_DISABLED", function()
 end, "meter:fight")
 ns.On("PLAYER_REGEN_ENABLED", function()
     local now = GetTime()
-    if fight.start then fight.pending = { dur = now - fight.start, at = now } end
-    fight.start = nil
+    if fight.start then fight.pending = { dur = now - fight.start + (fight.carry or 0), at = now } end
+    fight.start, fight.carry = nil, nil
     state.freezeUntil = now + 3
     state.settleUntil = GetTime() + 6                              -- the numbers become readable a moment after the fight
     state.dirty = true

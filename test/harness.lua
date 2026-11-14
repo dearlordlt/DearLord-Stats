@@ -1754,6 +1754,20 @@ if MODE ~= "bare" then
     -- a fight the game timed very differently (joined late, or it ran on): the game's clock is used
     runFight({ name = "Test Long", kills = 0, dmg = 100, taken = 5, duration = 10, tail = 30, spells = { { 75, 100 } } })
     mT.clockFar = rows(1) .. " // " .. strip(mw.titleTime.text)
+    -- combat drops for a second and comes back before the game has closed the fight: one fight, both parts counted
+    do
+        world.combat = true
+        world.liveSession = { sessionID = nextSession + 1, name = "Test Twice", durationSeconds = 22, dmg = 220, taken = 5, enemies = 1, spells = { { 75, 220 } } }
+        fire("PLAYER_REGEN_DISABLED"); advance(10)
+        world.combat = false; fire("PLAYER_REGEN_ENABLED"); advance(1)
+        world.combat = true; fire("PLAYER_REGEN_DISABLED"); advance(12)
+        nextSession = nextSession + 1
+        world.liveSession.sessionID = nextSession
+        dmSessions[#dmSessions + 1] = world.liveSession
+        world.combat = false; world.liveSession = nil
+        fire("PLAYER_REGEN_ENABLED"); advance(4)
+        mT.clockTwice = rows(1) .. " // " .. strip(mw.titleName.text) .. " " .. strip(mw.titleTime.text)
+    end
     mT.clockDiag = table.concat(ns.db.diag.meter.clock or {}, " | ")
 
     mw.tabFight.scripts.OnClick(mw.tabFight, "RightButton")
@@ -2208,6 +2222,8 @@ check("meter: Total leaves the game's extra seconds out too (" .. tostring(mT.cl
 check("meter: a fight the game timed very differently keeps the game's clock (" .. tostring(mT.clockFar) .. " // " .. tostring(mT.clockDiag) .. ")",
     mT.clockFar == "1. Tess Ter 100 2.5/s 100% // 0:40" and mT.clockDiag:find("own=17.0 game=20.0", 1, true) ~= nil
     and mT.clockDiag:find("own=10.0 game=40.0 (game's used)", 1, true) ~= nil and mT.clockWiped)
+check("meter: combat that drops and returns inside one of the game's fights is timed as one (" .. tostring(mT.clockTwice) .. ")",
+    mT.clockTwice == "1. Tess Ter 220 10.0/s 100% // Test Twice 0:22")
 check("meter: a narrow column shortens the per-second number, then drops the share (" .. tostring(mT.narrow) .. " // " .. tostring(mT.narrower) .. ")",
     mT.narrow:find("^1%. Tess Ter 600 30%.0 64%%") ~= nil and mT.narrower:find("^1%. Tess Ter 600 30%.0 |") ~= nil)
 check("meter: resized by the corner, kept, not while locked, back to default on reset", mT.resized and mT.resizeKept and mT.lockedSize and mT.resetSize)

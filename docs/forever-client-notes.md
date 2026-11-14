@@ -106,24 +106,37 @@ DearLord Stats meter (2.30.0) therefore uses:
   (`if v then`, `v or x`, `v == nil`): it asks `ns.exists(v)`, which calls `issecretvalue` first. The
   harness cannot catch such a slip (Lua 5.1 has no hook for a truth test), so this is kept by reading.
 
-### Fight time: the game's clock runs longer than the combat flag (first look, 13 November 2026)
+### Fight time: the game lists whole seconds, rounded down (read 14 November 2026, 36 solo fights)
 
-Details times a fight itself, from `PLAYER_REGEN_DISABLED` to `PLAYER_REGEN_ENABLED`
-(`core/parser_nocleu1.lua`), and after the fight shows total / that time. The game's session stays
-open a little longer, so numbers taken from the game's clock come out lower; the owner saw this as
-"a few more ticks after the mob died" against Details. One fight from a screenshot (solo hunter,
-479 damage, both meters at 0:08): the source's `amountPerSecond` was 59.9 (479 / 8.0), while the
-spells' `amountPerSecond` were 20.9 for 180, 18.7 for 161 and 8.9 for 77, which is each amount / 8.61.
-So within one finished session the per-source and per-spell rates use different times (inferred from
-that one fight; which fields carry 8.0 and 8.61 has not been read directly).
+The saved data of 36 solo fights (addon 2.32.0, Details still installed) has the meter's own time for
+each fight, from `PLAYER_REGEN_DISABLED` to `PLAYER_REGEN_ENABLED`, beside the `durationSeconds` of the
+game's session list. In 35 of them the game's number is our time rounded down to a whole second:
+15.3 and 15, 14.8 and 14, 16.9 and 16, 8.6 and 8. So the game's fight starts and ends with the combat
+flag; it does not run on after it (an earlier guess here said it did, and was wrong).
 
-From 2.32.0 the meter keeps its own fight clock by the combat flag, like Details: bars, sum,
-breakdown, title and copy text all use amount / own time once the numbers are readable, and Total
-subtracts the measured extra seconds. If own time and the game's differ by more than +2 / -6 s the
-game's is used (joined late, or the session ran on). For about 3 s after combat, while the numbers
-are still hidden, the bars are not redrawn, so they do not sink. `diag.meter.clock` keeps the last
-12 fights as `id own=… game=…`, and `clockOverall` the game's overall time against the sum of its
-session list.
+What follows for the per-second numbers, seen in one fight (479 damage, 8.6 s): the source's
+`amountPerSecond` was 59.9, which is 479 / 8, the rounded-down length, so it reads high, most of all in
+short fights. The spells' `amountPerSecond` were 20.9 for 180, 18.7 for 161 and 8.9 for 77, each amount
+/ 8.61, the exact length, and they add up to 55.6. Details showed the first on its bar (59) and the
+second in its breakdown (55).
+
+The one fight that differed: game 62 s, ours 33.6 s. Combat had dropped and come back before the game
+closed its session, and the two parts add up to the game's number (inferred: the first part was not
+recorded). From 2.33.1 the meter adds the parts when combat returns within 15 s and no new session has
+appeared.
+
+The session list held 30 fights when 36 had been fought (ids 7 to 36 left), so it keeps the last 30.
+`GetSessionDurationSeconds(Overall)` was 625 s against 513 s for the 30 listed.
+
+In a solo fight the first source had: name hidden, class readable, `isLocalPlayer` readable, GUID
+hidden, amount and rate hidden. 3448 session-updated events arrived in that play session, the bars
+were drawn 2346 times from hidden values and 2837 times from readable ones, with no error logged.
+
+From 2.32.0 the meter uses its own fight time for bars, sum, breakdown, title and copy text once the
+numbers are readable, so they agree with each other. If own time and the game's differ by more than
++2 / -6 s the game's is used. For about 3 s after combat, while the numbers are still hidden, the bars
+are not redrawn. `diag.meter.clock` keeps the last 12 fights as `id own=… game=…`, and `clockOverall`
+the game's overall time against the sum of its session list.
 
 What the addon records for the next read of the saved variables: `diag.meter` with `api`, `interp`,
 `abbrev`, `events`, `liveDraws` / `readDraws`, `liveSolo` / `liveGroup` (which fields of the first
