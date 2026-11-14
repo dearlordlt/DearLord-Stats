@@ -143,7 +143,7 @@ What the addon records for the next read of the saved variables: `diag.meter` wi
 source were hidden), `hiddenGuid`, `classColor`, `fightById` (the Current session was empty after a
 fight), `readError` / `tipError`, `chat`, `reset`.
 
-## The profession window (from Auctionator's code, build 339; ours not yet seen in the game)
+## The profession window (from Auctionator's code, build 339; our lines seen working in the game 14 November 2026)
 
 The window is the modern `ProfessionsFrame`. The recipe pane is
 `ProfessionsFrame.CraftingPage.SchematicForm`; it calls its own `Init(recipeInfo)` each time a recipe

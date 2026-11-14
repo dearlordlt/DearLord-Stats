@@ -406,15 +406,16 @@ local function craftLines(m)
     if #m.missing == 0 then one = L .. "Materials|r " .. W .. coin(m.cost) .. "|r"
     elseif #m.missing == #m.parts then one = L .. "Materials:|r " .. ns.AMBER .. "no price yet|r"
     else one = L .. "Materials|r " .. W .. coin(m.cost) .. "|r" .. L .. " + |r" .. ns.AMBER .. "no price for " .. table.concat(m.missing, ", ") .. "|r" end
-    local two
+    -- what it sells for, then the difference: a line that says "loss" alone does not say against what
     local where = m.where == "AH" and "at the auction house" or "to a vendor"
-    if m.profit then
-        if m.profit >= 0 then two = ns.GREEN .. "Profit|r " .. W .. coin(m.profit) .. "|r"
-        else two = ns.RED .. "Loss|r " .. W .. coin(-m.profit) .. "|r" end
-        two = two .. L .. "  sold " .. where .. "|r"
-    elseif m.rev then two = L .. "Sells for|r " .. W .. coin(m.rev) .. "|r" .. L .. " " .. where .. "|r"
+    local two, three
+    if m.rev then two = L .. "Sells for|r " .. W .. coin(m.rev) .. "|r" .. L .. "  " .. where .. "|r"
     elseif m.out then two = L .. "No sale price known for what it makes|r" end
-    return one, two
+    if m.profit then
+        three = (m.profit >= 0 and (ns.GREEN .. "Profit|r ") or (ns.RED .. "Loss|r ")) .. W .. coin(math.abs(m.profit)) .. "|r"
+            .. L .. "  if you make it to sell|r"
+    end
+    return one, two, three
 end
 local function craftTip(self)
     local m = self.money
@@ -431,8 +432,10 @@ local function craftTip(self)
         GameTooltip:AddLine(" ")
         if m.ahPrice then
             GameTooltip:AddDoubleLine("Auction house", ns.strip(ns.money(m.ahPrice)) .. " each, " .. ns.strip(ns.money(m.ahRev)) .. " after the cut", 0.86, 0.88, 0.92, 1, 1, 1)
-            if m.ahLowest and m.ahLowest ~= m.ahPrice then
-                GameTooltip:AddLine("That is its usual price; the lowest today is " .. ns.strip(ns.money(m.ahLowest)) .. ".", 0.6, 0.6, 0.6, true)
+            if m.ahStray then
+                GameTooltip:AddLine("A listing at " .. ns.strip(ns.money(m.ahStray)) .. " is left out: far under what the others ask, it gets bought, not matched.", 0.6, 0.6, 0.6, true)
+            elseif m.ahLowest and m.ahLowest ~= m.ahPrice then
+                GameTooltip:AddLine("The lowest today is " .. ns.strip(ns.money(m.ahLowest)) .. "; it went for less on recent days, so less is counted.", 0.6, 0.6, 0.6, true)
             end
         else
             GameTooltip:AddLine("Not on the auction house at your last scan.", 0.6, 0.6, 0.6, true)
@@ -440,6 +443,7 @@ local function craftTip(self)
         if (m.vendorRev or 0) > 0 then GameTooltip:AddDoubleLine("A vendor pays", ns.strip(ns.money(m.vendorRev)), 0.86, 0.88, 0.92, 1, 1, 1) end
     end
     GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Profit or loss: what it sells for, less what the materials cost to buy today. Materials already in your bags count too, as you could sell them instead.", 0.6, 0.6, 0.6, true)
     GameTooltip:AddLine("Auction prices come from your own scans (the Scan button at the auction house, or /dls scan).", 0.6, 0.6, 0.6, true)
     GameTooltip:Show()
 end
@@ -487,10 +491,10 @@ local function updateCraftInfo(info)
     end
     craftInfo.text:SetFont(ns.FontPath(), 12, "")
     craftInfo.text:SetShadowColor(0, 0, 0, 1); craftInfo.text:SetShadowOffset(1, -1)
-    local one, two = craftLines(m)
+    local one, two, three = craftLines(m)
     craftInfo.money = m
-    craftInfo.text:SetText(two and (one .. "\n" .. two) or one)
-    craftInfo:SetHeight(two and 32 or 16)
+    craftInfo.text:SetText(one .. (two and ("\n" .. two) or "") .. (three and ("\n" .. three) or ""))
+    craftInfo:SetHeight(16 * (1 + (two and 1 or 0) + (three and 1 or 0)))
     placeCraftInfo(craftInfo, form)
     craftInfo:Show()
 end

@@ -273,10 +273,10 @@ function ns.RecipeMoney(reagents, outID, qty)
     end
     res.complete = #res.parts > 0 and #res.missing == 0
     if outID then
-        local p, lowest = ns.AuctionFairPrice(outID)
+        local p, lowest, _, stray = ns.AuctionFairPrice(outID)
         local sv = ns.SellPrice(outID) or 0
         res.out, res.outName = outID, nameOf(outID)
-        res.ahPrice, res.ahLowest = p, lowest
+        res.ahPrice, res.ahLowest, res.ahStray = p, lowest, stray
         res.ahRev = p and math.floor(net(p) * res.qty) or 0
         res.vendorRev = math.floor(sv * res.qty)
         if res.ahRev > 0 or res.vendorRev > 0 then
@@ -328,7 +328,7 @@ local function adviseCraft(out)
                                 right = ns.GREEN .. "+" .. m(profit) .. "|r" .. ns.LABEL .. "  to " .. where .. "|r",
                                 tip = prof .. ": " .. r.name .. (qty ~= 1 and (" (makes " .. qty .. ")") or "") .. "\n"
                                     .. "Materials " .. m(cost) .. ":\n   " .. table.concat(parts, "\n   ") .. "\n"
-                                    .. (p and ("Auction house: " .. m(p) .. " each" .. (lowest ~= p and (" (its usual price; the lowest today is " .. m(lowest) .. ")") or "") .. ", " .. m(ahRev) .. " after the cut\n")
+                                    .. (p and ("Auction house: " .. m(p) .. " each" .. (lowest > p and (" (what it went for lately; the lowest today is " .. m(lowest) .. ")") or "") .. ", " .. m(ahRev) .. " after the cut\n")
                                         or "Not on the auction house at your last scan\n")
                                     .. (vRev > 0 and ("A vendor pays " .. m(vRev) .. ". ") or "") .. "Best: " .. where .. ", " .. ns.strip(ns.money(profit, true)) .. " per craft.\n"
                                     .. (make > 0 and make < math.huge and ("Your bags hold materials for " .. make .. ".\n") or "")
@@ -420,7 +420,7 @@ local function adviseFlips(out)
                     left = ns.WHITE .. name .. "|r" .. ns.LABEL .. "  " .. (v.z or "") .. "|r",
                     right = ns.GREEN .. "+" .. m(gain) .. "|r" .. ns.LABEL .. "  buy " .. m(v.c) .. ", AH " .. m(p) .. "|r",
                     tip = name .. ": " .. (v.npc and (v.npc .. " in ") or "a vendor in ") .. (v.z or "?") .. " sells it for " .. m(v.c) .. (v.lim and " (limited stock)" or "") .. ".\n"
-                        .. (lowest ~= p and ("Usually " .. m(p) .. " (the lowest today is " .. m(lowest) .. ")") or ("Lowest auction " .. m(p))) .. ", " .. m(net(p)) .. " after the cut; " .. (seen or 0) .. " on the auction house.\n"
+                        .. (lowest > p and ("Lately " .. m(p) .. " (the lowest today is " .. m(lowest) .. ")") or (lowest < p and ("Counted at " .. m(p) .. " (a giveaway at " .. m(lowest) .. " left out)") or ("Lowest auction " .. m(p)))) .. ", " .. m(net(p)) .. " after the cut; " .. (seen or 0) .. " on the auction house.\n"
                         .. "Deposit not counted. Right-click to hide this hint." }
             end
         end

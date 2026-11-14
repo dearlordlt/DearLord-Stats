@@ -987,6 +987,7 @@ if MODE ~= "bare" then
     scanResult.requests = C_AuctionHouse.requests
     scanResult.stone = ns.AuctionPrice("|Hitem:2835::|h[Rough Stone]|h")
     scanResult.realm = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"]
+    scanResult.realmCount, scanResult.realmAuctions = scanResult.realm.count, scanResult.realm.auctions   -- as the first scan left them
     -- the client fires the event again as item data loads: the list already read must not be read again
     local feedBefore, lateBefore = #feedLog, ns.db.diag.ah.late or 0
     for _ = 1, 3 do fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2) end
@@ -994,7 +995,28 @@ if MODE ~= "bare" then
     fire("AUCTION_HOUSE_CLOSED"); fire("AUCTION_HOUSE_SHOW"); advance(7); keys.scripts.OnKeyDown(keys, "W")
     scanResult.requestsAfterSecondOpen = C_AuctionHouse.requests
     printed = {}; SlashCmdList["DEARLORDSTATS"]("scan"); scanResult.throttleMsg = printed[1] or ""
+    -- eleven bags, one of them listed at 38c by a slip: the scan keeps the real price and notes the giveaway
+    local rowsBefore = #REPLICATE
+    for _, c in ipairs({ 38, 2178, 2180, 2199, 2200, 2300, 2400, 2400, 2500, 3000, 3100 }) do REPLICATE[#REPLICATE + 1] = { 5763, 1, c } end
     SlashCmdList["DEARLORDSTATS"]("scan force"); advance(1); fire("REPLICATE_ITEM_LIST_UPDATE"); advance(2); scanResult.requestsAfterForce = C_AuctionHouse.requests
+    do
+        local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
+        local e, g = items[5763] or {}, ns.db.diag.ah.giveaways or {}
+        scanResult.give = tostring(e.p) .. "/" .. tostring(e.g) .. "/" .. tostring(e.h) .. "/" .. tostring(g.n) .. "/" .. tostring(g.list and g.list[1])
+        -- the price list of a search shows the 38c again: the real price stays
+        GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 5763, dataInstanceID = 951 }); scanResult.giveTip = table.concat(GameTooltip.lines, " / ")
+        do local a, b, c, d = ns.AuctionFairPrice(5763); scanResult.giveFair = tostring(a) .. "/" .. tostring(b) .. "/" .. tostring(c) .. "/" .. tostring(d) end
+        items[5763] = nil
+        for i = #REPLICATE, rowsBefore + 1, -1 do REPLICATE[i] = nil end
+        -- few auctions with a wide spread (rare gear), or under ten: nothing is set aside
+        scanResult.realLow = table.concat({ tostring((select(2, ns.AuctionRealLow({ 100, 500, 800, 2000, 5000, 6000, 7000, 8000, 9000, 9500 })))),
+            tostring((select(2, ns.AuctionRealLow({ 38, 2178, 2180, 2199 })))) }, "/")
+        -- a rise that held three scan days counts, though the week's usual price is lower
+        items[5763] = { p = 2178, n = 300, d = AH_DAY, h = AH_DAY .. ":2178:2400 " .. (AH_DAY - 1) .. ":2141:2159 " .. (AH_DAY - 2) .. ":2400:3000 "
+            .. (AH_DAY - 3) .. ":700:700 " .. (AH_DAY - 4) .. ":700:700 " .. (AH_DAY - 5) .. ":700:800 " .. (AH_DAY - 6) .. ":800:900" }
+        do local a, b, c = ns.AuctionFairPrice(5763); scanResult.held = tostring(a) .. "/" .. tostring(b) .. "/" .. tostring(c) end
+        items[5763] = nil
+    end
     fire("AUCTION_HOUSE_CLOSED")
     -- a goblin auction house: neutral, shared by both factions, scanned into its own key
     world.npc, world.npcFaction = true, nil
@@ -1154,6 +1176,15 @@ if MODE ~= "bare" then
         AuctionatorCraftingInfoProfessionsFrame = nil
         pick(3921); craftT.below = ns.craftInfo.point ~= nil and ns.craftInfo.point[2] == form.Reagents
         ns.db.craftInfo = false; craftT.off = pick(3921); ns.db.craftInfo = true
+        -- a giveaway listing of the product: left out of what it sells for, and said so
+        local keep = items[4357]
+        items[4357] = { p = 3, n = 12, d = AH_DAY, name = "Rough Blasting Powder", h = AH_DAY .. ":3:210 " .. (AH_DAY - 1) .. ":200:220 " .. (AH_DAY - 2) .. ":190:200" }
+        craftT.stray = pick(3918)
+        GameTooltip.lines = {}; ns.craftInfo.scripts.OnEnter(ns.craftInfo); craftT.strayTip = table.concat(GameTooltip.lines, " / "); ns.craftInfo.scripts.OnLeave(ns.craftInfo)
+        -- the same low price when most ask about as little: the price really fell
+        items[4357].h = AH_DAY .. ":3:4 " .. (AH_DAY - 1) .. ":200:220 " .. (AH_DAY - 2) .. ":190:200"
+        craftT.fell = ns.AuctionFairPrice(4357)
+        items[4357] = keep
         world.tradeskillOpen = nil
     end
     advKept = ns.db.sellPrices and ns.db.sellPrices[2140] == 350
@@ -1990,7 +2021,7 @@ if MODE ~= "bare" then
     check("tooltip: same data twice adds no second line; unknown item, forbidden tooltip and setting off add none", tipDup == 2 and scanResult.unknownAndForbidden and tipOff == 0)
     check("tooltip: a stack of 2 gets a heading row and the totals on both rows (" .. tostring(tipStack[3]) .. ")", #tipStack == 3 and norm(tipStack[1]) == "each all 2" and norm(tipStack[2]) == "Vendor 50c 1s 0c" and norm(tipStack[3]) == "Horde AH lowest 2s 50c 5s 0c 19 seen · 2 days ago")
     local r = scanResult.realm
-    check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and r.count == 4 and r.auctions == 6 and r.scanned)
+    check("scan: auto scan on AH open commits 4 items from 6 auctions, Rough Stone at 3c", scanResult.requests == 1 and scanResult.stone == 3 and r and scanResult.realmCount == 4 and scanResult.realmAuctions == 6 and r.scanned)
     check("scan: seen counts and history (Light Hide 3 units, 250 kept as min, history has two days)", r and r.items[783].n == 3 and r.items[783].p == 250 and select(2, r.items[783].h:gsub(" ", "")) == 1)
     check("scan: second AH open within 15 min does not request again; /dls scan explains; force scans", scanResult.requestsAfterSecondOpen == 1 and scanResult.throttleMsg:find("next scan possible") and scanResult.requestsAfterForce == 2)
     check("scan: repeated list events after a finished scan do not start it again (" .. tostring(scanResult.rereads) .. ")", scanResult.rereads == 0)
@@ -2063,11 +2094,20 @@ if MODE ~= "bare" then
     local powder, bolts = adv and find(adv.craft, 4357), adv and find(adv.craft, 4359)
     check("advisor: Rough Blasting Powder +1s 87c to AH, 14 craftable (" .. tostring(powder and strip(powder.right)) .. ")",
         powder and powder.value == 187 and strip(powder.right):find("to AH") and strip(powder.left):find("make 14"))
+    check("auction scan: a giveaway among the listings is set aside, the next price kept (" .. tostring(scanResult.give) .. ")",
+        scanResult.give:find("^2178/38/%d+:2178:2300/1/5763 .- low=38 next=2178 rows=11 count=1 buyout=38$") ~= nil)
+    check("auction scan: the item tooltip names the giveaway, the fair price leaves it out (" .. tostring(scanResult.giveFair) .. ")",
+        scanResult.giveTip:find("giveaway", 1, true) ~= nil and scanResult.giveTip:find("21s 78c", 1, true) ~= nil and scanResult.giveFair == "2178/2178/nil/38")
+    check("auction scan: a wide spread or under ten auctions sets nothing aside (" .. tostring(scanResult.realLow) .. ")", scanResult.realLow == "nil/nil")
+    check("usual price: a rise that held three scan days counts (" .. tostring(scanResult.held) .. ")", scanResult.held == "2141/2178/800")
     check("usual price: an odd high listing counts at its usual price (" .. tostring(usualResult.fair) .. ", " .. tostring(usualResult.vs) .. "%)", usualResult.fair == "42/200/42" and usualResult.vs == 376)
     check("usual price: the craft that only paid at the odd price is no longer advised, and the price search lists the usual price", usualResult.craftGone == true and usualResult.search == 42)
     check("advisor: Copper Bolts pay more at a vendor, +2s 40c (" .. tostring(bolts and strip(bolts.right)) .. ")", bolts and bolts.value == 240 and strip(bolts.right):find("to vendor"))
     check("profession window: cost and profit under the materials (" .. tostring(craftT.bolts) .. " // " .. tostring(craftT.powder) .. ")",
-        craftT.bolts == "Materials 60c / Profit 2s 40c  sold to a vendor" and craftT.powder:find("^Materials %d+c / Profit 1s 87c  sold at the auction house$") ~= nil)
+        craftT.bolts == "Materials 60c / Sells for 3s 0c  to a vendor / Profit 2s 40c  if you make it to sell"
+        and craftT.powder:find("^Materials %d+c / Sells for [%d%a ]+  at the auction house / Profit 1s 87c  if you make it to sell$") ~= nil)
+    check("profession window: a giveaway listing does not set what it sells for (" .. tostring(craftT.stray) .. "), a real fall does (" .. tostring(craftT.fell) .. ")",
+        craftT.stray:find("Profit", 1, true) ~= nil and craftT.strayTip:find("is left out", 1, true) ~= nil and craftT.fell == 3)
     check("profession window: a material without a price is named, no profit promised (" .. tostring(craftT.dynamite) .. ")",
         craftT.dynamite:find("no price for Linen Cloth", 1, true) ~= nil and craftT.dynamite:find("Profit", 1, true) == nil)
     check("profession window: pointing at it lists each material with its source (" .. tostring(craftT.tip) .. ")",

@@ -257,13 +257,37 @@ function ns.AuctionUsual(id, k)
     table.sort(lows)
     return lows[math.ceil(#lows / 2)], #lows
 end
--- what one unit can be counted on to bring: the lowest buyout, but no more than the usual price, so a
--- single odd listing does not promise a profit. Returns that, the lowest, and the usual (when known).
+-- A giveaway: one or two auctions far under a price that several others agree on (38c among bags at
+-- 21s). Somebody's slip, bought within minutes: it is no price to sell at, nor one to buy five at.
+-- Takes the unit prices of one item's auctions, sorted; returns the lowest real price and the giveaway.
+local function realLow(list)
+    local n = #list
+    if n < 10 then return list[1] end
+    for j = math.min(3, math.max(1, math.floor(n * 0.02))), 1, -1 do
+        local nxt = list[j + 1]
+        if list[j] * 2 <= nxt and list[j + 3] <= nxt * 1.25 then return nxt, list[1] end
+    end
+    return list[1]
+end
+ns.AuctionRealLow = realLow
+-- what one unit can be counted on to bring: the lowest buyout, but no more than it has gone for lately
+-- (the usual price, or the lowest of the last three scan days when that is higher: a rise that held
+-- three days is no fluke), so a single odd listing does not promise a profit. Returns that, the lowest,
+-- the usual (when known), and a giveaway listing that was left out.
 function ns.AuctionFairPrice(id, k)
     local p = ns.AuctionPriceByID(id, k)
     if not p then return nil end
     local usual = ns.AuctionUsual(id, k)
-    return (usual and usual < p) and usual or p, p, usual
+    local h, e = ns.AuctionHistory(id, k)
+    local stray = e and e.g
+    if not usual then return p, p, nil, stray end
+    -- a day kept before giveaways were set aside by the scan: its lowest far under the usual and the middle
+    local function low(d) return (d.min * 2 < usual and d.med >= d.min * 2) and d.med or d.min end
+    local base = p
+    if h[1] and h[1].day == e.d and h[1].min == p and low(h[1]) ~= p then base, stray = h[1].med, p end
+    local cap = usual
+    if #h >= 3 then cap = math.max(usual, math.min(low(h[1]), low(h[2]), low(h[3]))) end
+    return math.min(base, cap), p, usual, stray
 end
 -- the lowest buyout against the usual price, in percent (nil until the usual price is known)
 function ns.AuctionVsUsual(id, k)
@@ -277,12 +301,22 @@ local function commit()
     local r = realmData(true, scan.key)
     if not r then abort("no realm or faction known"); return end
     local today, items, n = ns.AuctionDay(), r.items, 0
+    local odd = { at = time(), n = 0, list = {} }             -- giveaways set aside, with the raw row, to tell slips from misreads
     for id, a in pairs(scan.agg) do
         local e = items[id] or {}
         if not e.h and e.p and e.d and e.d < today then e.h = e.d .. ":" .. e.p end   -- an entry from before history was kept
         table.sort(a.list)
         local med = a.list[math.ceil(#a.list / 2)] or a.p
-        e.p, e.n, e.d, e.t = a.p, a.n, today, time()
+        local real, give = realLow(a.list)
+        if give then
+            a.p = real
+            odd.n = odd.n + 1
+            if #odd.list < 30 then
+                odd.list[#odd.list + 1] = id .. " " .. tostring(a.name) .. " low=" .. give .. " next=" .. real .. " rows=" .. #a.list
+                    .. " count=" .. tostring(a.pc) .. " buyout=" .. tostring(a.pb)
+            end
+        end
+        e.p, e.n, e.d, e.t, e.g = a.p, a.n, today, time(), give
         if a.name then e.name = a.name end
         local k, best = nil, 0                                   -- the stack size most sellers use
         for size, times in pairs(a.k or {}) do if times > best or (times == best and size > (k or 0)) then k, best = size, times end end
@@ -298,6 +332,7 @@ local function commit()
     logOut(scan.foreign and "read (another addon's list)" or "read")
     if db() then db().lastRead = db().lastRequest end          -- whoever asked, a list arrived: our request is answered or spent
     local d = diag(); d.lastScan = { at = time(), rows = scan.n, items = n, secs = time() - (scan.requestedAt or time()) }
+    d.giveaways = odd
     ns.Feed(ns.LABEL .. "Auction scan|r  " .. ns.WHITE .. n .. " items|r" .. ns.LABEL .. "  ·  " .. scan.n .. " auctions|r", { tab = "prices", key = "ahscan", hold = 10 })
     scan = { state = "idle" }
     if ns.AdviceDirty then ns.AdviceDirty(true) end
@@ -328,8 +363,8 @@ local function collectChunk()
         if count and id and buyout and buyout > 0 and count > 0 then
             local unit = math.floor(buyout / count)
             local a = scan.agg[id]
-            if not a then a = { p = unit, n = count, list = {}, k = {} }; scan.agg[id] = a; scan.priced = scan.priced + 1
-            else a.n = a.n + count; if unit < a.p then a.p = unit end end
+            if not a then a = { p = unit, n = count, list = {}, k = {}, pc = count, pb = buyout }; scan.agg[id] = a; scan.priced = scan.priced + 1
+            else a.n = a.n + count; if unit < a.p then a.p, a.pc, a.pb = unit, count, buyout end end
             a.list[#a.list + 1] = unit
             a.k[count] = (a.k[count] or 0) + 1
             if name and name ~= "" and not a.name then a.name = name end
@@ -388,19 +423,25 @@ local function redrawTooltip(id)
     if enter then tt.dlsAhInstance = nil; pcall(enter, owner) end
 end
 
-local function observe(id, unit, units, med, complete, name, how)
+local function observe(id, unit, units, med, complete, name, how, give)
     id, unit = N(id), N(unit)
     if not (ahOpen and ahKey and id and unit and unit > 0) then return false end
     local r = realmData(true, ahKey)
     if not r then return false end
     local today, e = ns.AuctionDay(), r.items[id]
     units = math.max(1, N(units) or 1)
+    -- a list that gives only the lowest price shows the giveaway again: the real price is kept
+    if not med and e and e.g and e.d == today and e.p and unit < e.p and unit * 2 <= e.p then
+        if e.g ~= unit then e.g = unit; return true end
+        return false
+    end
     if e and e.p and e.p > 0 and not complete and unit >= e.p then return false end
     local changed = not (e and e.p == unit and (not complete or e.n == units))
     if not e then e = {}; r.items[id] = e; r.count = (r.count or 0) + 1 end
     if not e.h and e.p and e.d and e.d < today then e.h = e.d .. ":" .. e.p end       -- an entry from before history was kept
     if not complete and e.d == today then units = math.max(units, e.n or 0) end
     e.p, e.n, e.d, e.t = unit, units, today, time()
+    if complete or give then e.g = give end
     if name and name ~= "" and not e.name then e.name = name end
     pushHistory(e, today, unit, math.max(unit, N(med) or unit))
     local d = diag(); d.sights = (d.sights or 0) + 1
@@ -435,7 +476,10 @@ ns.On("ITEM_SEARCH_RESULTS_UPDATED", function(itemKey)
     if not low then return end
     local full = n <= SIGHT_ROWS and AH.HasFullItemSearchResults and B(AH.HasFullItemSearchResults(itemKey)) == true
     local variant = (N(itemKey.itemSuffix) or 0) ~= 0          -- "of the Bear": other suffixes share the item id
-    observe(id, low, units, middle(list), full and not variant, nil, "item")
+    local mid = middle(list)                                   -- sorts the list
+    local give
+    if full and not variant then low, give = realLow(list) end
+    observe(id, low, units, mid, full and not variant, nil, "item", give)
 end, "ah:itemResults")
 
 -- the listings of a stackable item, one row per price
@@ -844,6 +888,8 @@ local function addLines(tooltip, id)
         local row = { label = name .. " lowest", unit = p, win = own and (not vendor or vendor <= 0 or ns.AuctionNet(p) > vendor),
             seen = tostring(n), age = ns.AuctionAgeText(a, sec) }
         rows[#rows + 1] = row
+        local _, e = ns.AuctionHistory(id, k)
+        if e and e.g then rows[#rows + 1] = { label = name .. " giveaway", unit = e.g, span = "one far under the rest, not counted" } end
         local usual, days = ns.AuctionUsual(id, k)
         if usual then rows[#rows + 1] = { label = name .. " usual", unit = usual, span = "last " .. days .. " scan days" } end
         return row

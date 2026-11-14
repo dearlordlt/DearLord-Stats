@@ -160,12 +160,14 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
 - **Professions**: skill-ups this session, what you can craft *right now* from your bags for points
   (orange / yellow / green), a rough shopping list to the next milestone, remembered trainer unlocks,
   gathering by zone, nodes your skill was too low for.
-- **In the game's profession window**, under the materials of the recipe you select: `Materials 95c`
-  and `Profit 2s 40c  sold to a vendor` (or `Loss 90c`). Materials count at their cheapest known source
-  (your last auction scan, or a vendor you have met); the product at the auction house after the cut
-  (its usual price) or at a vendor, whichever pays more. Point at the lines for each material with
-  its source and the age of its price. A material without a price is named and no profit is promised.
-  This is what Auctionator writes in the same place; with both installed, ours sits under its lines.
+- **In the game's profession window**, under the materials of the recipe you select, three lines:
+  `Materials 22s 50c`, `Sells for 7s 0c  to a vendor`, `Loss 15s 50c  if you make it to sell` (or
+  `Profit`). The last line is the second less the first. Materials count at their cheapest known
+  source (your last auction scan, or a vendor you have met), also the ones already in your bags; the
+  product at the auction house after the cut or at a vendor, whichever pays more. The auction price
+  counted is the lowest, but no more than the item went for lately (its usual price over a week of
+  scans, or the lowest of the last three scan days when that is higher). Point at the lines for each material with its source and the age of its price.
+  A material without a price is named and no profit is promised.
 - **Economy** (was Loot), three views:
   - **Advice**: ways to earn gold, built only from real numbers: your auction scans, this character's
     recipes and gathering skills, your bags, what vendors pay, and the prices of vendors you have talked
@@ -219,6 +221,10 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
   columns (Economy, Combat, Abilities, Professions, price histories), so more fits without scrolling.
   Lists that grow over time (price histories, loot sessions, levels, zones, deaths, notes, reminders,
   hints) start collapsed to their first entries; "show all" on the header shows everything.
+  A giveaway is set aside: when one or two auctions out of ten or more ask under half of a price that
+  several others agree on (38c among bags at 21s), the price kept is the next one up, and the item
+  tooltip names the giveaway on its own row. Such a listing is a slip that gets bought within minutes;
+  it is no price to sell at, nor one to buy a stack at.
 - **Census**: counts the players of your realm, each character once, and shows class shares, a race ×
   class grid, the level spread, the biggest guilds and the busiest zones, filtered by faction, level
   range and how recently they were seen. It fills in by itself: every player you see (mouseover,
