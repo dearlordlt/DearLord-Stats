@@ -25,6 +25,19 @@ function ns.BarFont(fs, delta)
     local size, flags = math.max(8, (db.fontSize or 13) + (delta or 0)), db.outline or "OUTLINE"
     if not fs:SetFont(ns.FontPath(), size, flags) then fs:SetFont(STANDARD_TEXT_FONT, size, flags) end
 end
+-- how wide a text comes out in the bars' own font (nil when the client will not say): cells are sized
+-- from this, not from a guess per font size, as fonts differ a good deal in width
+local ruler
+function ns.BarTextWidth(text, delta)
+    if not ruler then
+        local holder = CreateFrame("Frame", nil, UIParent); holder:Hide()
+        ruler = holder:CreateFontString(nil, "OVERLAY")
+    end
+    ns.BarFont(ruler, delta or -1)
+    ruler:SetText(text)
+    local w = ns.N(ruler:GetStringWidth())
+    return (w and w > 0) and w or nil
+end
 local function newText(parent, justify)
     local fs = parent:CreateFontString(nil, "OVERLAY")
     fs:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
@@ -320,7 +333,7 @@ function ns.BarList(parent, hud)
             fs:ClearAllPoints()
             if cw then
                 fs:SetPoint("RIGHT", r.bar, "RIGHT", -right, 0)
-                fs:SetWidth(cw)
+                fs:SetWidth(0)                                 -- as wide as its text: a long number runs left, it is never cut to "10..."
                 right = right + cw + 4
             end
             fs.used = cw ~= nil

@@ -1827,8 +1827,8 @@ if MODE ~= "bare" then
     -- a column too narrow for everything: the per-second number loses its "/s" before the share goes
     do
         local w = ns.db.meterW
-        ns.db.meterW = 530; ns.ApplyHudSettings(); mT.narrow = rows(1)
-        ns.db.meterW = 480; ns.ApplyHudSettings(); mT.narrower = rows(1)
+        ns.db.meterW = 496; ns.ApplyHudSettings(); mT.narrow = rows(1)
+        ns.db.meterW = 466; ns.ApplyHudSettings(); mT.narrower = rows(1)
         ns.db.meterW = w; ns.ApplyHudSettings()
     end
 

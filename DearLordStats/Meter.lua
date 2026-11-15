@@ -480,7 +480,9 @@ local function cellSpec(view, colW, fsz, barH, rankW)
     elseif mode == "rate" then spec = { "rate" }
     elseif mode == "amount" then spec = { "amount", "rate" }
     else spec = { "amount", "rate", "pct" } end
-    local widths = { amount = fsz * 3.0, rate = fsz * 3.9, rateS = fsz * 2.8, pct = fsz * 2.9 }
+    -- measured in the font in use, for the longest number each cell is likely to hold
+    local function wide(sample, guess) return math.ceil(ns.BarTextWidth and ns.BarTextWidth(sample) or guess) + 2 end
+    local widths = { amount = wide("888.8K", fsz * 3.0), rate = wide("8888.8/s", fsz * 3.9), rateS = wide("8888.8", fsz * 2.8), pct = wide("100%", fsz * 2.9) }
     -- the name keeps room for about eight letters. A narrow column first writes the per-second number
     -- without its "/s", then drops the share, then the amount
     local fixed = (barH + 2) + 6 + rankW + 2 + 7 + fsz * 4.5
