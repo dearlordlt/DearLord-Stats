@@ -221,3 +221,23 @@ and had the bag at 21s 48c; the six lows it set aside as giveaways were all sing
 counts. An answer holds at most 50 names. The client shows answers in its own `LFGWhoListFrame`, as
 well as `FriendsFrame`, and opens it unless the frame stops listening to `WHO_LIST_UPDATE` while the
 query runs. On the beta about 2,750 queries, one per 15 seconds, went through without being blocked.
+
+## Never run a game button's own handler from the addon (read 15 November 2026)
+
+Up to 2.34.2 the auction tooltip was refreshed by calling the tooltip owner's `OnEnter` script
+(`owner:GetScript("OnEnter")(owner)`), on every Shift/Ctrl/Alt press while an item tooltip with our
+price rows was up, and whenever a price arrived at the auction house. Run from an addon, that handler
+writes fields on the game's own button (a bag slot, an action button), and the game's code for that
+button is tainted from then on, until a reload. What BugGrabber kept from one session:
+
+- `[ADDON_ACTION_BLOCKED] AddOn 'DearLordStats' tried to call the protected function
+  'ActionButton1:SetShown()'`, with the stack `ContainerFrameItemButton_OnClick` > `PickupContainerItem` >
+  `ActionBar.lua:59` > `SetShowGrid` > `UpdateShownButtons`: a click on a tainted bag slot carried the
+  taint into the action bars.
+- then, 784 times: `ActionButton.lua:891: bad argument #1 to 'SetCooldown' (... Secret values are only
+  allowed during untainted execution for this argument.)`. Cooldown start and duration are hidden
+  values on this client, and a tainted action button may not pass them on: no sweep, no numbers.
+
+Since 2.34.3 the tooltip is refreshed through its own data (`GameTooltip:RefreshData()`), and not at
+all when the owner has `UpdateTooltip` (the game redraws those five times a second by itself).
+A taint lasts until `/reload`.

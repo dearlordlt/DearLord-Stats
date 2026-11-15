@@ -413,14 +413,20 @@ end, "ah:replicate")
 -- scan is brought up to date from them. A complete listing replaces the entry. A partial one (more
 -- rows not loaded yet, or one variant of an item that has several) can only lower it, because
 -- cheaper auctions may be out of sight.
+-- Redrawn through the tooltip's own data, NEVER through the owner's OnEnter. Run from an addon, that
+-- handler writes on the game's own button (a bag slot, an action button), and from then on the game's
+-- code for that button counts as tainted. Read 15 Nov 2026: a bag slot tainted this way, clicked,
+-- tainted the action bars, which then refused to draw cooldowns ("SetCooldown: secret values are only
+-- allowed during untainted execution", 784 times in one session) until the next reload.
 local function redrawTooltip(id)
     local tt = GameTooltip
     if not (tt and tt.IsShown and tt:IsShown()) then return end
     if id and tt.dlsAhItem ~= id then return end
     if not id and not tt.dlsAhShown then return end
+    tt.dlsAhInstance = nil
     local owner = tt.GetOwner and tt:GetOwner()
-    local enter = owner and owner.GetScript and owner:GetScript("OnEnter")
-    if enter then tt.dlsAhInstance = nil; pcall(enter, owner) end
+    if type(owner) == "table" and owner.UpdateTooltip then return end   -- the game redraws this one itself, five times a second
+    if type(tt.RefreshData) == "function" then pcall(tt.RefreshData, tt) end
 end
 
 local function observe(id, unit, units, med, complete, name, how, give)

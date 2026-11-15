@@ -1108,9 +1108,11 @@ if MODE ~= "bare" then
     fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.first = at(9101)
     GameTooltip.lines = {}; GameTooltip.dlsAhStack = nil; hook(GameTooltip, { id = 9101, dataInstanceID = 31 }); sight.tip = { unpack(GameTooltip.lines) }
     -- a tooltip that is up while the listings arrive is drawn again
-    local redrawn = 0
-    local owner = { GetScript = function() return function() redrawn = redrawn + 1 end end }
+    -- (through the tooltip's own data: the owner's OnEnter is never run, that would taint the game's button)
+    local redrawn, ownerRan = 0, 0
+    local owner = { GetScript = function() return function() ownerRan = ownerRan + 1 end end }
     local tipWas = world.tooltip; world.tooltip = "Crate"; GameTooltip.GetOwner = function() return owner end
+    GameTooltip.RefreshData = function() redrawn = redrawn + 1 end
     world.full, world.itemRows = false, { { buyoutAmount = 500, quantity = 1 } }
     fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.partialHigher, sight.redrawnUnchanged = at(9101), redrawn
     world.itemRows = { { buyoutAmount = 250, quantity = 1 } }
@@ -1122,7 +1124,15 @@ if MODE ~= "bare" then
     fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 9105 }); sight.grouped = at(9105)
     house.items[9105] = nil; house.count = house.count - 1
     world.itemRows = { { buyoutAmount = 400, quantity = 1 } }
-    world.tooltip = tipWas; GameTooltip.GetOwner = nil
+    -- an owner the game redraws by itself (it has UpdateTooltip): left to the game
+    owner.UpdateTooltip = function() end
+    local redrawnBefore = redrawn
+    world.itemRows = { { buyoutAmount = 390, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate); sight.leftToGame = redrawn - redrawnBefore
+    world.itemRows = { { buyoutAmount = 400, quantity = 1 } }
+    fire("ITEM_SEARCH_RESULTS_UPDATED", crate)                 -- back to where the checks below expect it
+    sight.ownerRan = ownerRan
+    world.tooltip = tipWas; GameTooltip.GetOwner = nil; GameTooltip.RefreshData = nil
     world.commodityRows = { { unitPrice = 20, quantity = 50 }, { unitPrice = 25, quantity = 10 } }
     fire("COMMODITY_SEARCH_RESULTS_UPDATED", 9102); sight.commodity = at(9102)
     world.browse = { { itemKey = { itemID = 9103 }, minPrice = 7, totalQuantity = 4 }, { itemKey = { itemID = 9104, itemSuffix = 12 }, minPrice = 90, totalQuantity = 1 } }
@@ -2087,6 +2097,8 @@ if MODE ~= "bare" then
     check("seen on screen: a partial listing only lowers the price (" .. sg.partialHigher .. " -> " .. sg.partialLower .. ")", sg.partialHigher == "300/2" and sg.partialLower == "250/2")
     check("seen on screen: a full listing may raise it once the cheap ones are gone (" .. sg.completeHigher .. ")", sg.completeHigher == "400/1")
     check("seen on screen: an open tooltip of that item is redrawn only when the price moved", sg.redrawnUnchanged == 0 and sg.redrawn == 1)
+    check("seen on screen: the redraw never runs the owner's own handler, and leaves a self-updating owner to the game (" .. tostring(sg.ownerRan) .. ", " .. tostring(sg.leftToGame) .. ")",
+        sg.ownerRan == 0 and sg.leftToGame == 0)
     check("seen on screen: stackable items, one row per price (" .. sg.commodity .. ")", sg.commodity == "20/60")
     check("seen on screen: the search list itself (" .. sg.browse .. "), a second suffix cannot raise the first (" .. sg.variant .. ")", sg.browse == "7/4 90/1" and sg.variant == "90/1")
     check("seen on screen: old auction house, a single page is complete, one page of many only lowers (" .. sg.page .. ", " .. sg.pagePartial .. ")", sg.page == "80/6" and sg.pagePartial == "80/6")
