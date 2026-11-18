@@ -1164,7 +1164,7 @@ if MODE ~= "bare" then
     local items = DearLordAuctionDB.realms["ClassicBetaPvE2-Horde"].items
     items[4357] = { p = 200, n = 12, d = AH_DAY, name = "Rough Blasting Powder", k = 5, h = AH_DAY .. ":200:220" }
     items[2840] = { p = 60, n = 30, d = AH_DAY, name = "Copper Bar", k = 10, h = AH_DAY .. ":60:65" }
-    items[2506] = { p = 10000, n = 2, d = AH_DAY, name = "Hornwood Recurve Bow", h = AH_DAY .. ":10000:12000" }
+    items[2506] = { p = 10000, n = 3, d = AH_DAY, name = "Hornwood Recurve Bow", h = AH_DAY .. ":10000:12000" }
     world.npc, world.npcFaction, world.merchant = true, "Horde", true
     fire("MERCHANT_SHOW"); advance(1); world.merchant = nil; world.npc = nil
     ns.AdviceDirty(true); advance(1); advance(3)
@@ -1200,6 +1200,26 @@ if MODE ~= "bare" then
         items[4357].h = AH_DAY .. ":3:4 " .. (AH_DAY - 1) .. ":200:220 " .. (AH_DAY - 2) .. ":190:200"
         craftT.fell = ns.AuctionFairPrice(4357)
         items[4357] = keep
+        -- a lone listing is no price: the same bow with one unit up is no flip, and neither is a tenfold markup
+        do
+            local function has(list, id) for _, e in ipairs(list or {}) do if e.id == id then return true end end return false end
+            local bowE = items[2506]
+            ns.AdviceDirty(true); advance(3); craftT.flipBefore = has(ns.Advice().flips, 2506)
+            items[2506] = { p = 10000, n = 1, d = AH_DAY, h = AH_DAY .. ":10000:10000" }
+            ns.AdviceDirty(true); advance(3)
+            local a2 = ns.Advice()
+            craftT.loneFlip = has(a2.flips, 2506)
+            craftT.leftOut = a2.flipsLeftOut
+            craftT.loneWhy = tostring((select(2, ns.AuctionBacked(2506))))
+            items[2506] = { p = 1000000, n = 5, d = AH_DAY, h = AH_DAY .. ":1000000:1000000" }
+            ns.AdviceDirty(true); advance(3)
+            craftT.tenfold = has(ns.Advice().flips, 2506)
+            -- seen on three scan days: a single listing counts
+            items[2506] = { p = 10000, n = 1, d = AH_DAY, h = AH_DAY .. ":10000:10000 " .. (AH_DAY - 1) .. ":10000:10000 " .. (AH_DAY - 2) .. ":9800:9800" }
+            ns.AdviceDirty(true); advance(3)
+            craftT.threeDays = has(ns.Advice().flips, 2506)
+            items[2506] = bowE; ns.AdviceDirty(true); advance(3); ns.Advice()
+        end
         world.tradeskillOpen = nil
     end
     advKept = ns.db.sellPrices and ns.db.sellPrices[2140] == 350
@@ -2126,6 +2146,9 @@ if MODE ~= "bare" then
         and craftT.powder:find("^Materials %d+c / Sells for [%d%a ]+  at the auction house / Profit 1s 87c  if you make it to sell$") ~= nil)
     check("profession window: a giveaway listing does not set what it sells for (" .. tostring(craftT.stray) .. "), a real fall does (" .. tostring(craftT.fell) .. ")",
         craftT.stray:find("Profit", 1, true) ~= nil and craftT.strayTip:find("is left out", 1, true) ~= nil and craftT.fell == 3)
+    check("advisor: a lone listing is no price, nor a tenfold markup on a vendor's goods; three scan days back one up (" .. tostring(craftT.loneWhy) .. ", left out " .. tostring(craftT.leftOut) .. ")",
+        craftT.flipBefore == true and craftT.loneFlip == false and (craftT.leftOut or 0) >= 1 and craftT.loneWhy:find("a single listing", 1, true) ~= nil
+        and craftT.tenfold == false and craftT.threeDays == true)
     check("profession window: a material without a price is named, no profit promised (" .. tostring(craftT.dynamite) .. ")",
         craftT.dynamite:find("no price for Linen Cloth", 1, true) ~= nil and craftT.dynamite:find("Profit", 1, true) == nil)
     check("profession window: pointing at it lists each material with its source (" .. tostring(craftT.tip) .. ")",

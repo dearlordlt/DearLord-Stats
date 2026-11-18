@@ -437,6 +437,8 @@ local function craftTip(self)
             elseif m.ahLowest and m.ahLowest ~= m.ahPrice then
                 GameTooltip:AddLine("The lowest today is " .. ns.strip(ns.money(m.ahLowest)) .. "; it went for less on recent days, so less is counted.", 0.6, 0.6, 0.6, true)
             end
+        elseif m.ahUnproven then
+            GameTooltip:AddLine("Listed at " .. ns.strip(ns.money(m.ahUnproven)) .. " at the auction house, not counted: " .. tostring(m.ahWhy) .. ".", 0.6, 0.6, 0.6, true)
         else
             GameTooltip:AddLine("Not on the auction house at your last scan.", 0.6, 0.6, 0.6, true)
         end

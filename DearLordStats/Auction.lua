@@ -289,6 +289,21 @@ function ns.AuctionFairPrice(id, k)
     if #h >= 3 then cap = math.max(usual, math.min(low(h[1]), low(h[2]), low(h[3]))) end
     return math.min(base, cap), p, usual, stray
 end
+-- Is the stored price something to sell at? A lone listing is one seller's wish (a 22s vendor vest
+-- listed at 100g, read 18 Nov 2026), not a market. A price counts when the item was seen on three
+-- scan days (it has a usual price), or when at least three were up at the last full scan.
+-- Returns true, or false and why.
+function ns.AuctionBacked(id, k)
+    local r = id and realmData(false, k)
+    local e = r and r.items[id]
+    if not e or not e.p or e.p <= 0 then return false, "no price" end
+    if ns.AuctionUsual(id, k) then return true end
+    local listed
+    if e.t and r.scanned then listed = e.t >= r.scanned - 60 else listed = (e.d or 0) >= (r.day or 0) end
+    if not listed then return false, "it was not on the auction house at your last scan, and was seen on fewer than three scan days" end
+    if (e.n or 0) >= 3 then return true end
+    return false, ((e.n or 0) <= 1 and "a single listing" or "two listings") .. ", seen on fewer than three scan days: one seller's wish is no price"
+end
 -- the lowest buyout against the usual price, in percent (nil until the usual price is known)
 function ns.AuctionVsUsual(id, k)
     local p = ns.AuctionPriceByID(id, k)

@@ -188,6 +188,11 @@ The report (`/dls`, or click either text block; resizable, Escape closes):
     - *Bargains*: auctions listed below what a vendor pays for the item (today's or yesterday's scan).
     Hover a hint for the numbers behind it, click it for the item's price history, right-click to hide
     it (Settings brings hidden hints back).
+    An auction price counts only when it is backed: the item was seen on three scan days, or at least
+    three were up at your last full scan. A lone listing is one seller's wish (a vendor's 22s vest
+    listed at 100g), so it promises nothing: vendor hints and craft hints leave it out, an item in your
+    bags is shown as "listed at ..., unproven" instead of with a profit. A vendor hint is also left out
+    when the auction price is over ten times the vendor's price and the vendor's stock is not limited.
   - **Session**: looted coin, vendor value (and how much of it is junk), worth with the auction house,
     per hour, drops by quality, the most valuable stacks, notable drops. Has its own reset.
   - **History**: one line per earlier loot session, with the total and the average per hour.

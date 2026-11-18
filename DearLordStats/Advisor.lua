@@ -219,8 +219,20 @@ local function adviseSell(out)
         local sv = ns.SellPrice(b.id) or 0
         local vTotal = sv * b.n
         local aTotal = (p and b.q >= 1) and net(p) * b.n or 0
-        worthVendor, worthBest = worthVendor + vTotal, worthBest + math.max(vTotal, aTotal)
-        if aTotal - vTotal >= MIN_GAIN and aTotal >= vTotal * (1 + MIN_SHARE) then
+        local backed, why = true, nil
+        if aTotal > vTotal then backed, why = ns.AuctionBacked(b.id) end
+        worthVendor, worthBest = worthVendor + vTotal, worthBest + (backed and math.max(vTotal, aTotal) or vTotal)
+        if not backed then
+            -- a price nobody has confirmed: named, promised nothing, and not sent to the vendor either
+            if aTotal - vTotal >= MIN_GAIN and not hidden("sell", b.id) then
+                out.sell[#out.sell + 1] = { kind = "sell", id = b.id, link = b.link, q = b.q, name = b.name, n = b.n, value = 0,
+                    left = ns.QualityColor(b.q) .. b.name .. "|r" .. ns.LABEL .. "  ×" .. b.n .. "|r",
+                    right = ns.LABEL .. "listed at " .. m(p) .. ", unproven|r",
+                    tip = "The auction house had it at " .. m(p) .. ", but that is not counted: " .. why .. ".\n"
+                        .. "A vendor pays " .. m(vTotal) .. ". Worth a look at the auction house before you sell it to a vendor.\n"
+                        .. "Click for the price history, right-click to hide this hint." }
+            end
+        elseif aTotal - vTotal >= MIN_GAIN and aTotal >= vTotal * (1 + MIN_SHARE) then
             if not hidden("sell", b.id) then
                 local e = entryOf(b.id)
                 local k = e and e.k or 1
@@ -274,6 +286,10 @@ function ns.RecipeMoney(reagents, outID, qty)
     res.complete = #res.parts > 0 and #res.missing == 0
     if outID then
         local p, lowest, _, stray = ns.AuctionFairPrice(outID)
+        if p then
+            local backed, why = ns.AuctionBacked(outID)
+            if not backed then res.ahUnproven, res.ahWhy, p, lowest, stray = p, why, nil, nil, nil end
+        end
         local sv = ns.SellPrice(outID) or 0
         res.out, res.outName = outID, nameOf(outID)
         res.ahPrice, res.ahLowest, res.ahStray = p, lowest, stray
@@ -311,6 +327,7 @@ local function adviseCraft(out)
                         if #missing < 5 then missing[#missing + 1] = lack end
                     else
                         local p, lowest, usual = ns.AuctionFairPrice(r.out)   -- no more than it usually goes for
+                        if p and not ns.AuctionBacked(r.out) then p, lowest = nil, nil end   -- a lone listing is no price
                         local sv = ns.SellPrice(r.out) or 0
                         local ahRev = p and math.floor(net(p) * qty) or 0
                         local vRev = math.floor(sv * qty)
@@ -412,6 +429,12 @@ local function adviseFlips(out)
     for id, v in pairs(ns.db.vendors or {}) do
         local p, lowest = ns.AuctionFairPrice(id)            -- no more than it usually goes for
         local seen = select(3, ns.AuctionPriceByID(id))
+        -- a lone listing is no price; and what anyone can buy from a vendor does not sell at ten times
+        -- that for long (limited stock is another matter)
+        if p and (not ns.AuctionBacked(id) or (not v.lim and v.c and v.c > 0 and p > v.c * 10)) then
+            out.flipsLeftOut = (out.flipsLeftOut or 0) + 1
+            p = nil
+        end
         if p and not hidden("flip", id) then
             local gain = net(p) - v.c
             if gain >= MIN_GAIN and net(p) >= v.c * 1.3 then
