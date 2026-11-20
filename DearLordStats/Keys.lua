@@ -70,16 +70,23 @@ local function note(slot, command)
     if name and not keys.byName[name] then keys.byName[name] = key end
 end
 
-local function build()
-    keys.byID, keys.byName = {}, {}
+-- every action slot a key can reach right now, with the binding that reaches it
+local function eachBoundSlot(fn)
     -- the main bar shows one page at a time: a stance bar while in a stance, else the page picked
     local page = (GetActionBarPage and N(GetActionBarPage())) or 1
     local bonus = (GetBonusBarOffset and N(GetBonusBarOffset())) or 0
     if page == 1 and bonus > 0 then page = 6 + bonus end
-    for i = 1, 12 do note((page - 1) * 12 + i, "ACTIONBUTTON" .. i) end
+    for i = 1, 12 do fn((page - 1) * 12 + i, "ACTIONBUTTON" .. i) end
     for _, bar in ipairs(BARS) do
-        for i = 1, 12 do note(bar[1] + i - 1, bar[2] .. i) end
+        for i = 1, 12 do fn(bar[1] + i - 1, bar[2] .. i) end
     end
+end
+ns.EachBoundSlot = eachBoundSlot
+ns.SpellOfSlot = spellOfSlot
+
+local function build()
+    keys.byID, keys.byName = {}, {}
+    eachBoundSlot(note)
     keys.dirty, keys.built = false, true
 end
 

@@ -241,3 +241,23 @@ button is tainted from then on, until a reload. What BugGrabber kept from one se
 Since 2.34.3 the tooltip is refreshed through its own data (`GameTooltip:RefreshData()`), and not at
 all when the owner has `UpdateTooltip` (the game redraws those five times a second by itself).
 A taint lasts until `/reload`.
+
+## One secure button, two actions: on the press and on the release (written 20 November 2026, not yet seen working)
+
+Summon Hawk needs a pet attack order a moment after the cast (the hawk is not there yet when a
+macro's `/petattack` runs; it then flies back to the hunter). `PetAttack` is protected and a macro
+cannot wait, so the delay is the key travel itself. From the public retail `SecureTemplates.lua`
+(`SecureActionButton_OnClick`), which the Forever client follows closely:
+
+- with the attribute `pressAndHoldAction` set, a key press always acts on the down stroke, whatever
+  `ActionButtonUseKeyDown` says, and the up stroke runs a second action;
+- the press uses `type`, looked up under the button name given in `downbutton`; the release uses
+  `typerelease`, looked up under the real button (`LeftButton` for a binding click);
+- so `type = typerelease = "macro"`, `*macrotext-press` for the press and plain `macrotext` for the
+  release give two macros on one button. The star matters: with Shift held the lookup prefix is
+  `shift-`, and a name without the star is then skipped.
+
+The key reaches the button through `SetOverrideBindingClick`; `GetBindingKey` keeps returning the
+real binding while the override is up. Both the override and the attributes are out-of-combat only.
+`/dls check` counts presses and releases, to see from the save whether the release arrives here.
+

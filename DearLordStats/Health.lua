@@ -77,6 +77,19 @@ function ns.HealthRows()
         else add("Growl reminder", "ok", "autocast is read; the banner's click has not been tried yet") end
     end
 
+    if class == "HUNTER" and ns.hawk then
+        local hk, clicks = S(d.hawkKeys), S(d.hawkClicks)
+        local presses, releases = (clicks or ""):match("^(%d+)/(%d+)$")
+        presses, releases = tonumber(presses) or 0, tonumber(releases) or 0
+        if ns.db.hawkAttack == false then add("Hawk key", "ok", "switched off: the key only casts")
+        elseif ns.hawk.noSecure or ns.hawk.noBinding then add("Hawk key", "bad", "this client gives the addon no secure button or no key override: use the pet bar's attack")
+        elseif not hk then add("Hawk key", "wait", "not looked at yet (it waits for the end of a fight)")
+        elseif hk == "" then add("Hawk key", "wait", "Summon Hawk is on no action slot that has a key")
+        elseif presses == 0 then add("Hawk key", "ok", hk .. ": casts on the press, attack order on the release; not pressed yet this session")
+        elseif releases == 0 then add("Hawk key", "bad", hk .. ": " .. presses .. " presses arrived but no release, so no attack order went out")
+        else add("Hawk key", "ok", hk .. ": " .. presses .. " presses, " .. releases .. " releases with the attack order") end
+    end
+
     local kp = S(d.keysProbe)
     if not kp then add("Keys on the cooldown manager", "wait", "no cooldown manager icon seen this session")
     else
