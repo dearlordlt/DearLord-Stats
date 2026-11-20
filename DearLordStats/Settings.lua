@@ -27,7 +27,6 @@ local CONTROLS = {
     { type = "slider", key = "threatWarnAt", label = "Warn at", min = 70, max = 100, step = 5, suffix = "%" },
     { type = "check", key = "threatSound", label = "Threat warning sound" },
     { type = "check", key = "growlWarn", label = "Growl reminder: on autocast in a dungeon group, or off when you are alone" },
-    { type = "check", key = "hawkAttack", label = "Hunter: your Summon Hawk key also gives the pet attack order as you let the key go, so the hawk stays on the target" },
     { type = "check", key = "partyTargets", label = "Party targets: beside each party frame, what that member is targeting (click to target it)" },
     { type = "check", key = "partyTargetsSelf", label = "Party targets: also your own target and your pet's, beside your frames in the party frame" },
     { type = "choice", key = "partyTargetSide", label = "Party targets sit", options = function() return ns.PARTY_TARGET_SIDES end },

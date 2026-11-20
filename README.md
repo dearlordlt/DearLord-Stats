@@ -70,14 +70,6 @@ in the world with it off, the pet line says so and a small banner offers the swi
 text to run `/petautocastoff Growl` (or `on`), right-click to leave things as they are, drag its
 icon to move it. The banner uses a secure button, so it appears and disappears only out of combat.
 
-**Hawk key** (hunters): Summon Hawk drops a hawk on your target, but the hawk flies back to you
-unless a pet attack order follows, and an order in the same macro comes too early. So every key
-bound to an action slot holding Summon Hawk casts on the press and gives the order (`/petattack`)
-as you let the key go. Hold the key a touch longer if the hawk still turns back. The order goes to
-your pet too, as the pet bar's Attack does. Your key bindings are not changed: it is an override that
-is gone when you switch the setting off, and it follows a moved spell or a changed key once you are
-out of combat. A mouse click on the bar button still only casts.
-
 **Party targets**: beside each party member's frame, a small target frame for what that member is
 targeting: name, health bar with percentage and a thin power bar (red for something you can attack,
 class colour for a player, a white edge when it is your target too). A click targets it. Your own

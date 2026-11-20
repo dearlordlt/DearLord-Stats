@@ -242,12 +242,13 @@ Since 2.34.3 the tooltip is refreshed through its own data (`GameTooltip:Refresh
 all when the owner has `UpdateTooltip` (the game redraws those five times a second by itself).
 A taint lasts until `/reload`.
 
-## One secure button, two actions: on the press and on the release (written 20 November 2026, not yet seen working)
+## One secure button, two actions: on the press and on the release (seen working 20 November 2026)
 
-Summon Hawk needs a pet attack order a moment after the cast (the hawk is not there yet when a
-macro's `/petattack` runs; it then flies back to the hunter). `PetAttack` is protected and a macro
-cannot wait, so the delay is the key travel itself. From the public retail `SecureTemplates.lua`
-(`SecureActionButton_OnClick`), which the Forever client follows closely:
+Built for Summon Hawk in 2.36.0 and taken out again in 2.36.1, because it did not help there; the
+mechanism itself works on this client and is kept here for the next use.
+
+From the public retail `SecureTemplates.lua` (`SecureActionButton_OnClick`), which the Forever client
+follows closely:
 
 - with the attribute `pressAndHoldAction` set, a key press always acts on the down stroke, whatever
   `ActionButtonUseKeyDown` says, and the up stroke runs a second action;
@@ -257,7 +258,17 @@ cannot wait, so the delay is the key travel itself. From the public retail `Secu
   release give two macros on one button. The star matters: with Shift held the lookup prefix is
   `shift-`, and a name without the star is then skipped.
 
-The key reaches the button through `SetOverrideBindingClick`; `GetBindingKey` keeps returning the
-real binding while the override is up. Both the override and the attributes are out-of-combat only.
-`/dls check` counts presses and releases, to see from the save whether the release arrives here.
+The key reaches the button through `SetOverrideBindingClick` (out of combat only); `GetBindingKey`
+keeps returning the real binding while the override is up. In the game, 9 presses gave 9 releases,
+each running its macro.
+
+## Summon Hawk needs its attack order after the dive (20 November 2026)
+
+The hawk dives at the target, hits once and flies back to the hunter unless a pet attack order
+reaches it after that dive. An order in the cast's own macro, or a tenth of a second later on the
+key's release, is dropped when the dive ends; holding the key for well over a second worked. Nothing
+may send a pet order without a key stroke (`PetAttack` is protected), so the order has to ride on a
+later key. `/petattack [@pettarget,exists,harm,nodead]` in the shot macros is meant for that: it
+orders the pets onto what the pet already attacks, so the pet keeps its target (suggested to the
+owner, result not reported).
 

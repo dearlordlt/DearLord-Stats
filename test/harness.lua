@@ -86,9 +86,6 @@ local function widget(kind, name)
     function M:CreateFontString() local s = widget("FontString"); self.strings = self.strings or {}; self.strings[#self.strings + 1] = s; return s end
     function M:SetPoint(...) self.point = { ... } end
     function M:GetName() return self.name end
-    function M:SetAttribute(k, v) self.attrs = self.attrs or {}; self.attrs[k] = v end
-    function M:GetAttribute(k) return self.attrs and self.attrs[k] end
-    function M:HookScript(k, fn) local was = self.scripts[k]; self.scripts[k] = was and function(...) was(...); fn(...) end or fn end
     -- unknown METHODS (capitalised) are harmless no-ops; unknown fields are nil, as on real frames
     return setmetatable(w, { __index = function(t, k) return M[k] or (type(k) == "string" and k:match("^%u") and function() end) or nil end })
 end
@@ -472,13 +469,7 @@ BARS[61] = { "spell", 781 }
 SPELLS[781] = "Disengage"
 SPELLS[14281] = "Arcane Shot"                  -- a higher rank: same name, another id
 local BINDINGS = { ACTIONBUTTON1 = "CTRL-5", ACTIONBUTTON2 = "R", MULTIACTIONBAR1BUTTON1 = "BUTTON4" }
-function GetBindingKey(cmd) local b = BINDINGS[cmd]; if type(b) == "table" then return unpack(b) end return b end
--- override bindings: key -> the button it clicks, each remembered with its owner
-local OVERRIDES, overrideSets = {}, 0
-function SetOverrideBindingClick(owner, priority, key, button, mouse) OVERRIDES[key] = { owner = owner, button = button, mouse = mouse }; overrideSets = overrideSets + 1 end
-function ClearOverrideBindings(owner) for k, v in pairs(OVERRIDES) do if v.owner == owner then OVERRIDES[k] = nil end end end
-local MACROSPELL = {}
-function GetMacroSpell(i) return MACROSPELL[i] end
+function GetBindingKey(cmd) return BINDINGS[cmd] end
 -- the game's cooldown manager: icons that know only a cooldown id
 local CDM = { [11] = { spellID = 14281 }, [12] = { spellID = 1978 }, [13] = { spellID = 19434 }, [14] = { spellID = 781, overrideSpellID = 781 } }
 C_CooldownViewer = { GetCooldownViewerCooldownInfo = function(id) return CDM[id] end }
@@ -2032,44 +2023,6 @@ ns.db.showKeys = false; advance(1)
 check("and the setting takes the labels away", keyOf(cdmItems[1]) == nil)
 ns.db.showKeys = true
 check("cooldown manager probe recorded (" .. tostring(ns.db.diag.keysProbe) .. ")", type(ns.db.diag.keysProbe) == "string" and ns.db.diag.keysProbe:find("icons=4", 1, true) ~= nil)
--- the hawk key: Summon Hawk on the main bar (rank 1, an id the addon does not know) and in a macro on the second bar
-do
-    local H = ns.hawk
-    local function clicks(key) local o = OVERRIDES[key]; return o and o.button or nil end
-    local function overrides() local n = 0; for _ in pairs(OVERRIDES) do n = n + 1 end; return n end
-    check("hawk key: nothing is taken while Summon Hawk is on no bar", overrides() == 0 and ns.db.diag.hawkKeys == "")
-    SPELLS[1293524], SPELLS[1293525] = "Summon Hawk", "Summon Hawk"
-    BARS[5] = { "spell", 1293524 }; BINDINGS.ACTIONBUTTON5 = { "Z", "BUTTON5" }
-    BARS[62] = { "macro", 7 }; MACROSPELL[7] = 1293525; BINDINGS.MULTIACTIONBAR1BUTTON2 = "SHIFT-Z"
-    fire("ACTIONBAR_SLOT_CHANGED"); advance(1)
-    local a = H.button.attrs
-    check("hawk key: every key of a slot holding it clicks our button, other keys are left alone (" .. tostring(ns.db.diag.hawkKeys) .. ")",
-        clicks("Z") == "DearLordStats_HawkButton" and clicks("BUTTON5") == "DearLordStats_HawkButton" and clicks("SHIFT-Z") == "DearLordStats_HawkButton"
-        and overrides() == 3 and ns.db.diag.hawkKeys == "BUTTON5, SHIFT-Z, Z")
-    check("hawk key: the press casts, with or without a modifier; the release gives the attack order",
-        a.pressAndHoldAction == true and a.downbutton == "press" and a.type == "macro" and a.typerelease == "macro"
-        and a["*macrotext-press"] == "/cast Summon Hawk" and a.macrotext == "/petattack")
-    local sets = overrideSets
-    fire("SPELLS_CHANGED"); advance(1)
-    check("hawk key: nothing is set again while the keys stay the same", overrideSets == sets)
-    world.combat = true; BINDINGS.ACTIONBUTTON5 = "X"; fire("UPDATE_BINDINGS"); advance(1)
-    local inFight = clicks("Z") ~= nil and clicks("X") == nil
-    world.combat = false; fire("PLAYER_REGEN_ENABLED"); advance(1)
-    check("hawk key: a binding changed in a fight is followed when the fight ends", inFight and clicks("X") == "DearLordStats_HawkButton" and clicks("Z") == nil and clicks("BUTTON5") == nil)
-    H.button.scripts.PostClick(H.button, "LeftButton", true); H.button.scripts.PostClick(H.button, "LeftButton", false)
-    check("hawk key: presses and releases are counted for the client check (" .. tostring(ns.db.diag.hawkClicks) .. ")", ns.db.diag.hawkClicks == "1/1")
-    ns.db.hawkAttack = false; advance(1)
-    local off = overrides() == 0
-    ns.db.hawkAttack = true; advance(1)
-    check("hawk key: the setting gives the keys back and takes them again", off and overrides() == 2)
-    world.class = "Warrior"; fire("SPELLS_CHANGED"); advance(1)
-    local warrior = overrides() == 0
-    world.class = nil; fire("SPELLS_CHANGED"); advance(1)
-    check("hawk key: only for a hunter", warrior and overrides() == 2)
-    BARS[5], BARS[62], BINDINGS.ACTIONBUTTON5, BINDINGS.MULTIACTIONBAR1BUTTON2 = nil, nil, nil, nil
-    fire("ACTIONBAR_SLOT_CHANGED"); advance(1)
-    check("hawk key: taken off the bars, the keys are free again", overrides() == 0)
-end
 check("fps row sits at the top of the XP window", (blockText("stats") or ""):find("^100 fps  ·  H 127  W 128 ms  ·  lag") ~= nil)
 check("total damage 161+300+210+80+200+210", c.dmg == 1161)
 check("pull sizes 1/2/3 recorded", c.size[1] and c.size[1].fights == 4 and c.size[2].fights == 1 and c.size[3].fights == 1)
